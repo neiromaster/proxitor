@@ -1,0 +1,82 @@
+{
+  "name": "proxitor",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Lightweight proxy for routing CLI requests (claude-code, codex) to OpenRouter",
+  "bin": "./dist/cli.mjs",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "scripts": {
+    "prepare": "lefthook install",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "lint": "biome lint ./src",
+    "lint:fix": "biome lint --fix ./src",
+    "format": "biome format --write ./src",
+    "format:check": "biome format ./src",
+    "check:biome": "biome check ./src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run check:biome && npm run test",
+    "prepublishOnly": "npm run build",
+    "release": "npm run check && npm run build && changeset publish"
+  },
+  "keywords": [
+    "proxy",
+    "openrouter",
+    "cli",
+    "claude-code",
+    "codex",
+    "ai",
+    "llm"
+  ],
+  "author": "neiromaster",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neiromaster/proxitor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/neiromaster/proxitor/issues"
+  },
+  "homepage": "https://github.com/neiromaster/proxitor#readme",
+  "dependencies": {
+    "cac": "^7.0.0",
+    "conf": "^15.1.0",
+    "consola": "^3.4.2",
+    "hono": "^4.12.23",
+    "js-yaml": "^4.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@changesets/cli": "^2.31.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.8",
+    "lefthook": "^2.1.9",
+    "tsdown": "^0.22.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

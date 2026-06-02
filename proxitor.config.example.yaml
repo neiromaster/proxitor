@@ -1,0 +1,24 @@
+# Proxitor — lightweight proxy for routing CLI requests to OpenRouter
+#
+# Copy this file to proxitor.config.yaml and edit as needed.
+# CLI flags override config file values.
+
+# Server settings
+host: '0.0.0.0'
+port: 8080
+
+# OpenRouter settings
+openrouterKey: '' # Or set OPENROUTER_API_KEY env var
+openrouterBaseUrl: 'https://openrouter.ai/api/v1'
+
+# Per-CLI model overrides
+# models:
+#   claude-code: "anthropic/claude-sonnet-4-6"
+#   codex: "openai/gpt-4.1"
+
+# Custom headers added to proxied requests
+# headers:
+#   X-Custom-Header: "value"
+
+# Enable verbose logging
+verbose: false
