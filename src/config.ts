@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 
-export interface ProxyConfig {
+export type ProxyConfig = {
   host: string
   port: number
   openrouterKey: string
@@ -22,11 +22,11 @@ const DEFAULT_CONFIG: ProxyConfig = {
   verbose: false,
 }
 
-interface LoadConfigOptions {
+type LoadConfigOptions = {
   configPath?: string
-  port?: number
   host?: string
   openrouterKey?: string
+  port?: number
   verbose?: boolean
 }
 

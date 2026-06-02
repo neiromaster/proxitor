@@ -13,25 +13,62 @@
   },
   "linter": {
     "enabled": true,
+    "domains": {
+      "project": "all",
+      "types": "all",
+      "test": "recommended"
+    },
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "correctness": {
+        "useImportExtensions": "off"
+      },
+      "suspicious": {
+        "noImportCycles": "warn",
+        "noEvolvingTypes": "warn"
+      },
+      "style": {
+        "noCommonJs": "error",
+        "noNamespace": "error",
+        "useThrowNewError": "error",
+        "useThrowOnlyError": "error",
+        "useConsistentArrayType": "error",
+        "useConsistentTypeDefinitions": {
+          "level": "error",
+          "options": { "style": "type" }
+        }
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 15 }
+        },
+        "noForEach": "off"
+      },
+      "security": {
+        "noSecrets": "warn"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "useExhaustiveSwitchCases": "warn",
+        "useErrorCause": "warn"
+      }
     }
   },
   "javascript": {
     "formatter": {
-      "lineWidth": 120,
+      "lineWidth": 90,
       "quoteStyle": "single",
       "trailingCommas": "all",
       "semicolons": "asNeeded",
-      "bracketSameLine": false
+      "bracketSameLine": false,
+      "arrowParentheses": "asNeeded"
     }
   },
   "overrides": [
     {
-      "includes": [
-        "**/*.test.ts",
-        "**/*.spec.ts"
-      ],
+      "includes": ["**/*.test.ts", "**/*.spec.ts"],
       "linter": {
         "rules": {
           "security": {
@@ -39,32 +76,12 @@
           },
           "suspicious": {
             "noExplicitAny": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": [
-        "**/*.ts",
-        "!**/*.test.ts",
-        "!**/*.spec.ts"
-      ],
-      "linter": {
-        "rules": {
-          "correctness": {
-            "noUnusedVariables": "error",
-            "noUnusedImports": "error"
           },
-          "suspicious": {
-            "noExplicitAny": "warn",
-            "noVar": "error"
+          "correctness": {
+            "noUnusedFunctionParameters": "off"
           },
           "style": {
-            "useConst": "error",
-            "useTemplate": "error"
-          },
-          "complexity": {
-            "noForEach": "off"
+            "noNonNullAssertion": "off"
           }
         }
       }
@@ -74,7 +91,8 @@
     "enabled": true,
     "actions": {
       "source": {
-        "organizeImports": "on"
+        "organizeImports": "on",
+        "useSortedInterfaceMembers": "on"
       }
     }
   }
