@@ -4,6 +4,6 @@
  * @packageDocumentation
  */
 
-export type { ProxyConfig } from './config.js'
-export { loadConfig } from './config.js'
+export type { ProviderConfig, ProxyConfig } from './config.js'
+export { buildProviderRouting, loadConfig } from './config.js'
 export { createProxyServer } from './proxy.js'

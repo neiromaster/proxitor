@@ -28,9 +28,7 @@ async function main() {
       verbose: parsed.options.verbose,
     })
 
-    const server = createProxyServer(config)
-
-    server.listen(config.port, config.host, () => {
+    createProxyServer(config, () => {
       logger.ready(`Proxitor proxy listening on ${config.host}:${config.port}`)
       logger.info(`Routing requests to OpenRouter`)
     })

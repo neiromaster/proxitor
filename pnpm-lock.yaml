@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  '@hono/node-server':
+    specifier: ^2.0.4
+    version: 2.0.4(hono@4.12.23)
   cac:
     specifier: ^7.0.0
     version: 7.0.0
@@ -651,6 +654,15 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
+
+  /@hono/node-server@2.0.4(hono@4.12.23):
+    resolution: {integrity: sha512-Ut3y0dMMPWy6bZ2kVfx25EOVbZlm15dhF4mOsezMlhpNHy+4MkU1qN9Y6lnruYi4wPmFzimGX2X7LF/FwHli4A==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
+    dependencies:
+      hono: 4.12.23
+    dev: false
 
   /@inquirer/external-editor@1.0.3(@types/node@25.9.1):
     resolution: {integrity: sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA==}

@@ -11,14 +11,21 @@ port: 8080
 openrouterKey: '' # Or set OPENROUTER_API_KEY env var
 openrouterBaseUrl: 'https://openrouter.ai/api/v1'
 
-# Per-CLI model overrides
-# models:
-#   claude-code: "anthropic/claude-sonnet-4-6"
-#   codex: "openai/gpt-4.1"
+# Provider routing — controls which upstream provider handles requests
+# provider:
+#   # Use exclusively this provider (no fallbacks)
+#   only: "deepinfra"
+#
+#   # OR: prefer this provider and optionally allow fallbacks
+#   order: "anthropic"
+#   allowFallbacks: true
 
-# Custom headers added to proxied requests
-# headers:
-#   X-Custom-Header: "value"
+# Request body size limit
+# bodyLimit: "50mb"
+
+# OpenRouter attribution
+# attributionReferer: "http://localhost"
+# attributionTitle: "proxitor"
 
 # Enable verbose logging
 verbose: false

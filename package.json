@@ -62,6 +62,7 @@
   },
   "homepage": "https://github.com/neiromaster/proxitor#readme",
   "dependencies": {
+    "@hono/node-server": "^2.0.4",
     "cac": "^7.0.0",
     "conf": "^15.1.0",
     "consola": "^3.4.2",

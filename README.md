@@ -4,7 +4,7 @@
 
 ## Why
 
-When using AI CLI tools like Claude Code or Codex, you may want to route requests through OpenRouter for model selection, cost control, or unified API access. Proxitor sits between your CLI tools and the provider, forwarding requests to OpenRouter with the right configuration.
+When using AI CLI tools like Claude Code or Codex, you may want to route requests through OpenRouter for model selection, cost control, or unified API access. Proxitor sits between your CLI tools and OpenRouter, injecting [provider routing](https://openrouter.ai/docs/api/reference/streaming) into requests and streaming responses back unchanged — including SSE streams from LLM models.
 
 ## Install
 
@@ -62,6 +62,29 @@ See [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) for a full 
 ### Priority
 
 CLI flags > config file > environment variables > defaults
+
+### Provider routing
+
+Control which upstream provider handles your requests:
+
+```yaml
+# Use only one provider (no fallbacks)
+provider:
+  only: "deepinfra"
+
+# OR: prefer a provider with fallbacks
+provider:
+  order: "anthropic"
+  allowFallbacks: true
+```
+
+Without `provider` configured, the proxy forwards requests unchanged.
+
+### Health check
+
+```bash
+curl http://localhost:8080/health
+```
 
 ## CLI Options
 
