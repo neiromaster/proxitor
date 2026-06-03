@@ -30,10 +30,5 @@ npm-debug.log*
 # Test
 .vitest/
 
-# Changeset
-.changeset/*.md
-!.changeset/README.md
-!.changeset/config.json
-
 # Lefthook
 lefthook-local.yml
