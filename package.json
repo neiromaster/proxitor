@@ -26,6 +26,8 @@
     "prepare": "lefthook install",
     "build": "tsdown",
     "dev": "tsdown --watch",
+    "start": "node dist/cli.mjs",
+    "start:dev": "pnpm run build && pnpm run start",
     "lint": "biome lint ./src",
     "lint:fix": "biome lint --fix ./src",
     "format": "biome format --write ./src",
