@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { toArray } from './utils.js'
 
@@ -102,6 +103,7 @@ const DEFAULT_CONFIG: ProxyConfig = {
 
 type LoadConfigOptions = {
   configPath?: string
+  noConfig?: boolean
   host?: string
   openrouterKey?: string
   port?: number
@@ -206,10 +208,12 @@ export function resolveModelConfig(
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
   const config = { ...DEFAULT_CONFIG }
 
-  const configPath = findConfigFile(options.configPath)
-  if (configPath) {
-    const fileConfig = readConfigFile(configPath)
-    Object.assign(config, fileConfig)
+  if (!options.noConfig) {
+    const configPath = findConfigFile(options.configPath)
+    if (configPath) {
+      const fileConfig = readConfigFile(configPath)
+      Object.assign(config, fileConfig)
+    }
   }
 
   if (options.host) config.host = options.host
@@ -231,15 +235,21 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
   return config
 }
 
+/** Resolve XDG config directory: $XDG_CONFIG_HOME/proxitor or ~/.config/proxitor */
+function getXdgConfigDir(): string {
+  const xdgHome = process.env.XDG_CONFIG_HOME
+  return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor')
+}
+
 function findConfigFile(explicitPath?: string): string | null {
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
       throw new Error(`Config file not found: ${explicitPath}`)
     }
-    return explicitPath
+    return resolve(explicitPath)
   }
 
-  const candidates = [
+  const localCandidates = [
     'proxitor.config.yaml',
     'proxitor.config.yml',
     'proxitor.config.json',
@@ -248,8 +258,18 @@ function findConfigFile(explicitPath?: string): string | null {
     '.proxitor.json',
   ]
 
-  for (const candidate of candidates) {
+  for (const candidate of localCandidates) {
     const fullPath = resolve(candidate)
+    if (existsSync(fullPath)) {
+      return fullPath
+    }
+  }
+
+  const xdgDir = getXdgConfigDir()
+  const xdgCandidates = ['config.yaml', 'config.yml', 'config.json']
+
+  for (const candidate of xdgCandidates) {
+    const fullPath = join(xdgDir, candidate)
     if (existsSync(fullPath)) {
       return fullPath
     }

@@ -16,6 +16,7 @@ cli
   .option('-p, --port <port>', 'Proxy server port', { default: 8080 })
   .option('-h, --host <host>', 'Proxy server host', { default: '0.0.0.0' })
   .option('-c, --config <path>', 'Path to config file')
+  .option('--no-config', 'Skip config file discovery')
   .option('--openrouter-key <key>', 'OpenRouter API key')
   .option('--verbose', 'Enable verbose logging')
 
@@ -24,7 +25,9 @@ const parsed = cli.parse()
 async function main() {
   try {
     const config = await loadConfig({
-      configPath: parsed.options.config,
+      configPath:
+        typeof parsed.options.config === 'string' ? parsed.options.config : undefined,
+      noConfig: parsed.options.config === false,
       port: parsed.options.port,
       host: parsed.options.host,
       openrouterKey: parsed.options.openrouterKey,
