@@ -49,6 +49,7 @@
     "ai",
     "llm"
   ],
+  "packageManager": "pnpm@11.5.1",
   "author": "neiromaster",
   "license": "MIT",
   "engines": {
