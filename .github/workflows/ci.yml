@@ -1,29 +1,37 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+  push:
+    branches:
+      - main
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   check:
+    name: Check workspace
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     strategy:
       matrix:
-        node-version: [20, 22]
-    steps:
-      - uses: actions/checkout@v4
+        node-version: [22, 24]
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -31,10 +39,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type check
+      - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Biome check (lint + format)
+      - name: Lint
         run: pnpm run check:biome
 
       - name: Test
@@ -42,33 +50,3 @@ jobs:
 
       - name: Build
         run: pnpm run build
-
-  release:
-    needs: check
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Create Release Pull Request or Publish
-        uses: changesets/action@v1
-        with:
-          publish: pnpm run release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

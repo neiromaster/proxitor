@@ -3,10 +3,10 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
   entry: ['src/cli.ts', 'src/index.ts'],
   format: ['esm', 'cjs'],
-  dts: { resolve: true },
+  dts: { resolver: 'tsc' },
   clean: true,
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   sourcemap: true,
   hash: false,
 })

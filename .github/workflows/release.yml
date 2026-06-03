@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version or publish packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.repository == 'neiromaster/proxitor'
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Setup npm for Trusted Publishing
+        run: |
+          npm install -g npm@10.9.8
+          npm install -g npm@^11.5.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run check:biome
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Version or publish packages
+        uses: changesets/action@v1
+        with:
+          version: pnpm run version-packages
+          publish: pnpm run release
+          createGithubReleases: true
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true

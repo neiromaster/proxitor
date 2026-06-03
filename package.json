@@ -37,7 +37,8 @@
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run check:biome && npm run test",
     "prepublishOnly": "npm run build",
-    "release": "npm run check && npm run build && changeset publish"
+    "version-packages": "changeset version",
+    "release": "changeset publish"
   },
   "keywords": [
     "proxy",
@@ -51,7 +52,7 @@
   "author": "neiromaster",
   "license": "MIT",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "repository": {
     "type": "git",
