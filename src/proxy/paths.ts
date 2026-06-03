@@ -18,15 +18,16 @@ export function shouldInject(method: string, path: string): boolean {
   return method === 'POST' && INJECT_PATHS.has(path)
 }
 
-/** Strip /v1 prefix: /v1/chat/completions → /chat/completions */
-export function toUpstreamPath(originalUrl: string): string {
-  if (originalUrl.startsWith('/v1')) {
-    return originalUrl.slice('/v1'.length)
+/** Strip /v1 prefix from path: /v1/chat/completions → /chat/completions */
+export function toUpstreamPath(pathname: string): string {
+  if (pathname.startsWith('/v1')) {
+    return pathname.slice('/v1'.length)
   }
-  return originalUrl
+  return pathname
 }
 
 /** Build full upstream URL from request and config */
-export function buildUpstreamUrl(originalUrl: string, config: ProxyConfig): string {
-  return `${config.openrouterBaseUrl}${toUpstreamPath(originalUrl)}`
+export function buildUpstreamUrl(requestUrl: string, config: ProxyConfig): string {
+  const { pathname } = new URL(requestUrl)
+  return `${config.openrouterBaseUrl}${toUpstreamPath(pathname)}`
 }

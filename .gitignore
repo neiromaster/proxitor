@@ -32,3 +32,6 @@ npm-debug.log*
 
 # Lefthook
 lefthook-local.yml
+
+# Config
+proxitor.config.yaml
