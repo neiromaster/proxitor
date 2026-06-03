@@ -32,7 +32,9 @@ describe('loadConfig', () => {
 
   it('should throw if no API key is provided', async () => {
     delete process.env.OPENROUTER_API_KEY
-    await expect(loadConfig({})).rejects.toThrow('OpenRouter API key is required')
+    await expect(loadConfig({ noConfig: true })).rejects.toThrow(
+      'OpenRouter API key is required',
+    )
   })
 })
 
