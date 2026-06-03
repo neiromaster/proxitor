@@ -1,6 +1,12 @@
 import type { ProxyConfig } from '../config.js'
 
-/** Paths where provider routing is injected into the request body */
+/**
+ * Paths where provider routing is injected into the request body.
+ * All three are OpenRouter-supported endpoints:
+ *   /v1/chat/completions — OpenAI Chat Completions
+ *   /v1/responses        — OpenAI Responses API
+ *   /v1/messages         — Anthropic Messages API
+ */
 export const INJECT_PATHS = new Set([
   '/v1/chat/completions',
   '/v1/responses',

@@ -65,20 +65,85 @@ CLI flags > config file > environment variables > defaults
 
 ### Provider routing
 
-Control which upstream provider handles your requests:
+Control which upstream provider handles your requests. Both `only` and `order` accept a single string or an array:
 
 ```yaml
-# Use only one provider (no fallbacks)
+# Use a single provider exclusively (no fallbacks)
 provider:
   only: "deepinfra"
 
-# OR: prefer a provider with fallbacks
+# Use multiple providers exclusively
+provider:
+  only:
+    - "openai"
+    - "azure"
+
+# Prefer a provider, allow fallbacks
 provider:
   order: "anthropic"
   allowFallbacks: true
+
+# Try providers in order
+provider:
+  order:
+    - "anthropic"
+    - "deepinfra"
+  allowFallbacks: false
 ```
 
-Without `provider` configured, the proxy forwards requests unchanged.
+Without `provider` configured, the proxy forwards requests unchanged.  
+See the [OpenRouter provider routing docs](https://openrouter.ai/docs/guides/routing/provider-selection) for the full list of supported providers.
+
+### Per-model overrides
+
+Route different models to different providers using `modelOverrides`. Keys are exact model names or prefix patterns (e.g. `claude-*`). Overrides layer on top of global settings — `provider` replaces the global value, `headers` merge:
+
+```yaml
+provider:
+  order: "deepinfra"
+
+modelOverrides:
+  # Exact match — force Anthropic models to Anthropic's own infrastructure
+  "claude-sonnet-4-6":
+    provider:
+      only: "anthropic"
+
+  # Wildcard — all Claude models prefer Anthropic with fallback
+  "claude-*":
+    provider:
+      order:
+        - "anthropic"
+        - "deepinfra"
+
+  # Wildcard — GPT models to OpenAI/Azure, plus a custom header
+  "gpt-*":
+    provider:
+      only:
+        - "openai"
+        - "azure"
+    headers:
+      X-Model-Family: "gpt"
+```
+
+When a model name matches multiple patterns, the most specific match wins (exact name > longer prefix > shorter prefix).
+
+### Custom headers
+
+Add custom headers to all proxied requests, or per-model via `modelOverrides`:
+
+```yaml
+# Global custom headers
+headers:
+  X-Custom-Header: "my-value"
+  X-Environment: "production"
+
+# Per-model headers (merged on top of global)
+modelOverrides:
+  "claude-*":
+    headers:
+      X-Custom-Header: "claude-override"  # overrides global value
+      X-Extra: "only-for-claude"          # added only for this model
+```
 
 ### Health check
 
@@ -88,7 +153,7 @@ curl http://localhost:8080/health
 
 ## CLI Options
 
-```
+```text
 proxitor [options]
 
 Options:
