@@ -105,6 +105,86 @@ describe('buildProviderRouting', () => {
       allow_fallbacks: true,
     })
   })
+
+  it('should return undefined for empty array in "only"', () => {
+    expect(buildProviderRouting({ only: [] })).toBeUndefined()
+  })
+
+  it('should return undefined for empty array in "order"', () => {
+    expect(buildProviderRouting({ order: [] })).toBeUndefined()
+  })
+
+  it('should build "ignore" routing with array', () => {
+    expect(buildProviderRouting({ ignore: ['deepinfra'] })).toEqual({
+      ignore: ['deepinfra'],
+    })
+  })
+
+  it('should build routing with sort string', () => {
+    expect(buildProviderRouting({ sort: 'throughput' })).toEqual({ sort: 'throughput' })
+  })
+
+  it('should build routing with sort object', () => {
+    expect(buildProviderRouting({ sort: { by: 'price', partition: 'none' } })).toEqual({
+      sort: { by: 'price', partition: 'none' },
+    })
+  })
+
+  it('should build routing with quantizations', () => {
+    expect(buildProviderRouting({ quantizations: ['fp8', 'int4'] })).toEqual({
+      quantizations: ['fp8', 'int4'],
+    })
+  })
+
+  it('should build routing with maxPrice', () => {
+    expect(buildProviderRouting({ maxPrice: { prompt: 1, completion: 2 } })).toEqual({
+      max_price: { prompt: 1, completion: 2 },
+    })
+  })
+
+  it('should build routing with requireParameters', () => {
+    expect(buildProviderRouting({ requireParameters: true })).toEqual({
+      require_parameters: true,
+    })
+  })
+
+  it('should build routing with dataCollection', () => {
+    expect(buildProviderRouting({ dataCollection: 'deny' })).toEqual({
+      data_collection: 'deny',
+    })
+  })
+
+  it('should build routing with performance preferences', () => {
+    expect(
+      buildProviderRouting({
+        preferredMinThroughput: { p90: 50 },
+        preferredMaxLatency: { p90: 3 },
+      }),
+    ).toEqual({
+      preferred_min_throughput: { p90: 50 },
+      preferred_max_latency: { p90: 3 },
+    })
+  })
+
+  it('should combine multiple fields', () => {
+    expect(
+      buildProviderRouting({
+        order: ['anthropic'],
+        allowFallbacks: false,
+        requireParameters: true,
+        dataCollection: 'deny',
+      }),
+    ).toEqual({
+      order: ['anthropic'],
+      allow_fallbacks: false,
+      require_parameters: true,
+      data_collection: 'deny',
+    })
+  })
+
+  it('should return undefined when all fields resolve to empty', () => {
+    expect(buildProviderRouting({ only: [], ignore: [] })).toBeUndefined()
+  })
 })
 
 describe('resolveModelConfig', () => {

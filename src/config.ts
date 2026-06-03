@@ -3,13 +3,56 @@ import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { toArray } from './utils.js'
 
+/** Percentile cutoffs for performance thresholds */
+export type PercentileCutoffs = {
+  p50?: number
+  p75?: number
+  p90?: number
+  p99?: number
+}
+
+/** Provider sorting options */
+export type ProviderSort =
+  | 'price'
+  | 'throughput'
+  | 'latency'
+  | { by: 'price' | 'throughput' | 'latency'; partition?: 'model' | 'none' }
+
+/** Maximum pricing for a request */
+export type MaxPrice = {
+  prompt?: number
+  completion?: number
+  request?: number
+  image?: number
+}
+
 export type ProviderConfig = {
   /** Allow only these providers (e.g. "deepinfra" or ["anthropic", "openai"]) */
   only?: string | string[]
   /** Try providers in this order (e.g. "anthropic" or ["openai", "together"]) */
   order?: string | string[]
+  /** Ignore these providers (mirror of only — skip specific providers) */
+  ignore?: string | string[]
   /** Allow fallback to other providers (default: true) */
   allowFallbacks?: boolean
+  /** Sort providers by price, throughput, or latency */
+  sort?: ProviderSort
+  /** Filter by quantization levels (e.g. ["fp8", "int4"]) */
+  quantizations?: string[]
+  /** Maximum pricing to accept */
+  maxPrice?: MaxPrice
+  /** Only use providers that support all request parameters (default: false) */
+  requireParameters?: boolean
+  /** Control data collection policy: "allow" or "deny" (default: "allow") */
+  dataCollection?: 'allow' | 'deny'
+  /** Restrict routing to Zero Data Retention endpoints */
+  zdr?: boolean
+  /** Restrict routing to models that allow text distillation */
+  enforceDistillableText?: boolean
+  /** Preferred minimum throughput (tokens/sec) */
+  preferredMinThroughput?: number | PercentileCutoffs
+  /** Preferred maximum latency (seconds) */
+  preferredMaxLatency?: number | PercentileCutoffs
 }
 
 /** Per-model override: layers on top of global config */
@@ -65,23 +108,52 @@ type LoadConfigOptions = {
   verbose?: boolean
 }
 
+/** Fields that need toArray normalization (string | string[] → string[] | undefined) */
+const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
+  { key: 'only', apiName: 'only' },
+  { key: 'order', apiName: 'order' },
+  { key: 'ignore', apiName: 'ignore' },
+  { key: 'quantizations', apiName: 'quantizations' },
+] as const
+
+/** Direct camelCase → snake_case field mappings */
+const DIRECT_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
+  { key: 'sort', apiName: 'sort' },
+  { key: 'maxPrice', apiName: 'max_price' },
+  { key: 'requireParameters', apiName: 'require_parameters' },
+  { key: 'dataCollection', apiName: 'data_collection' },
+  { key: 'zdr', apiName: 'zdr' },
+  { key: 'enforceDistillableText', apiName: 'enforce_distillable_text' },
+  { key: 'preferredMinThroughput', apiName: 'preferred_min_throughput' },
+  { key: 'preferredMaxLatency', apiName: 'preferred_max_latency' },
+] as const
+
 /** Build the provider routing object for OpenRouter request body injection */
 export function buildProviderRouting(
   provider?: ProviderConfig,
 ): Record<string, unknown> | undefined {
   if (!provider) return undefined
 
-  if (provider.only) {
-    const only = toArray(provider.only)
-    return only ? { only } : undefined
+  const result: Record<string, unknown> = {}
+
+  for (const { key, apiName } of ARRAY_FIELDS) {
+    const value = provider[key]
+    if (value !== undefined) {
+      const normalized = toArray(value as string | string[])
+      if (normalized) result[apiName] = normalized
+    }
   }
 
-  if (provider.order) {
-    const order = toArray(provider.order)
-    return order ? { order, allow_fallbacks: provider.allowFallbacks ?? true } : undefined
+  for (const { key, apiName } of DIRECT_FIELDS) {
+    const value = provider[key]
+    if (value !== undefined) result[apiName] = value
   }
 
-  return undefined
+  if (result.order) {
+    result.allow_fallbacks = provider.allowFallbacks ?? true
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 /** Score a pattern against a model name. Higher = better match. -1 = no match. */

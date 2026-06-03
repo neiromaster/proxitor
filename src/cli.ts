@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { cac } from 'cac'
+import { config as loadDotenv } from 'dotenv'
 import { loadConfig } from './config.js'
 import { logger } from './logger.js'
-import { createProxyServer } from './proxy.js'
+import { startProxyServer } from './proxy.js'
 import { version } from './version.js'
+
+loadDotenv()
 
 const cli = cac('proxitor')
 
@@ -28,7 +31,7 @@ async function main() {
       verbose: parsed.options.verbose,
     })
 
-    createProxyServer(config, () => {
+    startProxyServer(config, () => {
       logger.ready(`Proxitor proxy listening on ${config.host}:${config.port}`)
       logger.info(`Routing requests to OpenRouter`)
     })

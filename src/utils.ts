@@ -1,7 +1,8 @@
-/** Normalize a single string or array of strings to an array */
+/** Normalize a single string or array of strings to an array. Returns undefined for empty arrays. */
 export function toArray(value: string | string[] | undefined): string[] | undefined {
   if (value === undefined) return undefined
-  return Array.isArray(value) ? [...value] : [value]
+  const arr = Array.isArray(value) ? [...value] : [value]
+  return arr.length > 0 ? arr : undefined
 }
 
 /** Try to parse an ArrayBuffer as JSON. Returns undefined on failure or empty body. */

@@ -13,12 +13,48 @@ openrouterBaseUrl: 'https://openrouter.ai/api/v1'
 
 # Provider routing — controls which upstream provider handles requests
 # provider:
-#   # Use exclusively this provider (no fallbacks)
+#   # Allow only specific providers (string or array)
 #   only: "deepinfra"
+#   # only:
+#   #   - "openai"
+#   #   - "azure"
 #
-#   # OR: prefer this provider and optionally allow fallbacks
+#   # OR: try providers in this order, optionally allow fallbacks
 #   order: "anthropic"
 #   allowFallbacks: true
+#
+#   # Ignore specific providers
+#   ignore: "deepinfra"
+#
+#   # Sort providers by price, throughput, or latency
+#   sort: "throughput"
+#   # sort:
+#   #   by: "price"
+#   #   partition: "none"
+#
+#   # Filter by quantization level
+#   quantizations:
+#     - "fp8"
+#
+#   # Maximum pricing to accept
+#   maxPrice:
+#     prompt: 1       # $/M tokens
+#     completion: 2   # $/M tokens
+#
+#   # Only use providers supporting all request parameters
+#   requireParameters: true
+#
+#   # Data collection policy: "allow" or "deny"
+#   dataCollection: "deny"
+#
+#   # Zero Data Retention enforcement
+#   zdr: true
+#
+#   # Performance preferences (soft thresholds, not hard limits)
+#   preferredMinThroughput:
+#     p90: 50  # tokens/sec
+#   preferredMaxLatency:
+#     p90: 3   # seconds
 
 # Custom headers to add to all proxied requests
 # headers:

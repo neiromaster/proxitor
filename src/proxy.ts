@@ -215,3 +215,36 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     onReady,
   )
 }
+
+/** Shutdown deadline: force-close after this many ms */
+const SHUTDOWN_TIMEOUT_MS = 10_000
+
+/** Start the proxy with graceful shutdown on SIGTERM/SIGINT */
+export function startProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
+  const server = createProxyServer(config, onReady)
+
+  let shuttingDown = false
+
+  function shutdown(signal: string) {
+    if (shuttingDown) return
+    shuttingDown = true
+
+    logger.info(`${signal} received — draining active connections…`)
+
+    const timer = setTimeout(() => {
+      logger.warn('Forcing shutdown — drain timeout exceeded')
+      process.exit(1)
+    }, SHUTDOWN_TIMEOUT_MS)
+
+    server.close(() => {
+      clearTimeout(timer)
+      logger.info('All connections drained — goodbye')
+      process.exit(0)
+    })
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT', () => shutdown('SIGINT'))
+
+  return server
+}
