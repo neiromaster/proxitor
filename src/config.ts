@@ -1,14 +1,29 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
+import { toArray } from './utils.js'
 
 export type ProviderConfig = {
-  /** Use only this provider (e.g. "deepinfra") */
-  only?: string
-  /** Try providers in this order (single slug, e.g. "anthropic") */
-  order?: string
+  /** Allow only these providers (e.g. "deepinfra" or ["anthropic", "openai"]) */
+  only?: string | string[]
+  /** Try providers in this order (e.g. "anthropic" or ["openai", "together"]) */
+  order?: string | string[]
   /** Allow fallback to other providers (default: true) */
   allowFallbacks?: boolean
+}
+
+/** Per-model override: layers on top of global config */
+export type ModelOverride = {
+  /** Override provider routing for matching models */
+  provider?: ProviderConfig
+  /** Additional headers to merge for matching models */
+  headers?: Record<string, string>
+}
+
+/** Result of merging global config with a model-specific override */
+export type ResolvedModelConfig = {
+  provider?: ProviderConfig
+  headers?: Record<string, string>
 }
 
 export type ProxyConfig = {
@@ -19,16 +34,16 @@ export type ProxyConfig = {
   verbose: boolean
   /** Request body size limit (default: "50mb") */
   bodyLimit: string
-  /** Provider routing configuration */
+  /** Provider routing configuration (global default) */
   provider?: ProviderConfig
   /** HTTP-Referer for OpenRouter attribution */
   attributionReferer: string
   /** X-Title for OpenRouter attribution */
   attributionTitle: string
-  /** Map of CLI tool names to their model overrides */
-  models?: Record<string, string>
-  /** Custom headers to add to proxied requests */
+  /** Custom headers to add to proxied requests (global default) */
   headers?: Record<string, string>
+  /** Per-model config overrides. Keys are exact model names or prefix patterns (e.g. "claude-*") */
+  modelOverrides?: Record<string, ModelOverride>
 }
 
 const DEFAULT_CONFIG: ProxyConfig = {
@@ -52,23 +67,68 @@ type LoadConfigOptions = {
 
 /** Build the provider routing object for OpenRouter request body injection */
 export function buildProviderRouting(
-  config: ProxyConfig,
+  provider?: ProviderConfig,
 ): Record<string, unknown> | undefined {
-  const { provider } = config
   if (!provider) return undefined
 
   if (provider.only) {
-    return { only: [provider.only] }
+    const only = toArray(provider.only)
+    return only ? { only } : undefined
   }
 
   if (provider.order) {
-    return {
-      order: [provider.order],
-      allow_fallbacks: provider.allowFallbacks ?? true,
-    }
+    const order = toArray(provider.order)
+    return order ? { order, allow_fallbacks: provider.allowFallbacks ?? true } : undefined
   }
 
   return undefined
+}
+
+/** Score a pattern against a model name. Higher = better match. -1 = no match. */
+export function matchScore(pattern: string, modelName: string): number {
+  if (pattern === modelName) return modelName.length + 1000
+
+  if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
+    return pattern.length
+  }
+
+  return -1
+}
+
+/** Resolve the effective config for a given model by merging global defaults with the best-matching override */
+export function resolveModelConfig(
+  config: ProxyConfig,
+  modelName?: string,
+): ResolvedModelConfig {
+  const result: ResolvedModelConfig = {
+    provider: config.provider,
+    headers: config.headers ? { ...config.headers } : undefined,
+  }
+
+  if (!modelName || !config.modelOverrides) return result
+
+  let bestPattern: string | null = null
+  let bestScore = -1
+
+  for (const pattern of Object.keys(config.modelOverrides)) {
+    const score = matchScore(pattern, modelName)
+    if (score > bestScore) {
+      bestScore = score
+      bestPattern = pattern
+    }
+  }
+
+  if (bestPattern) {
+    const override = config.modelOverrides[bestPattern]
+    if (override?.provider !== undefined) {
+      result.provider = override.provider
+    }
+    if (override?.headers) {
+      result.headers = { ...(result.headers ?? {}), ...override.headers }
+    }
+  }
+
+  return result
 }
 
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {

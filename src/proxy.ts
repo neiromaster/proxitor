@@ -1,15 +1,14 @@
 import { type HttpBindings, type ServerType, serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import { buildProviderRouting, type ProxyConfig } from './config.js'
+import { buildProviderRouting, type ProxyConfig, resolveModelConfig } from './config.js'
 import { logger } from './logger.js'
 import { buildRequestHeaders, buildResponseHeaders } from './proxy/headers.js'
-import { injectProvider } from './proxy/inject.js'
+import { extractModel, injectProvider } from './proxy/inject.js'
 import { buildUpstreamUrl, shouldInject } from './proxy/paths.js'
 
 type ProxyContext = {
   Variables: {
     config: ProxyConfig
-    providerRouting: Record<string, unknown> | undefined
   }
   Bindings: HttpBindings
 }
@@ -27,16 +26,6 @@ function readRequestBody(
   }
 
   return raw.byteLength > 0 ? raw : undefined
-}
-
-async function getBody(
-  request: Request,
-  method: string,
-  inject: boolean,
-  providerRouting: Record<string, unknown> | undefined,
-): Promise<ArrayBuffer | undefined> {
-  const raw = await request.arrayBuffer()
-  return readRequestBody(method, raw, inject, providerRouting as Record<string, unknown>)
 }
 
 async function fetchUpstream(
@@ -65,15 +54,117 @@ function buildUpstreamResponse(upstream: Response, method: string): Response {
   return new Response(upstream.body, { status: upstream.status, headers })
 }
 
+/** Read and process the request body, returning an error response on failure */
+async function readRawBody(
+  request: Request,
+): Promise<{ ok: true; body: ArrayBuffer } | { ok: false; response: Response }> {
+  try {
+    const body = await request.arrayBuffer()
+    return { ok: true, body }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to read request body'
+    logger.error(message)
+    return {
+      ok: false,
+      response: Response.json(
+        { error: { message, type: 'proxy_request_error' } },
+        { status: 400 },
+      ),
+    }
+  }
+}
+
+type ResolvedRequest = {
+  inject: boolean
+  body: ArrayBuffer | undefined
+  modelName: string | undefined
+  headers: Record<string, string> | undefined
+  error?: Response
+}
+
+/** Resolve per-request config: extract model, resolve overrides, build routing and body */
+function resolveRequest(
+  rawBody: ArrayBuffer,
+  config: ProxyConfig,
+  method: string,
+  path: string,
+): ResolvedRequest {
+  const modelName = extractModel(rawBody)
+  const resolved = resolveModelConfig(config, modelName)
+  const providerRouting = buildProviderRouting(resolved.provider)
+  const inject = shouldInject(method, path) && providerRouting !== undefined
+
+  let body: ArrayBuffer | undefined
+  try {
+    body = readRequestBody(
+      method,
+      rawBody,
+      inject,
+      providerRouting as Record<string, unknown>,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to process request body'
+    logger.error(message)
+    return {
+      inject,
+      body: undefined,
+      modelName,
+      headers: resolved.headers,
+      error: new Response(
+        JSON.stringify({ error: { message, type: 'proxy_request_error' } }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      ),
+    }
+  }
+
+  return { inject, body, modelName, headers: resolved.headers }
+}
+
+/** Execute upstream fetch, returning appropriate error responses on failure */
+async function executeUpstream(
+  upstreamUrl: string,
+  method: string,
+  headers: Record<string, string>,
+  body: ArrayBuffer | undefined,
+  signal: AbortSignal,
+  path: string,
+  startedAt: number,
+): Promise<Response> {
+  let upstream: Response
+  try {
+    upstream = await fetchUpstream(upstreamUrl, method, headers, body, signal)
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      logger.warn(`Aborted: ${method} ${path}`)
+      return new Response(null, { status: 499 })
+    }
+
+    logger.error('Upstream fetch error:', err)
+    return Response.json(
+      {
+        error: {
+          message: 'Proxy failed to reach upstream',
+          type: 'proxy_upstream_error',
+        },
+      },
+      { status: 502 },
+    )
+  }
+
+  logger.info(`${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`)
+  return buildUpstreamResponse(upstream, method)
+}
+
 export function createProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
   const app = new Hono<ProxyContext>()
-  const providerRouting = buildProviderRouting(config)
 
   app.get('/health', c => {
+    const globalRouting = buildProviderRouting(config.provider)
     return c.json({
       ok: true,
       upstream: config.openrouterBaseUrl,
-      provider: providerRouting ?? 'not configured',
+      provider: globalRouting ?? 'not configured',
+      modelOverrides: config.modelOverrides ? Object.keys(config.modelOverrides) : [],
     })
   })
 
@@ -81,57 +172,38 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     const method = c.req.method
     const path = new URL(c.req.url).pathname
     const upstreamUrl = buildUpstreamUrl(c.req.url, config)
-    const inject = shouldInject(method, path) && providerRouting !== undefined
     const startedAt = Date.now()
 
-    let body: ArrayBuffer | undefined
-    try {
-      body = await getBody(c.req.raw, method, inject, providerRouting)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to read request body'
-      logger.error(message)
-      return c.json({ error: { message, type: 'proxy_request_error' } }, 400)
-    }
+    const raw = await readRawBody(c.req.raw)
+    if (!raw.ok) return raw.response
 
-    const headers = buildRequestHeaders(c.req.raw.headers, config, inject)
+    const resolved = resolveRequest(raw.body, config, method, path)
+    if (resolved.error) return resolved.error
+
+    const headers = buildRequestHeaders(
+      c.req.raw.headers,
+      config,
+      resolved.inject,
+      resolved.headers,
+    )
 
     const controller = new AbortController()
-    c.req.raw.signal.addEventListener('abort', () => {
-      controller.abort()
-    })
+    c.req.raw.signal.addEventListener('abort', () => controller.abort())
 
-    logger.info(`${method} ${path} → ${upstreamUrl}${inject ? ' [inject]' : ''}`)
+    const modelLog = resolved.modelName ? ` model=${resolved.modelName}` : ''
+    logger.info(
+      `${method} ${path} → ${upstreamUrl}${resolved.inject ? ' [inject]' : ''}${modelLog}`,
+    )
 
-    let upstream: Response
-    try {
-      upstream = await fetchUpstream(
-        upstreamUrl,
-        method,
-        headers,
-        body,
-        controller.signal,
-      )
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        logger.warn(`Aborted: ${method} ${path}`)
-        return new Response(null, { status: 499 })
-      }
-
-      logger.error('Upstream fetch error:', err)
-      return c.json(
-        {
-          error: {
-            message: 'Proxy failed to reach upstream',
-            type: 'proxy_upstream_error',
-          },
-        },
-        502,
-      )
-    }
-
-    logger.info(`${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`)
-
-    return buildUpstreamResponse(upstream, method)
+    return executeUpstream(
+      upstreamUrl,
+      method,
+      headers,
+      resolved.body,
+      controller.signal,
+      path,
+      startedAt,
+    )
   })
 
   return serve(

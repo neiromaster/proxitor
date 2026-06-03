@@ -20,6 +20,29 @@ openrouterBaseUrl: 'https://openrouter.ai/api/v1'
 #   order: "anthropic"
 #   allowFallbacks: true
 
+# Custom headers to add to all proxied requests
+# headers:
+#   X-Custom-Header: "my-value"
+
+# Per-model config overrides. Keys are exact model names or prefix patterns.
+# Overrides layer on top of global settings (provider replaces, headers merge).
+# modelOverrides:
+#   "claude-sonnet-4-6":
+#     provider:
+#       only: "anthropic"
+#   "claude-*":
+#     provider:
+#       order:
+#         - "anthropic"
+#         - "deepinfra"
+#   "gpt-*":
+#     provider:
+#       only:
+#         - "openai"
+#         - "azure"
+#     headers:
+#       X-Model-Family: "gpt"
+
 # Request body size limit
 # bodyLimit: "50mb"
 

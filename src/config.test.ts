@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { loadConfig } from './config.js'
+import {
+  buildProviderRouting,
+  loadConfig,
+  matchScore,
+  type ProxyConfig,
+  resolveModelConfig,
+} from './config.js'
 
 describe('loadConfig', () => {
   it('should use defaults when no config provided', async () => {
@@ -27,5 +33,192 @@ describe('loadConfig', () => {
   it('should throw if no API key is provided', async () => {
     delete process.env.OPENROUTER_API_KEY
     await expect(loadConfig({})).rejects.toThrow('OpenRouter API key is required')
+  })
+})
+
+describe('matchScore', () => {
+  it('should return high score for exact match', () => {
+    expect(matchScore('claude-sonnet-4-6', 'claude-sonnet-4-6')).toBeGreaterThan(1000)
+  })
+
+  it('should return -1 for no match', () => {
+    expect(matchScore('gpt-4o', 'claude-sonnet-4-6')).toBe(-1)
+  })
+
+  it('should return pattern length for prefix wildcard match', () => {
+    expect(matchScore('claude-*', 'claude-sonnet-4-6')).toBe('claude-*'.length)
+  })
+
+  it('should return -1 when wildcard does not match', () => {
+    expect(matchScore('gpt-*', 'claude-sonnet-4-6')).toBe(-1)
+  })
+
+  it('exact match should beat prefix match', () => {
+    const exact = matchScore('claude-sonnet-4-6', 'claude-sonnet-4-6')
+    const prefix = matchScore('claude-*', 'claude-sonnet-4-6')
+    expect(exact).toBeGreaterThan(prefix)
+  })
+
+  it('longer prefix should beat shorter prefix', () => {
+    const longer = matchScore('claude-sonnet-*', 'claude-sonnet-4-6')
+    const shorter = matchScore('claude-*', 'claude-sonnet-4-6')
+    expect(longer).toBeGreaterThan(shorter)
+  })
+})
+
+describe('buildProviderRouting', () => {
+  it('should return undefined for no provider', () => {
+    expect(buildProviderRouting(undefined)).toBeUndefined()
+  })
+
+  it('should build "only" routing', () => {
+    expect(buildProviderRouting({ only: 'deepinfra' })).toEqual({ only: ['deepinfra'] })
+  })
+
+  it('should build "order" routing with default allow_fallbacks', () => {
+    expect(buildProviderRouting({ order: 'anthropic' })).toEqual({
+      order: ['anthropic'],
+      allow_fallbacks: true,
+    })
+  })
+
+  it('should respect allowFallbacks: false', () => {
+    expect(buildProviderRouting({ order: 'anthropic', allowFallbacks: false })).toEqual({
+      order: ['anthropic'],
+      allow_fallbacks: false,
+    })
+  })
+
+  it('should return undefined for provider with neither only nor order', () => {
+    expect(buildProviderRouting({ allowFallbacks: true })).toBeUndefined()
+  })
+
+  it('should build "only" routing with array of providers', () => {
+    expect(buildProviderRouting({ only: ['anthropic', 'openai'] })).toEqual({
+      only: ['anthropic', 'openai'],
+    })
+  })
+
+  it('should build "order" routing with array of providers', () => {
+    expect(buildProviderRouting({ order: ['openai', 'together'] })).toEqual({
+      order: ['openai', 'together'],
+      allow_fallbacks: true,
+    })
+  })
+})
+
+describe('resolveModelConfig', () => {
+  const baseConfig: ProxyConfig = {
+    host: '0.0.0.0',
+    port: 8080,
+    openrouterKey: 'test-key',
+    openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+    verbose: false,
+    bodyLimit: '50mb',
+    attributionReferer: 'http://localhost',
+    attributionTitle: 'proxitor',
+    provider: { only: 'deepinfra' },
+    headers: { 'X-Global': 'global-value' },
+  }
+
+  it('should return global config when no model name', () => {
+    const resolved = resolveModelConfig(baseConfig)
+    expect(resolved.provider).toEqual({ only: 'deepinfra' })
+    expect(resolved.headers).toEqual({ 'X-Global': 'global-value' })
+  })
+
+  it('should return global config when no modelOverrides defined', () => {
+    const resolved = resolveModelConfig(baseConfig, 'claude-sonnet-4-6')
+    expect(resolved.provider).toEqual({ only: 'deepinfra' })
+    expect(resolved.headers).toEqual({ 'X-Global': 'global-value' })
+  })
+
+  it('should match exact model name', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'claude-sonnet-4-6': {
+          provider: { only: 'anthropic' },
+          headers: { 'X-Custom': 'claude' },
+        },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'claude-sonnet-4-6')
+    expect(resolved.provider).toEqual({ only: 'anthropic' })
+    expect(resolved.headers).toEqual({ 'X-Global': 'global-value', 'X-Custom': 'claude' })
+  })
+
+  it('should match prefix pattern', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'claude-*': {
+          provider: { order: 'anthropic' },
+        },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'claude-opus-4')
+    expect(resolved.provider).toEqual({ order: 'anthropic' })
+    expect(resolved.headers).toEqual({ 'X-Global': 'global-value' })
+  })
+
+  it('should prefer exact match over prefix', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'claude-*': { provider: { order: 'anthropic' } },
+        'claude-sonnet-4-6': { provider: { only: 'anthropic' } },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'claude-sonnet-4-6')
+    expect(resolved.provider).toEqual({ only: 'anthropic' })
+  })
+
+  it('should prefer longer prefix over shorter', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'claude-*': { provider: { only: 'deepinfra' } },
+        'claude-sonnet-*': { provider: { only: 'anthropic' } },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'claude-sonnet-4-6')
+    expect(resolved.provider).toEqual({ only: 'anthropic' })
+  })
+
+  it('should merge headers (override wins on conflict)', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'gpt-*': {
+          headers: { 'X-Global': 'overridden', 'X-New': 'added' },
+        },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'gpt-4o')
+    expect(resolved.headers).toEqual({ 'X-Global': 'overridden', 'X-New': 'added' })
+  })
+
+  it('should preserve global provider when override only sets headers', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'gpt-*': { headers: { 'X-Model': 'gpt' } },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'gpt-4o')
+    expect(resolved.provider).toEqual({ only: 'deepinfra' })
+    expect(resolved.headers).toEqual({ 'X-Global': 'global-value', 'X-Model': 'gpt' })
+  })
+
+  it('should return global config when no pattern matches', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      modelOverrides: {
+        'gpt-*': { provider: { only: 'openai' } },
+      },
+    }
+    const resolved = resolveModelConfig(config, 'llama-3')
+    expect(resolved.provider).toEqual({ only: 'deepinfra' })
   })
 })
