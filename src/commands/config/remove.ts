@@ -1,6 +1,6 @@
 import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
-import { getModelOverrides, removeModelOverride, requireConfigPath } from './shared.js'
+import { getModelOverrides, removeModelOverride, requireConfigPath } from './config.js'
 
 /** Run the interactive "Remove model override" flow. */
 export async function removeOverrideCommand(): Promise<void> {

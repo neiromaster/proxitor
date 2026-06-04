@@ -2,16 +2,79 @@ import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
 import type { ModelOverride } from '../../config-schema.js'
 import { OpenRouterClient } from '../../openrouter/client.js'
-import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js'
-import { parseModelAuthor, parseModelSlug } from '../../openrouter/models.js'
-import { fetchProviders } from '../../openrouter/providers.js'
+import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js'
 import {
-  formatLatency,
-  formatThroughput,
-  getModelOverrides,
-  requireConfigPath,
-  setModelOverride,
-} from './shared.js'
+  fetchProvidersForModel,
+  selectProvidersByMode,
+  selectRoutingMode,
+} from './providers.js'
+
+function formatOverrideHint(override: ModelOverride | undefined): string {
+  if (!override?.provider) return '(no provider routing)'
+  const keys = Object.keys(override.provider)
+  return keys
+    .map(
+      k => `${k}: ${JSON.stringify((override.provider as Record<string, unknown>)?.[k])}`,
+    )
+    .join(', ')
+}
+
+function showCurrentConfig(modelKey: string, current: ModelOverride): void {
+  clack.log.info(`Current config for "${modelKey}":`)
+  if (current.provider) {
+    for (const [field, value] of Object.entries(current.provider)) {
+      clack.log.info(`  provider.${field}: ${JSON.stringify(value)}`)
+    }
+  }
+  if (current.headers) {
+    for (const [name, value] of Object.entries(current.headers)) {
+      clack.log.info(`  headers.${name}: ${value}`)
+    }
+  }
+}
+
+function withoutProvider(current: ModelOverride): ModelOverride {
+  return current.headers ? { headers: current.headers } : {}
+}
+
+async function updateProviderRouting(
+  configPath: string,
+  modelKey: string,
+  current: ModelOverride,
+  apiKey: string,
+): Promise<void> {
+  const isPattern = modelKey.includes('*')
+  const client = new OpenRouterClient(apiKey)
+
+  const mode = await selectRoutingMode('Routing mode')
+  if (isCancel(mode)) return
+
+  if (mode === 'skip') {
+    setModelOverride(configPath, modelKey, withoutProvider(current))
+    clack.outro('✓ Override updated')
+    return
+  }
+
+  const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern)
+  if (!providerOptions) return
+
+  const override = await selectProvidersByMode(mode as string, providerOptions)
+  if (override === null) return
+
+  const updated = withoutProvider(current)
+  if (override.provider) {
+    updated.provider = override.provider as ModelOverride['provider']
+  }
+
+  const save = await clack.confirm({ message: 'Save changes?' })
+  if (isCancel(save) || !save) {
+    clack.outro('Cancelled')
+    return
+  }
+
+  setModelOverride(configPath, modelKey, updated)
+  clack.outro('✓ Override updated')
+}
 
 /** Run the interactive "Edit model override" flow. */
 export async function editOverrideCommand(apiKey: string): Promise<void> {
@@ -27,7 +90,6 @@ export async function editOverrideCommand(apiKey: string): Promise<void> {
     return
   }
 
-  // Select which override to edit
   const selected = await clack.select({
     message: 'Select override to edit',
     options: keys.map(k => ({
@@ -36,26 +98,13 @@ export async function editOverrideCommand(apiKey: string): Promise<void> {
       hint: formatOverrideHint(overrides[k]),
     })),
   })
-
   if (isCancel(selected)) return
 
   const modelKey = selected as string
   const current: ModelOverride = overrides[modelKey] ?? {}
 
-  // Show current config
-  clack.log.info(`Current config for "${modelKey}":`)
-  if (current.provider) {
-    for (const [field, value] of Object.entries(current.provider)) {
-      clack.log.info(`  provider.${field}: ${JSON.stringify(value)}`)
-    }
-  }
-  if (current.headers) {
-    for (const [name, value] of Object.entries(current.headers)) {
-      clack.log.info(`  headers.${name}: ${value}`)
-    }
-  }
+  showCurrentConfig(modelKey, current)
 
-  // What to change
   const target = await clack.select({
     message: 'What to change?',
     options: [
@@ -63,107 +112,9 @@ export async function editOverrideCommand(apiKey: string): Promise<void> {
       { value: 'replace', label: 'Replace entirely' },
     ],
   })
-
   if (isCancel(target)) return
 
   if (target === 'provider' || target === 'replace') {
-    const isPattern = modelKey.includes('*')
-    const client = new OpenRouterClient(apiKey)
-
-    // Fetch providers
-    let providerOptions: Array<{ value: string; label: string; hint?: string }>
-
-    if (isPattern) {
-      const s = clack.spinner()
-      s.start('Fetching providers...')
-      const providers = await fetchProviders(client)
-      providerOptions = providers.map(p => ({ value: p.slug, label: p.name }))
-      s.stop(`${providers.length} providers available`)
-    } else {
-      const author = parseModelAuthor(modelKey)
-      const slug = parseModelSlug(modelKey)
-      const s = clack.spinner()
-      s.start('Fetching providers...')
-      const endpoints = await fetchModelEndpoints(client, author, slug)
-      const unique = getUniqueProviders(endpoints)
-      providerOptions = unique.map(p => {
-        const ep = endpoints.find(e => e.tag === p.tag)
-        return {
-          value: p.tag,
-          label: `${p.providerName} (${p.tag})`,
-          hint: `${formatLatency(ep?.latency_last_30m?.p50 ?? null)} · ${formatThroughput(ep?.throughput_last_30m?.p50 ?? null)}`,
-        }
-      })
-      s.stop(`${unique.length} providers available`)
-    }
-
-    // Routing mode
-    const mode = await clack.select({
-      message: 'Routing mode',
-      options: [
-        { value: 'only', label: 'Use specific providers only' },
-        { value: 'order', label: 'Set provider priority order' },
-        { value: 'ignore', label: 'Ignore specific providers' },
-        { value: 'skip', label: 'Remove provider routing' },
-      ],
-    })
-
-    if (isCancel(mode)) return
-
-    if (mode === 'skip') {
-      const updated: ModelOverride = current.headers ? { headers: current.headers } : {}
-      setModelOverride(configPath, modelKey, updated)
-      clack.outro('✓ Override updated')
-      return
-    }
-
-    // Select providers
-    const selectedProviders = await clack.multiselect({
-      message: 'Select providers',
-      options: providerOptions,
-      required: false,
-    })
-
-    if (isCancel(selectedProviders)) return
-
-    const values = selectedProviders as string[]
-    if (values.length === 0) {
-      const updated: ModelOverride = current.headers ? { headers: current.headers } : {}
-      setModelOverride(configPath, modelKey, updated)
-      clack.outro('✓ Override updated (no providers)')
-      return
-    }
-
-    const providerConfig: Record<string, unknown> = {}
-
-    if (mode === 'only') {
-      providerConfig.only = values.length === 1 ? values[0] : values
-    } else if (mode === 'order') {
-      providerConfig.order = values.length === 1 ? values[0] : values
-      providerConfig.allowFallbacks = true
-    } else if (mode === 'ignore') {
-      providerConfig.ignore = values.length === 1 ? values[0] : values
-    }
-
-    const updated: ModelOverride = { ...current, provider: providerConfig }
-
-    const save = await clack.confirm({ message: 'Save changes?' })
-    if (isCancel(save) || !save) {
-      clack.outro('Cancelled')
-      return
-    }
-
-    setModelOverride(configPath, modelKey, updated)
-    clack.outro('✓ Override updated')
+    await updateProviderRouting(configPath, modelKey, current, apiKey)
   }
-}
-
-function formatOverrideHint(override: ModelOverride | undefined): string {
-  if (!override?.provider) return '(no provider routing)'
-  const keys = Object.keys(override.provider)
-  return keys
-    .map(
-      k => `${k}: ${JSON.stringify((override.provider as Record<string, unknown>)?.[k])}`,
-    )
-    .join(', ')
 }

@@ -1,6 +1,24 @@
 import * as clack from '@clack/prompts'
 import type { ModelOverride } from '../../config-schema.js'
-import { getModelOverrides, requireConfigPath } from './shared.js'
+import { getModelOverrides, requireConfigPath } from './config.js'
+
+function formatOverrideSummary(override: ModelOverride): string {
+  const parts: string[] = []
+
+  if (override.provider) {
+    for (const [field, value] of Object.entries(override.provider)) {
+      if (value !== undefined) parts.push(`${field}: ${JSON.stringify(value)}`)
+    }
+  }
+
+  if (override.headers) {
+    for (const [name, value] of Object.entries(override.headers)) {
+      parts.push(`header ${name}: ${value}`)
+    }
+  }
+
+  return parts.join(', ') || '(empty)'
+}
 
 /** Display all current model overrides. */
 export async function listOverridesCommand(): Promise<void> {
@@ -16,22 +34,8 @@ export async function listOverridesCommand(): Promise<void> {
   clack.log.success(`${keys.length} override(s) in ${configPath}`)
 
   for (const key of keys) {
-    const override: ModelOverride | undefined = overrides[key]
+    const override = overrides[key]
     if (!override) continue
-    const parts: string[] = []
-
-    if (override.provider) {
-      for (const [field, value] of Object.entries(override.provider)) {
-        if (value !== undefined) parts.push(`${field}: ${JSON.stringify(value)}`)
-      }
-    }
-
-    if (override.headers) {
-      for (const [name, value] of Object.entries(override.headers)) {
-        parts.push(`header ${name}: ${value}`)
-      }
-    }
-
-    clack.log.info(`  ${key} — ${parts.join(', ') || '(empty)'}`)
+    clack.log.info(`  ${key} — ${formatOverrideSummary(override)}`)
   }
 }

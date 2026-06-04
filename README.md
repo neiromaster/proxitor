@@ -113,25 +113,41 @@ See [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) for the com
 
 ### Provider routing
 
-Control which provider handles your requests. Both `only` and `order` accept a string or an array:
+Control which provider handles your requests. All three options accept a string or an array:
 
 ```yaml
-# Lock all requests to a single provider
+# Strict lock — only this provider, no fallbacks
 provider:
-  only: "deepinfra"
+  only: "anthropic"
 
-# Prefer a provider, allow fallbacks
+# Restricted pool — load balance between these providers only
+provider:
+  only:
+    - "anthropic"
+    - "deepinfra"
+
+# Priority order — try Anthropic first, fall back to others if unavailable
 provider:
   order: "anthropic"
   allowFallbacks: true
 
-# Try providers in order, no fallbacks
+# Strict order — try in sequence, no fallbacks outside the list
 provider:
   order:
     - "anthropic"
     - "deepinfra"
   allowFallbacks: false
+
+# Blacklist — never use these providers
+provider:
+  ignore: "azure"
 ```
+
+| Option | Behavior |
+|---|---|
+| `only` | Restrict to the listed provider(s). Load balances by price within the list. Never routes outside it — if all are unavailable, the request fails. |
+| `order` | Try providers in the specified priority order. If none work, falls back to other available providers (unless `allowFallbacks: false`). |
+| `ignore` | Never route to the listed provider(s). |
 
 Without `provider` set, requests are forwarded unchanged.
 
@@ -248,11 +264,35 @@ $ proxitor config add
   ○ Set provider priority order
   ○ Ignore specific providers
   ○ Skip provider routing
+```
 
+**"Use specific providers only" / "Ignore specific providers"** — multiselect, pick all that apply:
+
+```text
 ◇ Select providers
   ◼ anthropic (anthropic)     · 1.0s · 40 t/s
   ◻ google-vertex/global      · 1.1s · 39 t/s
   ◻ amazon-bedrock            · 1.2s · 40 t/s
+```
+
+**"Set provider priority order"** — pick providers one at a time, then select **✓ Done** at the bottom to finish:
+
+```text
+◇ Select provider #1 (or cancel to finish)
+│ ● anthropic (anthropic)     · 1.0s · 40 t/s
+  ○ google-vertex/global      · 1.1s · 39 t/s
+  ○ amazon-bedrock            · 1.2s · 40 t/s
+  ○ ✓ Done
+
+◇ Select provider #2 (or cancel to finish)
+│ ● google-vertex/global      · 1.1s · 39 t/s
+  ○ amazon-bedrock            · 1.2s · 40 t/s
+  ○ ✓ Done
+
+◇ Select provider #3 (or cancel to finish)
+│ ● ✓ Done
+
+◇ Allow fallbacks to other providers? Yes
 
 ◇ Save to config? Yes
 
