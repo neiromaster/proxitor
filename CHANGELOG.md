@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- adb016a: Migrate CLI from `cac` to `cmd-ts` — type-safe args, native subcommands
+
+  - Replaced `cac` with `cmd-ts` for type-driven CLI parsing
+  - Added `start` and `config` as explicit subcommands (`proxitor start`, `proxitor config menu`)
+  - `proxitor` without arguments still starts the proxy (backward compatible)
+  - `--help` now shows both `start` and `config` subcommands
+  - Config subcommands (`add`, `edit`, `remove`, `list`, `browse`, `validate`, `menu`) are routed natively
+  - Provider lists are now sorted alphabetically
+  - Model selection hints show input, output, and cache pricing
+  - Removed `/1M` suffix from price formatting
+  - `--help` no longer triggers dotenv injection
+
+- 65010c4: Add interactive config manager (`proxitor config`) with @clack/prompts
+
+  New `proxitor config` command with subcommands for managing model overrides
+  through an interactive CLI instead of editing YAML by hand:
+
+  - `config add` — search models with type-ahead autocomplete, fetch available
+    providers from OpenRouter, select routing mode (only/order/ignore), and
+    save to config with YAML comment preservation
+  - `config edit` — modify provider routing for existing overrides
+  - `config remove` — delete one or more overrides with confirmation
+  - `config list` — display all current overrides
+  - `config browse` — explore models with pricing, context length, latency,
+    and throughput info; option to configure routing directly
+  - `config validate` — check config file against Zod schema
+
+  The interface uses live OpenRouter API data (models, endpoints, providers)
+  with file-based caching. Model search uses @clack/prompts autocomplete with
+  a dynamic options getter. Config writes preserve YAML comments via the `yaml`
+  package.
+
+- 725ed3a: Refactor config commands: extract shared modules, unify provider selection
+
+  - **Alphabetical sorting**: Provider lists are now sorted alphabetically
+    in both pattern (prefix) and specific model flows (add and edit)
+  - **Unified provider selection**: The `order` routing mode now uses
+    step-by-step sequential provider picking in both `config add` and
+    `config edit`, not just `config add`
+  - **Module split**: Extracted `shared.ts` into three domain-focused
+    modules — `config.ts` (YAML operations), `format.ts` (display
+    formatting), `providers.ts` (fetching and interactive selection)
+  - **Complexity cleanup**: All cognitive complexity warnings resolved
+    across `browse.ts`, `edit.ts`, and `list.ts`
+
+- cded6a8: Add zod-based runtime config validation
+
+  Config files are now validated at load time with clear error messages:
+
+  - Unknown fields (typos like `porrt`) are caught and reported
+  - Invalid values (negative ports, wrong enums, non-URL base URLs, negative prices) are rejected
+  - Malformed YAML/JSON produces `ConfigParseError` with file path
+  - Schema violations produce `ConfigValidationError` with field paths
+
+  New exports: `ConfigParseError`, `ConfigValidationError`
+  Added `zod` as a runtime dependency.
+
 ## 0.2.1
 
 ### Patch Changes
