@@ -6,8 +6,8 @@ const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
 
 export default defineConfig({
   entry: ['src/cli.ts', 'src/index.ts'],
-  format: ['esm', 'cjs'],
-  dts: { resolver: 'tsc' },
+  format: ['esm'],
+  dts: false,
   clean: true,
   platform: 'node',
   target: 'node22',
@@ -17,6 +17,7 @@ export default defineConfig({
     __PROXITOR_VERSION__: JSON.stringify(pkg.version),
   },
   deps: {
+    onlyBundle: false,
     alwaysBundle: Object.keys(pkg.dependencies ?? {}),
   },
 })
