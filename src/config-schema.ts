@@ -1,0 +1,125 @@
+import { z } from 'zod'
+
+// ---------------------------------------------------------------------------
+// Zod schemas (bottom-up)
+// ---------------------------------------------------------------------------
+
+/** Percentile cutoffs for performance thresholds */
+export const percentileCutoffsSchema = z
+  .object({
+    p50: z.number().positive().optional(),
+    p75: z.number().positive().optional(),
+    p90: z.number().positive().optional(),
+    p99: z.number().positive().optional(),
+  })
+  .strict()
+
+/** Provider sorting options */
+export const providerSortSchema = z.union([
+  z.enum(['price', 'throughput', 'latency']),
+  z
+    .object({
+      by: z.enum(['price', 'throughput', 'latency']),
+      partition: z.enum(['model', 'none']).optional(),
+    })
+    .strict(),
+])
+
+/** Maximum pricing for a request */
+export const maxPriceSchema = z
+  .object({
+    prompt: z.number().nonnegative().optional(),
+    completion: z.number().nonnegative().optional(),
+    request: z.number().nonnegative().optional(),
+    image: z.number().nonnegative().optional(),
+  })
+  .strict()
+
+/** Provider routing configuration */
+export const providerConfigSchema = z
+  .object({
+    only: z.union([z.string(), z.array(z.string())]).optional(),
+    order: z.union([z.string(), z.array(z.string())]).optional(),
+    ignore: z.union([z.string(), z.array(z.string())]).optional(),
+    allowFallbacks: z.boolean().optional(),
+    sort: providerSortSchema.optional(),
+    quantizations: z.array(z.string()).optional(),
+    maxPrice: maxPriceSchema.optional(),
+    requireParameters: z.boolean().optional(),
+    dataCollection: z.enum(['allow', 'deny']).optional(),
+    zdr: z.boolean().optional(),
+    enforceDistillableText: z.boolean().optional(),
+    preferredMinThroughput: z
+      .union([z.number().positive(), percentileCutoffsSchema])
+      .optional(),
+    preferredMaxLatency: z
+      .union([z.number().positive(), percentileCutoffsSchema])
+      .optional(),
+  })
+  .strict()
+
+/** Per-model override: layers on top of global config */
+export const modelOverrideSchema = z
+  .object({
+    provider: providerConfigSchema.optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
+
+/** Full proxy configuration */
+export const proxyConfigSchema = z
+  .object({
+    host: z.string().min(1),
+    port: z.number().int().min(1).max(65535),
+    openrouterKey: z.string(),
+    openrouterBaseUrl: z.string().url(),
+    verbose: z.boolean(),
+    bodyLimit: z.string().min(1),
+    provider: providerConfigSchema.optional(),
+    attributionReferer: z.string().min(1),
+    attributionTitle: z.string().min(1),
+    headers: z.record(z.string(), z.string()).optional(),
+    modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
+  })
+  .strict()
+
+/** Schema for validating raw file content — all top-level keys optional */
+export const proxyConfigFileSchema = proxyConfigSchema.partial()
+
+// ---------------------------------------------------------------------------
+// Derived TypeScript types
+// ---------------------------------------------------------------------------
+
+export type ProxyConfig = z.infer<typeof proxyConfigSchema>
+export type ProviderConfig = z.infer<typeof providerConfigSchema>
+export type ModelOverride = z.infer<typeof modelOverrideSchema>
+export type MaxPrice = z.infer<typeof maxPriceSchema>
+export type PercentileCutoffs = z.infer<typeof percentileCutoffsSchema>
+export type ProviderSort = z.infer<typeof providerSortSchema>
+
+// ---------------------------------------------------------------------------
+// Custom error classes
+// ---------------------------------------------------------------------------
+
+/** Wraps YAML/JSON parse errors with the config file path */
+export class ConfigParseError extends Error {
+  constructor(filePath: string, cause?: Error) {
+    super(
+      `Failed to parse config file ${filePath}: ${cause?.message ?? 'unknown error'}`,
+      { cause },
+    )
+    this.name = 'ConfigParseError'
+  }
+}
+
+/** Formats zod validation issues into a readable multi-line message */
+export class ConfigValidationError extends Error {
+  constructor(filePath: string, zodError: z.ZodError) {
+    const lines = zodError.issues.map(issue => {
+      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
+      return `  ${path}: ${issue.message}`
+    })
+    super(`Invalid config in ${filePath}:\n${lines.join('\n')}`)
+    this.name = 'ConfigValidationError'
+  }
+}

@@ -12,6 +12,8 @@ export type {
 } from './config.js'
 export {
   buildProviderRouting,
+  ConfigParseError,
+  ConfigValidationError,
   loadConfig,
   matchScore,
   resolveModelConfig,

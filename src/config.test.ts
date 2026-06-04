@@ -1,11 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildProviderRouting,
+  ConfigParseError,
+  ConfigValidationError,
   loadConfig,
   matchScore,
   type ProxyConfig,
   resolveModelConfig,
 } from './config.js'
+import { proxyConfigFileSchema } from './config-schema.js'
 
 describe('loadConfig', () => {
   it('should use defaults when no config provided', async () => {
@@ -302,5 +308,179 @@ describe('resolveModelConfig', () => {
     }
     const resolved = resolveModelConfig(config, 'llama-3')
     expect(resolved.provider).toEqual({ only: 'deepinfra' })
+  })
+})
+
+// --- Schema validation tests ---
+
+describe('proxyConfigFileSchema', () => {
+  it('should accept empty config', () => {
+    const result = proxyConfigFileSchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+
+  it('should accept valid full config', () => {
+    const result = proxyConfigFileSchema.safeParse({
+      host: '127.0.0.1',
+      port: 3000,
+      openrouterKey: 'sk-test',
+      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      verbose: true,
+      bodyLimit: '10mb',
+      attributionReferer: 'http://localhost',
+      attributionTitle: 'test',
+      provider: { only: 'deepinfra', dataCollection: 'deny' },
+      headers: { 'X-Custom': 'value' },
+      modelOverrides: { 'claude-*': { provider: { order: 'anthropic' } } },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('should reject unknown top-level fields', () => {
+    const result = proxyConfigFileSchema.safeParse({ porrt: 8080 })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.message.includes('Unrecognized'))).toBe(true)
+    }
+  })
+
+  it('should reject unknown provider fields', () => {
+    const result = proxyConfigFileSchema.safeParse({ provider: { onli: 'deepinfra' } })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject negative port', () => {
+    const result = proxyConfigFileSchema.safeParse({ port: -1 })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject port above 65535', () => {
+    const result = proxyConfigFileSchema.safeParse({ port: 70000 })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject non-integer port', () => {
+    const result = proxyConfigFileSchema.safeParse({ port: 3.5 })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject invalid dataCollection value', () => {
+    const result = proxyConfigFileSchema.safeParse({
+      provider: { dataCollection: 'maybe' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject negative maxPrice', () => {
+    const result = proxyConfigFileSchema.safeParse({
+      provider: { maxPrice: { prompt: -1 } },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject invalid openrouterBaseUrl', () => {
+    const result = proxyConfigFileSchema.safeParse({ openrouterBaseUrl: 'not-a-url' })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject unknown model override fields', () => {
+    const result = proxyConfigFileSchema.safeParse({
+      modelOverrides: { 'gpt-*': { provder: {} } },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('should accept string or array for provider.only', () => {
+    expect(
+      proxyConfigFileSchema.safeParse({ provider: { only: 'deepinfra' } }).success,
+    ).toBe(true)
+    expect(
+      proxyConfigFileSchema.safeParse({ provider: { only: ['openai', 'azure'] } })
+        .success,
+    ).toBe(true)
+  })
+
+  it('should accept sort as string or object', () => {
+    expect(
+      proxyConfigFileSchema.safeParse({ provider: { sort: 'throughput' } }).success,
+    ).toBe(true)
+    expect(
+      proxyConfigFileSchema.safeParse({
+        provider: { sort: { by: 'price', partition: 'none' } },
+      }).success,
+    ).toBe(true)
+  })
+})
+
+// --- File-based validation tests ---
+
+describe('config file validation', () => {
+  const dirs: string[] = []
+
+  afterEach(() => {
+    for (const dir of dirs) {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    dirs.length = 0
+  })
+
+  function tempDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'))
+    dirs.push(dir)
+    return dir
+  }
+
+  it('throws ConfigParseError on malformed YAML', async () => {
+    const dir = tempDir()
+    const configPath = join(dir, 'proxitor.config.yaml')
+    writeFileSync(configPath, 'port: [invalid')
+
+    await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+      ConfigParseError,
+    )
+  })
+
+  it('throws ConfigParseError on malformed JSON', async () => {
+    const dir = tempDir()
+    const configPath = join(dir, 'proxitor.config.json')
+    writeFileSync(configPath, '{"port": }')
+
+    await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+      ConfigParseError,
+    )
+  })
+
+  it('throws ConfigValidationError on invalid field type', async () => {
+    const dir = tempDir()
+    const configPath = join(dir, 'proxitor.config.yaml')
+    writeFileSync(configPath, 'port: "not-a-number"')
+
+    await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+      ConfigValidationError,
+    )
+  })
+
+  it('throws ConfigValidationError on unknown field', async () => {
+    const dir = tempDir()
+    const configPath = join(dir, 'proxitor.config.yaml')
+    writeFileSync(configPath, 'porrt: 8080')
+
+    await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+      ConfigValidationError,
+    )
+  })
+
+  it('includes field path in ConfigValidationError message', async () => {
+    const dir = tempDir()
+    const configPath = join(dir, 'proxitor.config.yaml')
+    writeFileSync(configPath, ['provider:', '  dataCollection: maybe'].join('\n'))
+
+    try {
+      await loadConfig({ configPath, openrouterKey: 'test-key' })
+      expect.unreachable('Should have thrown')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConfigValidationError)
+      expect((err as Error).message).toContain('dataCollection')
+    }
   })
 })

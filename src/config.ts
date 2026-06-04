@@ -2,92 +2,29 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
+import {
+  ConfigParseError,
+  ConfigValidationError,
+  type ProviderConfig,
+  type ProxyConfig,
+  proxyConfigFileSchema,
+} from './config-schema.js'
 import { toArray } from './utils.js'
 
-/** Percentile cutoffs for performance thresholds */
-export type PercentileCutoffs = {
-  p50?: number
-  p75?: number
-  p90?: number
-  p99?: number
-}
-
-/** Provider sorting options */
-export type ProviderSort =
-  | 'price'
-  | 'throughput'
-  | 'latency'
-  | { by: 'price' | 'throughput' | 'latency'; partition?: 'model' | 'none' }
-
-/** Maximum pricing for a request */
-export type MaxPrice = {
-  prompt?: number
-  completion?: number
-  request?: number
-  image?: number
-}
-
-export type ProviderConfig = {
-  /** Allow only these providers (e.g. "deepinfra" or ["anthropic", "openai"]) */
-  only?: string | string[]
-  /** Try providers in this order (e.g. "anthropic" or ["openai", "together"]) */
-  order?: string | string[]
-  /** Ignore these providers (mirror of only — skip specific providers) */
-  ignore?: string | string[]
-  /** Allow fallback to other providers (default: true) */
-  allowFallbacks?: boolean
-  /** Sort providers by price, throughput, or latency */
-  sort?: ProviderSort
-  /** Filter by quantization levels (e.g. ["fp8", "int4"]) */
-  quantizations?: string[]
-  /** Maximum pricing to accept */
-  maxPrice?: MaxPrice
-  /** Only use providers that support all request parameters (default: false) */
-  requireParameters?: boolean
-  /** Control data collection policy: "allow" or "deny" (default: "allow") */
-  dataCollection?: 'allow' | 'deny'
-  /** Restrict routing to Zero Data Retention endpoints */
-  zdr?: boolean
-  /** Restrict routing to models that allow text distillation */
-  enforceDistillableText?: boolean
-  /** Preferred minimum throughput (tokens/sec) */
-  preferredMinThroughput?: number | PercentileCutoffs
-  /** Preferred maximum latency (seconds) */
-  preferredMaxLatency?: number | PercentileCutoffs
-}
-
-/** Per-model override: layers on top of global config */
-export type ModelOverride = {
-  /** Override provider routing for matching models */
-  provider?: ProviderConfig
-  /** Additional headers to merge for matching models */
-  headers?: Record<string, string>
-}
+export type {
+  MaxPrice,
+  ModelOverride,
+  PercentileCutoffs,
+  ProviderConfig,
+  ProviderSort,
+  ProxyConfig,
+} from './config-schema.js'
+export { ConfigParseError, ConfigValidationError } from './config-schema.js'
 
 /** Result of merging global config with a model-specific override */
 export type ResolvedModelConfig = {
   provider?: ProviderConfig
   headers?: Record<string, string>
-}
-
-export type ProxyConfig = {
-  host: string
-  port: number
-  openrouterKey: string
-  openrouterBaseUrl: string
-  verbose: boolean
-  /** Request body size limit (default: "50mb") */
-  bodyLimit: string
-  /** Provider routing configuration (global default) */
-  provider?: ProviderConfig
-  /** HTTP-Referer for OpenRouter attribution */
-  attributionReferer: string
-  /** X-Title for OpenRouter attribution */
-  attributionTitle: string
-  /** Custom headers to add to proxied requests (global default) */
-  headers?: Record<string, string>
-  /** Per-model config overrides. Keys are exact model names or prefix patterns (e.g. "claude-*") */
-  modelOverrides?: Record<string, ModelOverride>
 }
 
 const DEFAULT_CONFIG: ProxyConfig = {
@@ -280,10 +217,19 @@ function findConfigFile(explicitPath?: string): string | null {
 
 function readConfigFile(filePath: string): Partial<ProxyConfig> {
   const content = readFileSync(filePath, 'utf-8')
+  let raw: unknown
 
-  if (filePath.endsWith('.json')) {
-    return JSON.parse(content) as Partial<ProxyConfig>
+  try {
+    raw = filePath.endsWith('.json') ? JSON.parse(content) : yaml.load(content)
+  } catch (err) {
+    // biome-ignore lint/nursery/useErrorCause: cause is propagated inside ConfigParseError
+    throw new ConfigParseError(filePath, err instanceof Error ? err : undefined)
   }
 
-  return yaml.load(content) as Partial<ProxyConfig>
+  const result = proxyConfigFileSchema.safeParse(raw)
+  if (!result.success) {
+    throw new ConfigValidationError(filePath, result.error)
+  }
+
+  return result.data
 }
