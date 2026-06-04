@@ -5,7 +5,7 @@ import { defineConfig } from 'tsdown'
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
 
 export default defineConfig({
-  entry: ['src/cli.ts', 'src/index.ts'],
+  entry: ['src/cli.ts'],
   format: ['esm'],
   dts: false,
   clean: true,
@@ -17,7 +17,6 @@ export default defineConfig({
     __PROXITOR_VERSION__: JSON.stringify(pkg.version),
   },
   deps: {
-    onlyBundle: false,
-    alwaysBundle: Object.keys(pkg.dependencies ?? {}),
+    alwaysBundle: [/.*/],
   },
 })
