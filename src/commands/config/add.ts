@@ -1,0 +1,369 @@
+import * as clack from '@clack/prompts'
+import { isCancel } from '@clack/prompts'
+import { OpenRouterClient } from '../../openrouter/client.js'
+import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js'
+import {
+  fetchModels,
+  formatPrice,
+  parseModelAuthor,
+  parseModelSlug,
+} from '../../openrouter/models.js'
+import { fetchProviders } from '../../openrouter/providers.js'
+import type { OpenRouterModel } from '../../openrouter/types.js'
+import {
+  formatContextLength,
+  formatLatency,
+  formatPricing,
+  formatThroughput,
+  getModelOverrides,
+  requireConfigPath,
+  setModelOverride,
+} from './shared.js'
+
+const CUSTOM_PATTERN = '__custom_pattern__'
+const DONE_OPTION = '__done__'
+
+/** Run the interactive "Add model override" flow. */
+export async function addOverrideCommand(apiKey: string): Promise<void> {
+  clack.intro('Add Model Override')
+
+  const configPath = requireConfigPath()
+  const client = new OpenRouterClient(apiKey)
+
+  const models = await loadModelsWithSpinner(client)
+  if (!models) return
+
+  const modelId = await searchModel(models)
+  if (!modelId) return
+
+  if (typeof modelId !== 'string') return
+
+  if (modelId === CUSTOM_PATTERN) {
+    const pattern = await enterPattern(models)
+    if (!pattern) return
+
+    const existing = getModelOverrides(configPath)
+    if (existing[pattern]) {
+      clack.log.warn(`Override for "${pattern}" already exists. Use Edit instead.`)
+      return
+    }
+
+    await configureProviderAndSave(configPath, client, pattern, true)
+    return
+  }
+
+  const selected = models.find(m => m.id === modelId)
+  if (selected) displayModelInfo(selected)
+
+  const existing = getModelOverrides(configPath)
+  if (existing[modelId]) {
+    clack.log.warn(`Override for "${modelId}" already exists. Use Edit instead.`)
+    return
+  }
+
+  await configureProviderAndSave(configPath, client, modelId, false)
+}
+
+async function loadModelsWithSpinner(
+  client: OpenRouterClient,
+): Promise<OpenRouterModel[] | null> {
+  const s = clack.spinner()
+  s.start('Loading models from OpenRouter...')
+  try {
+    const models = await fetchModels(client)
+    s.stop(`${models.length} models available`)
+    return models
+  } catch (error) {
+    s.stop('Failed to load models')
+    clack.log.error(String(error))
+    return null
+  }
+}
+
+async function searchModel(models: OpenRouterModel[]): Promise<string | symbol | null> {
+  const result = await clack.autocomplete({
+    message: 'Search for a model',
+    placeholder: 'Type to search (e.g. "claude", "gpt-4o", "qwen")',
+    maxItems: 15,
+    options(this: { userInput: string }) {
+      const query = this.userInput.trim().toLowerCase()
+
+      if (!query) {
+        return [
+          {
+            value: CUSTOM_PATTERN,
+            label: '✏️  Enter custom pattern (e.g. "claude-*")',
+          },
+        ]
+      }
+
+      const filtered = models
+        .filter(m => {
+          const text = `${m.id} ${m.name}`.toLowerCase()
+          return text.includes(query)
+        })
+        .slice(0, 14)
+        .map(m => ({
+          value: m.id,
+          label: m.name || m.id,
+          hint: `${formatPrice(m.pricing.prompt)} · ${formatContextLength(m.context_length)}`,
+        }))
+
+      return [
+        ...filtered,
+        { value: CUSTOM_PATTERN, label: '✏️  Enter custom pattern (e.g. "claude-*")' },
+      ]
+    },
+    filter: (_search: string, _option: { value: string }) => true,
+  })
+
+  if (isCancel(result)) return null
+  return result as string
+}
+
+async function enterPattern(models: OpenRouterModel[]): Promise<string | null> {
+  const pattern = await clack.text({
+    message: 'Enter model pattern',
+    placeholder: 'e.g. claude-*, gpt-4*, anthropic/*',
+    validate: v => {
+      if (!v?.trim()) return 'Pattern cannot be empty'
+      return undefined
+    },
+  })
+
+  if (isCancel(pattern)) return null
+
+  const pat = (pattern as string).trim()
+  const matches = countPatternMatches(pat, models)
+  if (matches > 0) {
+    clack.log.info(`Pattern "${pat}" matches ${matches} model(s)`)
+  } else {
+    clack.log.warn(
+      `Pattern "${pat}" does not match any current models — it will still be saved`,
+    )
+  }
+
+  return pat
+}
+
+async function configureProviderAndSave(
+  configPath: string,
+  client: OpenRouterClient,
+  modelKey: string,
+  isPattern: boolean,
+): Promise<void> {
+  const mode = await clack.select({
+    message: 'Configure provider routing',
+    options: [
+      { value: 'only', label: 'Use specific providers only' },
+      { value: 'order', label: 'Set provider priority order' },
+      { value: 'ignore', label: 'Ignore specific providers' },
+      { value: 'skip', label: 'Skip provider routing' },
+    ],
+  })
+
+  if (isCancel(mode)) return
+
+  if (mode === 'skip') {
+    setModelOverride(configPath, modelKey, {})
+    clack.outro('Done — override saved without provider routing')
+    return
+  }
+
+  const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern)
+  if (!providerOptions) return
+
+  const override = await selectProvidersByMode(mode as string, providerOptions)
+  if (!override) return
+
+  clack.log.info(
+    `Proposed override:\n  ${modelKey}:\n    ${formatOverrideYaml(override)}`,
+  )
+
+  const save = await clack.confirm({ message: 'Save to config?' })
+  if (isCancel(save) || !save) {
+    clack.outro('Cancelled')
+    return
+  }
+
+  setModelOverride(configPath, modelKey, override)
+  clack.outro('✓ Model override saved')
+}
+
+async function fetchProvidersForModel(
+  client: OpenRouterClient,
+  modelKey: string,
+  isPattern: boolean,
+): Promise<Array<{ value: string; label: string; hint?: string }> | null> {
+  if (isPattern) {
+    return fetchProvidersForPattern(client)
+  }
+  return fetchEndpointsForModel(client, modelKey)
+}
+
+async function fetchProvidersForPattern(
+  client: OpenRouterClient,
+): Promise<Array<{ value: string; label: string; hint?: string }> | null> {
+  const s = clack.spinner()
+  s.start('Fetching providers...')
+  try {
+    const providers = await fetchProviders(client)
+    const options = providers.map(p => ({ value: p.slug, label: p.name }))
+    s.stop(`${providers.length} providers available`)
+    return options
+  } catch (error) {
+    s.stop('Failed to fetch providers')
+    clack.log.error(String(error))
+    return null
+  }
+}
+
+async function fetchEndpointsForModel(
+  client: OpenRouterClient,
+  modelId: string,
+): Promise<Array<{ value: string; label: string; hint?: string }> | null> {
+  const author = parseModelAuthor(modelId)
+  const slug = parseModelSlug(modelId)
+
+  const s = clack.spinner()
+  s.start('Fetching providers for this model...')
+  try {
+    const endpoints = await fetchModelEndpoints(client, author, slug)
+    const unique = getUniqueProviders(endpoints)
+
+    const options = unique.map(p => {
+      const ep = endpoints.find(e => e.tag === p.tag)
+      const latency = ep?.latency_last_30m?.p50 ?? null
+      const throughput = ep?.throughput_last_30m?.p50 ?? null
+      return {
+        value: p.tag,
+        label: `${p.providerName} (${p.tag})`,
+        hint: `${formatLatency(latency)} · ${formatThroughput(throughput)}`,
+      }
+    })
+
+    s.stop(`${unique.length} providers available for this model`)
+    return options
+  } catch (error) {
+    s.stop('Failed to fetch providers')
+    clack.log.error(String(error))
+    return null
+  }
+}
+
+async function selectProvidersByMode(
+  mode: string,
+  providerOptions: Array<{ value: string; label: string; hint?: string }>,
+): Promise<Record<string, unknown> | null> {
+  if (mode === 'only') return selectOnlyProviders(providerOptions)
+  if (mode === 'order') return selectOrderedProviders(providerOptions)
+  if (mode === 'ignore') return selectIgnoreProviders(providerOptions)
+  return null
+}
+
+async function selectOnlyProviders(
+  providerOptions: Array<{ value: string; label: string; hint?: string }>,
+): Promise<Record<string, unknown> | null> {
+  const selected = await clack.multiselect({
+    message: 'Select providers',
+    options: providerOptions,
+    required: false,
+  })
+
+  if (isCancel(selected)) return null
+
+  const values = selected as string[]
+  if (values.length === 0) return {}
+
+  const only = values.length === 1 ? values[0] : values
+  return { provider: { only } }
+}
+
+async function selectOrderedProviders(
+  providerOptions: Array<{ value: string; label: string; hint?: string }>,
+): Promise<Record<string, unknown> | null> {
+  const order: string[] = []
+
+  for (let i = 1; ; i++) {
+    const remaining = providerOptions.filter(p => !order.includes(p.value))
+    if (remaining.length === 0) break
+
+    const pick = await clack.select({
+      message: `Select provider #${i} (or cancel to finish)`,
+      options: [...remaining, { value: DONE_OPTION, label: '✓ Done' }],
+    })
+
+    if (isCancel(pick) || pick === DONE_OPTION) break
+    order.push(pick as string)
+  }
+
+  if (order.length === 0) {
+    clack.log.warn('No providers selected')
+    return null
+  }
+
+  const allowFallbacks = await clack.confirm({
+    message: 'Allow fallbacks to other providers?',
+    initialValue: true,
+  })
+
+  return {
+    provider: {
+      order: order.length === 1 ? order[0] : order,
+      allowFallbacks: isCancel(allowFallbacks) ? true : (allowFallbacks as boolean),
+    },
+  }
+}
+
+async function selectIgnoreProviders(
+  providerOptions: Array<{ value: string; label: string; hint?: string }>,
+): Promise<Record<string, unknown> | null> {
+  const selected = await clack.multiselect({
+    message: 'Select providers to ignore',
+    options: providerOptions,
+    required: false,
+  })
+
+  if (isCancel(selected)) return null
+
+  const values = selected as string[]
+  if (values.length === 0) return {}
+
+  const ignore = values.length === 1 ? values[0] : values
+  return { provider: { ignore } }
+}
+
+function displayModelInfo(model: OpenRouterModel): void {
+  clack.log.info(`${model.name || model.id}`)
+  clack.log.info(`  Context: ${formatContextLength(model.context_length)} tokens`)
+  clack.log.info(
+    `  Pricing: ${formatPricing(model.pricing.prompt, model.pricing.completion)}`,
+  )
+  if (model.top_provider?.max_completion_tokens) {
+    clack.log.info(
+      `  Max output: ${formatContextLength(model.top_provider.max_completion_tokens)} tokens`,
+    )
+  }
+  if (model.architecture?.modality) {
+    clack.log.info(`  Modality: ${model.architecture.modality}`)
+  }
+}
+
+function countPatternMatches(pattern: string, models: OpenRouterModel[]): number {
+  if (pattern.endsWith('*')) {
+    const prefix = pattern.slice(0, -1)
+    return models.filter(m => m.id.startsWith(prefix)).length
+  }
+  return models.filter(m => m.id === pattern).length
+}
+
+function formatOverrideYaml(override: Record<string, unknown>): string {
+  const parts: string[] = []
+  if (override.provider && typeof override.provider === 'object') {
+    const p = override.provider as Record<string, unknown>
+    for (const [key, value] of Object.entries(p)) {
+      parts.push(`provider.${key}: ${JSON.stringify(value)}`)
+    }
+  }
+  return parts.join('\n    ') || '(empty)'
+}

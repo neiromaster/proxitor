@@ -178,7 +178,7 @@ function getXdgConfigDir(): string {
   return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor')
 }
 
-function findConfigFile(explicitPath?: string): string | null {
+export function findConfigFile(explicitPath?: string): string | null {
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
       throw new Error(`Config file not found: ${explicitPath}`)
@@ -215,7 +215,7 @@ function findConfigFile(explicitPath?: string): string | null {
   return null
 }
 
-function readConfigFile(filePath: string): Partial<ProxyConfig> {
+export function readConfigFile(filePath: string): Partial<ProxyConfig> {
   const content = readFileSync(filePath, 'utf-8')
   let raw: unknown
 

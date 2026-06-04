@@ -1,44 +1,92 @@
 # proxitor
 
-> Lightweight proxy for routing CLI requests (claude-code, codex) to [OpenRouter](https://openrouter.ai)
+<p align="center">
+  <strong>A transparent proxy between your AI CLI tools and OpenRouter.</strong><br/>
+  Route by provider. Control costs. Keep streaming. Zero config changes in Claude Code.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/proxitor"><img src="https://img.shields.io/npm/v/proxitor?color=6366f1&labelColor=1e2327&label=npm" alt="npm version"></a>
+  <a href="https://github.com/neiromaster/proxitor/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?labelColor=1e2327" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D22-3b82f6?labelColor=1e2327" alt="Node.js ≥ 22">
+  <img src="https://img.shields.io/badge/built_with-TypeScript-3178c6?labelColor=1e2327" alt="TypeScript">
+</p>
+
+---
+
+```
+  Claude Code / Codex
+        │
+        │  ANTHROPIC_BASE_URL=http://localhost:8080/v1
+        ▼
+  ┌───────────────┐
+  │   proxitor    │  ← injects provider routing
+  │  :8080        │  ← streams SSE back unchanged
+  └───────────────┘
+        │
+        │  + X-OpenRouter-* headers
+        ▼
+     OpenRouter
+   ┌──────┬──────┐
+  Anthropic  DeepInfra  Azure  ...
+```
+
+---
 
 ## Why
 
-When using AI CLI tools like Claude Code or Codex, you may want to route requests through OpenRouter for model selection, cost control, or unified API access. Proxitor sits between your CLI tools and OpenRouter, injecting [provider routing](https://openrouter.ai/docs/api/reference/streaming) into requests and streaming responses back unchanged — including SSE streams from LLM models.
+### The prompt cache problem
+
+OpenRouter is convenient — one key, every model. But by default it load-balances across multiple provider instances for the same model. Each request can land on a different provider, and **prompt caching is provider-scoped**: a cache entry built on Anthropic's infrastructure doesn't help when the next request goes to DeepInfra.
+
+Claude Code sends a large system prompt on every single request. Without a pinned provider, you pay full token price every time. With proxitor locking `claude-*` to `anthropic`, that system prompt gets cached after the first hit and subsequent requests cost a fraction.
+
+```yaml
+# pin all Claude models to Anthropic — prompt cache works reliably
+modelOverrides:
+  "claude-*":
+    provider:
+      only: "anthropic"
+```
+
+### Other reasons to use it
+
+- **Cost control** — route specific models to cheaper providers when caching isn't the priority
+- **Automatic fallbacks** — if Anthropic is degraded, fall back to DeepInfra without touching your tools
+- **Mixed routing** — `claude-*` on Anthropic, `gpt-*` on Azure, different rules per model
+- **Data privacy** — enforce `dataCollection: deny` or ZDR across all requests
+
+Proxitor sits between your CLI tools and OpenRouter, injecting all of this transparently. Your tools don't know anything changed.
+
+---
 
 ## Install
 
-```bash
+```sh
 # npm
 npm install -g proxitor
 
 # bun
 bun install -g proxitor
 
-# npx (no install)
+# no install needed
 npx proxitor
 ```
 
-## Usage
+---
 
-### Start the proxy
+## Quick Start
 
-```bash
-# With env var
-OPENROUTER_API_KEY=sk-... proxitor
+**1. Start the proxy**
 
-# With CLI flag
-proxitor --openrouter-key sk-...
-
-# With config file
-proxitor --config ./proxitor.config.yaml
+```sh
+OPENROUTER_API_KEY=sk-or-... proxitor
+# Listening on http://0.0.0.0:8080
 ```
 
-### Configure CLI tools
+**2. Point your tools at it**
 
-Point your AI CLI tools at the proxy:
-
-```bash
+```sh
 # Claude Code
 ANTHROPIC_BASE_URL=http://localhost:8080/v1 claude
 
@@ -46,44 +94,38 @@ ANTHROPIC_BASE_URL=http://localhost:8080/v1 claude
 OPENAI_BASE_URL=http://localhost:8080/v1 codex
 ```
 
+That's it. Requests flow through proxitor to OpenRouter, SSE streams pass through unchanged.
+
+---
+
 ## Configuration
 
-Proxitor looks for config files in this order:
+Proxitor looks for a config file in this order:
 
-1. `proxitor.config.yaml`
-2. `proxitor.config.yml`
-3. `proxitor.config.json`
-4. `.proxitor.yaml`
-5. `.proxitor.yml`
-6. `.proxitor.json`
+```
+proxitor.config.yaml  →  proxitor.config.yml  →  proxitor.config.json
+.proxitor.yaml        →  .proxitor.yml         →  .proxitor.json
+```
 
-See [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) for a full example.
+**Priority:** CLI flags > config file > environment variables > defaults
 
-### Priority
-
-CLI flags > config file > environment variables > defaults
+See [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) for the complete reference.
 
 ### Provider routing
 
-Control which upstream provider handles your requests. Both `only` and `order` accept a single string or an array:
+Control which provider handles your requests. Both `only` and `order` accept a string or an array:
 
 ```yaml
-# Use a single provider exclusively (no fallbacks)
+# Lock all requests to a single provider
 provider:
   only: "deepinfra"
-
-# Use multiple providers exclusively
-provider:
-  only:
-    - "openai"
-    - "azure"
 
 # Prefer a provider, allow fallbacks
 provider:
   order: "anthropic"
   allowFallbacks: true
 
-# Try providers in order
+# Try providers in order, no fallbacks
 provider:
   order:
     - "anthropic"
@@ -91,31 +133,32 @@ provider:
   allowFallbacks: false
 ```
 
-Without `provider` configured, the proxy forwards requests unchanged.  
-See the [OpenRouter provider routing docs](https://openrouter.ai/docs/guides/routing/provider-selection) for the full list of supported providers.
+Without `provider` set, requests are forwarded unchanged.
+
+See [OpenRouter's provider routing docs](https://openrouter.ai/docs/guides/routing/provider-selection) for the full list of supported providers and options.
 
 ### Per-model overrides
 
-Route different models to different providers using `modelOverrides`. Keys are exact model names or prefix patterns (e.g. `claude-*`). Overrides layer on top of global settings — `provider` replaces the global value, `headers` merge:
+Route different models differently. Keys are exact names or prefix wildcards. More specific matches win.
 
 ```yaml
 provider:
-  order: "deepinfra"
+  order: "deepinfra"   # global default
 
 modelOverrides:
-  # Exact match — force Anthropic models to Anthropic's own infrastructure
+  # Exact match — force this model to Anthropic
   "claude-sonnet-4-6":
     provider:
       only: "anthropic"
 
-  # Wildcard — all Claude models prefer Anthropic with fallback
+  # Wildcard — all claude-* models prefer Anthropic with fallback
   "claude-*":
     provider:
       order:
         - "anthropic"
         - "deepinfra"
 
-  # Wildcard — GPT models to OpenAI/Azure, plus a custom header
+  # GPT models to OpenAI/Azure, plus a custom header
   "gpt-*":
     provider:
       only:
@@ -125,75 +168,132 @@ modelOverrides:
       X-Model-Family: "gpt"
 ```
 
-When a model name matches multiple patterns, the most specific match wins (exact name > longer prefix > shorter prefix).
+**Match priority:** exact name > longer prefix > shorter prefix.
 
 ### Custom headers
 
-Add custom headers to all proxied requests, or per-model via `modelOverrides`:
+Add headers to all proxied requests, or per-model (merged on top of global):
 
 ```yaml
-# Global custom headers
 headers:
   X-Custom-Header: "my-value"
   X-Environment: "production"
 
-# Per-model headers (merged on top of global)
 modelOverrides:
   "claude-*":
     headers:
-      X-Custom-Header: "claude-override"  # overrides global value
+      X-Custom-Header: "claude-override"  # overrides the global value
       X-Extra: "only-for-claude"          # added only for this model
+```
+
+### Advanced provider options
+
+```yaml
+provider:
+  sort: "throughput"          # sort by: price | throughput | latency
+  quantizations:
+    - "fp8"                   # filter by quantization level
+  maxPrice:
+    prompt: 1                 # $/M tokens
+    completion: 2
+  requireParameters: true     # only use providers that support all request params
+  dataCollection: "deny"      # "allow" | "deny"
+  zdr: true                   # Zero Data Retention enforcement
+  preferredMinThroughput:
+    p90: 50                   # tokens/sec (soft threshold)
+  preferredMaxLatency:
+    p90: 3                    # seconds (soft threshold)
 ```
 
 ### Health check
 
-```bash
+```sh
 curl http://localhost:8080/health
 ```
 
+---
+
+## Interactive Config Manager
+
+Proxitor includes an interactive CLI for managing model overrides — search models, pick providers, and write to config without editing YAML by hand.
+
+```sh
+proxitor config                # interactive menu
+proxitor config add            # add a model override
+proxitor config edit           # edit existing override
+proxitor config remove         # remove override(s)
+proxitor config list           # show current overrides
+proxitor config browse         # explore models with pricing info
+proxitor config validate       # validate config file
+```
+
+### Add override walkthrough
+
+```sh
+$ proxitor config add
+
+┌──────────────────────────────────┐
+│   Add Model Override             │
+╰──────────────────────────────────╯
+
+◇ Search for a model
+│ claude
+  (23 matches)
+  ● anthropic/claude-sonnet-4-6 · $3.00/1M · 200k
+  ○ anthropic/claude-opus-4-8   · $15.00/1M · 200k
+  ...
+
+◇ Configure provider routing
+│ ○ Use specific providers only
+  ○ Set provider priority order
+  ○ Ignore specific providers
+  ○ Skip provider routing
+
+◇ Select providers
+  ◼ anthropic (anthropic)     · 1.0s · 40 t/s
+  ◻ google-vertex/global      · 1.1s · 39 t/s
+  ◻ amazon-bedrock            · 1.2s · 40 t/s
+
+◇ Save to config? Yes
+
+╭──────────────────────────────────╮
+│ ✓ Model override saved           │
+╰──────────────────────────────────╯
+```
+
+The interface uses live data from the OpenRouter API — model search with type-ahead, real provider availability and pricing for each model.
+
+---
+
 ## CLI Options
 
-```text
-proxitor [options]
+| Flag | Default | Description |
+|---|---|---|
+| `-p, --port <port>` | `8080` | Server port |
+| `-h, --host <host>` | `0.0.0.0` | Server host |
+| `-c, --config <path>` | auto-discovered | Path to config file |
+| `--openrouter-key <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
+| `--verbose` | `false` | Enable verbose logging |
+| `-v, --version` | | Print version |
+| `--help` | | Print help |
 
-Options:
-  -p, --port <port>             Proxy server port (default: 8080)
-  -h, --host <host>             Proxy server host (default: 0.0.0.0)
-  -c, --config <path>           Path to config file
-  --openrouter-key <key>        OpenRouter API key
-  --verbose                     Enable verbose logging
-  -v, --version                 Display version
-  --help                        Display help
-```
+---
 
 ## Development
 
-```bash
-# Install dependencies
-pnpm install
-
-# Run in dev mode with watch
-pnpm run dev
-
-# Run tests
-pnpm run test
-
-# Type check
-pnpm run typecheck
-
-# Lint + format (Biome)
-pnpm run check:biome
-
-# Auto-fix lint + format issues
-pnpm run lint:fix
-pnpm run format
-
-# Build
-pnpm run build
-
-# Full check (typecheck + biome + test)
-pnpm run check
+```sh
+pnpm install          # install dependencies
+pnpm dev              # build + watch
+pnpm test             # run tests
+pnpm test:e2e         # end-to-end tests
+pnpm typecheck        # TypeScript check
+pnpm check:biome      # lint + format check
+pnpm lint:fix         # auto-fix lint issues
+pnpm build            # production build
+pnpm check            # typecheck + biome + test (full CI)
 ```
+
+---
 
 ## License
 
