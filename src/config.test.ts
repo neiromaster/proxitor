@@ -19,7 +19,7 @@ describe('loadConfig', () => {
       openrouterKey: 'test-key',
     })
     expect(config.host).toBe('0.0.0.0')
-    expect(config.port).toBe(8080)
+    expect(config.port).toBe(8828)
     expect(config.openrouterKey).toBe('test-key')
     expect(config.verbose).toBe(false)
   })
@@ -198,7 +198,7 @@ describe('buildProviderRouting', () => {
 describe('resolveModelConfig', () => {
   const baseConfig: ProxyConfig = {
     host: '0.0.0.0',
-    port: 8080,
+    port: 8828,
     openrouterKey: 'test-key',
     openrouterBaseUrl: 'https://openrouter.ai/api/v1',
     verbose: false,
@@ -337,7 +337,7 @@ describe('proxyConfigFileSchema', () => {
   })
 
   it('should reject unknown top-level fields', () => {
-    const result = proxyConfigFileSchema.safeParse({ porrt: 8080 })
+    const result = proxyConfigFileSchema.safeParse({ porrt: 8828 })
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error.issues.some(i => i.message.includes('Unrecognized'))).toBe(true)
@@ -463,7 +463,7 @@ describe('config file validation', () => {
   it('throws ConfigValidationError on unknown field', async () => {
     const dir = tempDir()
     const configPath = join(dir, 'proxitor.config.yaml')
-    writeFileSync(configPath, 'porrt: 8080')
+    writeFileSync(configPath, 'porrt: 8828')
 
     await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
       ConfigValidationError,

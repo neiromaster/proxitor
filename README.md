@@ -17,11 +17,11 @@
 ```
   Claude Code / Codex
         │
-        │  ANTHROPIC_BASE_URL=http://localhost:8080/v1
+        │  ANTHROPIC_BASE_URL=http://localhost:8828/v1
         ▼
   ┌───────────────┐
   │   proxitor    │  ← injects provider routing
-  │  :8080        │  ← streams SSE back unchanged
+  │  :8828        │  ← streams SSE back unchanged
   └───────────────┘
         │
         │  + X-OpenRouter-* headers
@@ -81,17 +81,17 @@ npx proxitor
 
 ```sh
 OPENROUTER_API_KEY=sk-or-... proxitor
-# Listening on http://0.0.0.0:8080
+# Listening on http://0.0.0.0:8828
 ```
 
 **2. Point your tools at it**
 
 ```sh
 # Claude Code
-ANTHROPIC_BASE_URL=http://localhost:8080/v1 claude
+ANTHROPIC_BASE_URL=http://localhost:8828/v1 claude
 
 # Codex
-OPENAI_BASE_URL=http://localhost:8080/v1 codex
+OPENAI_BASE_URL=http://localhost:8828/v1 codex
 ```
 
 That's it. Requests flow through proxitor to OpenRouter, SSE streams pass through unchanged.
@@ -224,7 +224,7 @@ provider:
 ### Health check
 
 ```sh
-curl http://localhost:8080/health
+curl http://localhost:8828/health
 ```
 
 ---
@@ -233,6 +233,23 @@ curl http://localhost:8080/health
 
 Proxitor includes an interactive CLI for managing model overrides — search models, pick providers, and write to config without editing YAML by hand.
 
+### Setup wizard
+
+Run the wizard to create or update your config interactively. If no config exists, any command will offer to launch it automatically.
+
+```sh
+proxitor config wizard
+```
+
+The wizard asks for:
+
+- **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
+- **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
+- **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)
+- **Save location** — project directory, `~/.config/proxitor/`, or `$XDG_CONFIG_HOME/proxitor/`
+
+If a config already exists, the wizard shows its location and asks whether to reconfigure. Existing `modelOverrides`, `provider`, and other fields are preserved — only the wizard fields are updated.
+
 ```sh
 proxitor config menu           # interactive menu
 proxitor config add            # add a model override
@@ -240,6 +257,7 @@ proxitor config edit           # edit existing override
 proxitor config remove         # remove override(s)
 proxitor config list           # show current overrides
 proxitor config browse         # explore models with pricing info
+proxitor config wizard         # interactive setup wizard
 proxitor config validate       # validate config file
 ```
 
@@ -309,7 +327,7 @@ The interface uses live data from the OpenRouter API — model search with type-
 
 | Flag | Default | Description |
 |---|---|---|
-| `-p, --port <port>` | `8080` | Server port |
+| `-p, --port <port>` | `8828` | Server port |
 | `-h, --host <host>` | `0.0.0.0` | Server host |
 | `-c, --config <path>` | auto-discovered | Path to config file |
 | `--openrouter-key <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |

@@ -29,7 +29,7 @@ export type ResolvedModelConfig = {
 
 const DEFAULT_CONFIG: ProxyConfig = {
   host: '0.0.0.0',
-  port: 8080,
+  port: 8828,
   openrouterKey: '',
   openrouterBaseUrl: 'https://openrouter.ai/api/v1',
   verbose: false,
@@ -173,7 +173,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
 }
 
 /** Resolve XDG config directory: $XDG_CONFIG_HOME/proxitor or ~/.config/proxitor */
-function getXdgConfigDir(): string {
+export function getXdgConfigDir(): string {
   const xdgHome = process.env.XDG_CONFIG_HOME
   return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor')
 }

@@ -4,7 +4,7 @@ import { buildRequestHeaders } from './headers.js'
 
 const baseConfig: ProxyConfig = {
   host: '0.0.0.0',
-  port: 8080,
+  port: 8828,
   openrouterKey: 'test-key',
   openrouterBaseUrl: 'https://openrouter.ai/api/v1',
   verbose: false,

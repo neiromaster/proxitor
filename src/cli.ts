@@ -58,7 +58,7 @@ const startCommand = command({
       short: 'p',
       type: number,
       description: 'Proxy server port',
-      defaultValue: () => 8080,
+      defaultValue: () => 8828,
       defaultValueIsSerializable: true,
     }),
     host: option({
@@ -170,6 +170,15 @@ const configCli = subcommands({
         (await import('./commands/config.js')).runConfigMenu(k),
       ),
     }),
+    wizard: command({
+      name: 'wizard',
+      description: 'Interactive setup wizard',
+      args: {},
+      handler: async () => {
+        const { runWizard } = await import('./commands/config/wizard.js')
+        await runWizard()
+      },
+    }),
   },
 })
 
@@ -180,9 +189,28 @@ const rootCli = subcommands({
   cmds: { start: startCommand, config: configCli },
 })
 
+const handleError = async (err: Error) => {
+  if (err.message.includes('No config file found') && process.stdin.isTTY) {
+    logger.error(err.message)
+    const clack = await import('@clack/prompts')
+    const launch = await clack.confirm({
+      message: 'Run setup wizard?',
+      initialValue: true,
+    })
+    if (clack.isCancel(launch) || !launch) {
+      process.exit(1)
+    }
+    const { runWizard } = await import('./commands/config/wizard.js')
+    await runWizard()
+    return
+  }
+  logger.error(err.message)
+  process.exit(1)
+}
+
 const hasSubcommand = argv.some(a => !a.startsWith('-'))
 if (hasSubcommand || isInfo) {
-  void run(rootCli, argv)
+  void run(rootCli, argv).catch(err => void handleError(err))
 } else {
-  void run(startCommand, argv)
+  void run(startCommand, argv).catch(err => void handleError(err))
 }
