@@ -218,7 +218,7 @@ curl http://localhost:8080/health
 Proxitor includes an interactive CLI for managing model overrides — search models, pick providers, and write to config without editing YAML by hand.
 
 ```sh
-proxitor config                # interactive menu
+proxitor config menu           # interactive menu
 proxitor config add            # add a model override
 proxitor config edit           # edit existing override
 proxitor config remove         # remove override(s)
@@ -239,8 +239,8 @@ $ proxitor config add
 ◇ Search for a model
 │ claude
   (23 matches)
-  ● anthropic/claude-sonnet-4-6 · $3.00/1M · 200k
-  ○ anthropic/claude-opus-4-8   · $15.00/1M · 200k
+  ● anthropic/claude-sonnet-4-6 · $3.00/$15.00 · 200k
+  ○ anthropic/claude-opus-4-8   · $15.00/$75.00 · 200k
   ...
 
 ◇ Configure provider routing

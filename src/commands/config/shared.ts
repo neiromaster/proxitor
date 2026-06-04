@@ -4,6 +4,8 @@ import { parseDocument } from 'yaml'
 import { findConfigFile } from '../../config.js'
 import type { ModelOverride } from '../../config-schema.js'
 import { logger } from '../../logger.js'
+import { formatPrice } from '../../openrouter/models.js'
+import type { OpenRouterModel } from '../../openrouter/types.js'
 
 export function requireConfigPath(): string {
   const path = findConfigFile()
@@ -23,7 +25,6 @@ export function writeConfigRaw(path: string, content: string): void {
   writeFileSync(path, content, 'utf-8')
 }
 
-/** Add or update a model override, preserving YAML comments. */
 export function setModelOverride(
   configPath: string,
   modelKey: string,
@@ -83,7 +84,7 @@ export function formatPricing(prompt: string, completion: string): string {
     if (per1M < 0.01) return `$${per1M.toFixed(4)}`
     return `$${per1M.toFixed(2)}`
   }
-  return `${fmt(prompt)} / ${fmt(completion)} per 1M tokens`
+  return `${fmt(prompt)} / ${fmt(completion)}`
 }
 
 /** `200000` → `"200k"`, `1000000` → `"1.0M"` */
@@ -103,4 +104,16 @@ export function formatLatency(ms: number | null): string {
 export function formatThroughput(tokensPerSec: number | null): string {
   if (tokensPerSec === null) return 'N/A'
   return `${tokensPerSec.toFixed(0)} t/s`
+}
+
+export function formatModelLabel(m: OpenRouterModel): string {
+  return `${m.name || m.id}  —  ${formatPrice(m.pricing.prompt)} · ${formatContextLength(m.context_length)}`
+}
+
+export function formatModelHint(m: OpenRouterModel): string {
+  const parts = [`out ${formatPrice(m.pricing.completion)}`]
+  if (m.pricing.input_cache_read && m.pricing.input_cache_read !== '0') {
+    parts.push(`cache ${formatPrice(m.pricing.input_cache_read)}`)
+  }
+  return parts.join(' · ')
 }

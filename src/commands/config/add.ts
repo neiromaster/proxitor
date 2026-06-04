@@ -13,6 +13,8 @@ import type { OpenRouterModel } from '../../openrouter/types.js'
 import {
   formatContextLength,
   formatLatency,
+  formatModelHint,
+  formatModelLabel,
   formatPricing,
   formatThroughput,
   getModelOverrides,
@@ -105,8 +107,8 @@ async function searchModel(models: OpenRouterModel[]): Promise<string | symbol |
         .slice(0, 14)
         .map(m => ({
           value: m.id,
-          label: m.name || m.id,
-          hint: `${formatPrice(m.pricing.prompt)} · ${formatContextLength(m.context_length)}`,
+          label: formatModelLabel(m),
+          hint: formatModelHint(m),
         }))
 
       return [
@@ -208,7 +210,9 @@ async function fetchProvidersForPattern(
   s.start('Fetching providers...')
   try {
     const providers = await fetchProviders(client)
-    const options = providers.map(p => ({ value: p.slug, label: p.name }))
+    const options = providers
+      .map(p => ({ value: p.slug, label: p.name }))
+      .sort((a, b) => a.label.localeCompare(b.label))
     s.stop(`${providers.length} providers available`)
     return options
   } catch (error) {
@@ -339,6 +343,12 @@ function displayModelInfo(model: OpenRouterModel): void {
   clack.log.info(
     `  Pricing: ${formatPricing(model.pricing.prompt, model.pricing.completion)}`,
   )
+  if (model.pricing.input_cache_read && model.pricing.input_cache_read !== '0') {
+    clack.log.info(`  Cache read: ${formatPrice(model.pricing.input_cache_read)}`)
+  }
+  if (model.pricing.input_cache_write && model.pricing.input_cache_write !== '0') {
+    clack.log.info(`  Cache write: ${formatPrice(model.pricing.input_cache_write)}`)
+  }
   if (model.top_provider?.max_completion_tokens) {
     clack.log.info(
       `  Max output: ${formatContextLength(model.top_provider.max_completion_tokens)} tokens`,

@@ -13,6 +13,8 @@ import { addOverrideCommand } from './add.js'
 import {
   formatContextLength,
   formatLatency,
+  formatModelHint,
+  formatModelLabel,
   formatPricing,
   formatThroughput,
 } from './shared.js'
@@ -77,6 +79,9 @@ export async function browseModelsCommand(apiKey: string): Promise<void> {
   if (model.pricing.input_cache_read && model.pricing.input_cache_read !== '0') {
     clack.log.info(`  Cache read: ${formatPrice(model.pricing.input_cache_read)}`)
   }
+  if (model.pricing.input_cache_write && model.pricing.input_cache_write !== '0') {
+    clack.log.info(`  Cache write: ${formatPrice(model.pricing.input_cache_write)}`)
+  }
   if (model.architecture?.modality) {
     clack.log.info(`  Modality: ${model.architecture.modality}`)
   }
@@ -119,9 +124,5 @@ export async function browseModelsCommand(apiKey: string): Promise<void> {
 }
 
 function toOption(m: OpenRouterModel) {
-  return {
-    value: m.id,
-    label: m.name || m.id,
-    hint: `${formatPrice(m.pricing.prompt)} · ${formatContextLength(m.context_length)}`,
-  }
+  return { value: m.id, label: formatModelLabel(m), hint: formatModelHint(m) }
 }

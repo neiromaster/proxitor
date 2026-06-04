@@ -28,5 +28,6 @@ export function getUniqueProviders(endpoints: ModelEndpoint[]): ProviderOption[]
     result.push({ tag: ep.tag, providerName: ep.provider_name })
   }
 
+  result.sort((a, b) => a.providerName.localeCompare(b.providerName))
   return result
 }

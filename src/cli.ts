@@ -1,100 +1,30 @@
 #!/usr/bin/env node
-import { cac } from 'cac'
+import { command, flag, number, option, optional, run, string, subcommands } from 'cmd-ts'
 import { config as loadDotenv } from 'dotenv'
 import { loadConfig } from './config.js'
 import { logger } from './logger.js'
 import { startProxyServer } from './proxy.js'
 import { version } from './version.js'
 
-loadDotenv()
+const argv = process.argv.slice(2)
+const isInfo =
+  argv.includes('--help') ||
+  argv.includes('-h') ||
+  argv.includes('--version') ||
+  argv.includes('-v')
+if (!isInfo) loadDotenv()
 
-const cli = cac('proxitor')
-
-cli.version(version).usage('[options]').help()
-
-cli
-  .option('-p, --port <port>', 'Proxy server port', { default: 8080 })
-  .option('-h, --host <host>', 'Proxy server host', { default: '0.0.0.0' })
-  .option('-c, --config <path>', 'Path to config file')
-  .option('--no-config', 'Skip config file discovery')
-  .option('--openrouter-key <key>', 'OpenRouter API key')
-  .option('--verbose', 'Enable verbose logging')
-
-const parsed = cli.parse()
-const firstArg = parsed.args[0]
-
-if (firstArg === 'config') {
-  // cac doesn't support nested subcommands — route manually
-  void runConfig(parsed.args[1], parsed.options)
-} else if (!firstArg) {
-  void main()
-} else {
-  cli.outputHelp()
-}
-
-type ConfigAction = 'add' | 'edit' | 'remove' | 'list' | 'browse' | 'validate' | 'menu'
-
-async function runConfig(
-  subcommand: string | undefined,
-  options: Record<string, unknown>,
-): Promise<void> {
-  const apiKey = await resolveApiKey(options)
-  if (!apiKey) return
-
-  const action: ConfigAction = (subcommand as ConfigAction) || 'menu'
-
-  switch (action) {
-    case 'add': {
-      const { addOverrideCommand } = await import('./commands/config/add.js')
-      await addOverrideCommand(apiKey)
-      break
-    }
-    case 'edit': {
-      const { editOverrideCommand } = await import('./commands/config/edit.js')
-      await editOverrideCommand(apiKey)
-      break
-    }
-    case 'remove': {
-      const { removeOverrideCommand } = await import('./commands/config/remove.js')
-      await removeOverrideCommand()
-      break
-    }
-    case 'list': {
-      const { listOverridesCommand } = await import('./commands/config/list.js')
-      await listOverridesCommand()
-      break
-    }
-    case 'browse': {
-      const { browseModelsCommand } = await import('./commands/config/browse.js')
-      await browseModelsCommand(apiKey)
-      break
-    }
-    case 'validate': {
-      const { validateConfigCommand } = await import('./commands/config/validate.js')
-      await validateConfigCommand()
-      break
-    }
-    default: {
-      const { runConfigMenu } = await import('./commands/config.js')
-      await runConfigMenu(apiKey)
-      break
-    }
-  }
-}
-
-async function resolveApiKey(options: Record<string, unknown>): Promise<string | null> {
-  if (options.openRouterKey && typeof options.openRouterKey === 'string') {
-    return options.openRouterKey
-  }
-
+async function resolveApiKey(
+  configPath?: string,
+  openrouterKey?: string,
+): Promise<string | null> {
+  if (openrouterKey) return openrouterKey
   const envKey = process.env.OPENROUTER_API_KEY
   if (envKey) return envKey
 
   try {
-    const config = await loadConfig({
-      configPath: typeof options.config === 'string' ? options.config : undefined,
-    })
-    if (config.openrouterKey) return config.openrouterKey
+    const cfg = await loadConfig({ configPath })
+    if (cfg.openrouterKey) return cfg.openrouterKey
   } catch {
     // Config not found or invalid — fall through
   }
@@ -105,24 +35,154 @@ async function resolveApiKey(options: Record<string, unknown>): Promise<string |
   return null
 }
 
-async function main() {
-  try {
-    const config = await loadConfig({
-      configPath:
-        typeof parsed.options.config === 'string' ? parsed.options.config : undefined,
-      noConfig: parsed.options.config === false,
-      port: parsed.options.port,
-      host: parsed.options.host,
-      openrouterKey: parsed.options.openrouterKey,
-      verbose: parsed.options.verbose,
-    })
+const configOptionArgs = {
+  config: option({
+    long: 'config',
+    short: 'c',
+    type: optional(string),
+    description: 'Path to config file',
+  }),
+  openrouterKey: option({
+    long: 'openrouter-key',
+    type: optional(string),
+    description: 'OpenRouter API key',
+  }),
+}
 
-    startProxyServer(config, () => {
-      logger.ready(`Proxitor proxy listening on ${config.host}:${config.port}`)
-      logger.info('Routing requests to OpenRouter')
-    })
-  } catch (error) {
-    logger.error('Failed to start proxy:', error)
-    process.exit(1)
+const startCommand = command({
+  name: 'start',
+  description: 'Start proxy server',
+  args: {
+    port: option({
+      long: 'port',
+      short: 'p',
+      type: number,
+      description: 'Proxy server port',
+      defaultValue: () => 8080,
+      defaultValueIsSerializable: true,
+    }),
+    host: option({
+      long: 'host',
+      type: string,
+      description: 'Proxy server host',
+      defaultValue: () => '0.0.0.0',
+      defaultValueIsSerializable: true,
+    }),
+    config: option({
+      long: 'config',
+      short: 'c',
+      type: optional(string),
+      description: 'Path to config file',
+    }),
+    noConfig: flag({ long: 'no-config', description: 'Skip config file discovery' }),
+    openrouterKey: option({
+      long: 'openrouter-key',
+      type: optional(string),
+      description: 'OpenRouter API key',
+    }),
+    verbose: flag({ long: 'verbose', description: 'Enable verbose logging' }),
+  },
+  handler: async args => {
+    try {
+      const cfg = await loadConfig({
+        configPath: args.config ?? undefined,
+        noConfig: args.noConfig,
+        port: args.port,
+        host: args.host,
+        openrouterKey: args.openrouterKey ?? undefined,
+        verbose: args.verbose,
+      })
+      startProxyServer(cfg, () => {
+        logger.ready(`Proxitor proxy listening on ${cfg.host}:${cfg.port}`)
+        logger.info('Routing requests to OpenRouter')
+      })
+    } catch (error) {
+      logger.error('Failed to start proxy:', error)
+      process.exit(1)
+    }
+  },
+})
+
+const withApiKey =
+  (fn: (apiKey: string) => Promise<void>) =>
+  async (args: { config?: string; openrouterKey?: string }) => {
+    const apiKey = await resolveApiKey(
+      args.config ?? undefined,
+      args.openrouterKey ?? undefined,
+    )
+    if (apiKey) await fn(apiKey)
   }
+
+const configCli = subcommands({
+  name: 'config',
+  description: 'Manage proxy configuration',
+  cmds: {
+    add: command({
+      name: 'add',
+      description: 'Add model override',
+      args: configOptionArgs,
+      handler: withApiKey(async k =>
+        (await import('./commands/config/add.js')).addOverrideCommand(k),
+      ),
+    }),
+    edit: command({
+      name: 'edit',
+      description: 'Edit model override',
+      args: configOptionArgs,
+      handler: withApiKey(async k =>
+        (await import('./commands/config/edit.js')).editOverrideCommand(k),
+      ),
+    }),
+    remove: command({
+      name: 'remove',
+      description: 'Remove model override',
+      args: {},
+      handler: async () =>
+        (await import('./commands/config/remove.js')).removeOverrideCommand(),
+    }),
+    list: command({
+      name: 'list',
+      description: 'List current overrides',
+      args: {},
+      handler: async () =>
+        (await import('./commands/config/list.js')).listOverridesCommand(),
+    }),
+    browse: command({
+      name: 'browse',
+      description: 'Browse models',
+      args: configOptionArgs,
+      handler: withApiKey(async k =>
+        (await import('./commands/config/browse.js')).browseModelsCommand(k),
+      ),
+    }),
+    validate: command({
+      name: 'validate',
+      description: 'Validate config',
+      args: {},
+      handler: async () =>
+        (await import('./commands/config/validate.js')).validateConfigCommand(),
+    }),
+    menu: command({
+      name: 'menu',
+      description: 'Interactive configuration menu',
+      args: configOptionArgs,
+      handler: withApiKey(async k =>
+        (await import('./commands/config.js')).runConfigMenu(k),
+      ),
+    }),
+  },
+})
+
+const rootCli = subcommands({
+  name: 'proxitor',
+  version,
+  description: 'Lightweight proxy for routing CLI requests to OpenRouter',
+  cmds: { start: startCommand, config: configCli },
+})
+
+const hasSubcommand = argv.some(a => !a.startsWith('-'))
+if (hasSubcommand || isInfo) {
+  void run(rootCli, argv)
+} else {
+  void run(startCommand, argv)
 }

@@ -24,10 +24,10 @@ export function parseModelSlug(modelId: string): string {
   return modelId.split('/').slice(1).join('/')
 }
 
-/** `"0.000003"` → `"$3.00/1M"`, `"0"` → `"free"` */
+/** `"0.000003"` → `"$3.00"`, `"0"` → `"free"` */
 export function formatPrice(pricePerToken: string): string {
   const per1M = Number.parseFloat(pricePerToken) * 1_000_000
   if (per1M === 0) return 'free'
-  if (per1M < 0.01) return `$${per1M.toFixed(4)}/1M`
-  return `$${per1M.toFixed(2)}/1M`
+  if (per1M < 0.01) return `$${per1M.toFixed(4)}`
+  return `$${per1M.toFixed(2)}`
 }
