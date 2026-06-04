@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineConfig } from 'tsdown'
+
+const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
 
 export default defineConfig({
   entry: ['src/cli.ts', 'src/index.ts'],
@@ -9,4 +13,21 @@ export default defineConfig({
   target: 'node22',
   sourcemap: true,
   hash: false,
+  define: {
+    __PROXITOR_VERSION__: JSON.stringify(pkg.version),
+  },
+  deps: {
+    alwaysBundle: [
+      '@clack/prompts',
+      '@hono/node-server',
+      'cmd-ts',
+      'conf',
+      'consola',
+      'dotenv',
+      'hono',
+      'js-yaml',
+      'yaml',
+      'zod',
+    ],
+  },
 })

@@ -1,12 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+declare const __PROXITOR_VERSION__: string
 
-const pkg = JSON.parse(
-  readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'),
-    'utf-8',
-  ),
-)
-
-export const version: string = pkg.version
+export const version: string = __PROXITOR_VERSION__
