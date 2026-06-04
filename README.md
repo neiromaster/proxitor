@@ -245,6 +245,7 @@ The wizard asks for:
 
 - **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
 - **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
+- **API base URL** — default `https://openrouter.ai/api/v1`; change for self-hosted or custom endpoints
 - **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)
 - **Save location** — project directory, `~/.config/proxitor/`, or `$XDG_CONFIG_HOME/proxitor/`
 

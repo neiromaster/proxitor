@@ -8,6 +8,7 @@ import { findConfigFile, getXdgConfigDir } from '../../config.js'
 
 const DEFAULT_PORT = 8828
 const DEFAULT_HOST = '0.0.0.0'
+const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
 
 type SaveLocation = 'local' | 'user' | 'xdg'
 
@@ -62,6 +63,7 @@ function buildYaml(
   apiKey: string,
   port: number,
   host: string,
+  baseUrl: string,
   existingRaw?: string,
 ): string {
   if (existingRaw) {
@@ -69,10 +71,19 @@ function buildYaml(
     doc.set('openrouterKey', apiKey)
     doc.set('port', port)
     doc.set('host', host)
+    if (baseUrl !== DEFAULT_BASE_URL) {
+      doc.set('openrouterBaseUrl', baseUrl)
+    } else {
+      doc.delete('openrouterBaseUrl')
+    }
     return doc.toString()
   }
 
-  return stringify({ openrouterKey: apiKey, port, host })
+  const config: Record<string, unknown> = { openrouterKey: apiKey, port, host }
+  if (baseUrl !== DEFAULT_BASE_URL) {
+    config.openrouterBaseUrl = baseUrl
+  }
+  return stringify(config)
 }
 
 function readExistingConfig(path: string): {
@@ -80,6 +91,7 @@ function readExistingConfig(path: string): {
   port: number
   host: string
   apiKey: string
+  baseUrl: string
 } {
   const raw = readFileSync(path, 'utf-8')
   const parsed = parseDocument(raw).toJSON() as Record<string, unknown>
@@ -88,6 +100,10 @@ function readExistingConfig(path: string): {
     port: typeof parsed?.port === 'number' ? parsed.port : DEFAULT_PORT,
     host: typeof parsed?.host === 'string' ? parsed.host : DEFAULT_HOST,
     apiKey: typeof parsed?.openrouterKey === 'string' ? parsed.openrouterKey : '',
+    baseUrl:
+      typeof parsed?.openrouterBaseUrl === 'string'
+        ? parsed.openrouterBaseUrl
+        : DEFAULT_BASE_URL,
   }
 }
 
@@ -129,6 +145,27 @@ async function askPort(current: number): Promise<number | null> {
   return (input as string).trim() ? Number.parseInt(input as string, 10) : DEFAULT_PORT
 }
 
+async function askBaseUrl(current: string): Promise<string | null> {
+  const url = await clack.text({
+    message: 'OpenRouter API base URL',
+    placeholder: DEFAULT_BASE_URL,
+    initialValue: current === DEFAULT_BASE_URL ? '' : current,
+    validate: v => {
+      if (!v?.trim()) return undefined
+      try {
+        const parsed = new URL(v.trim())
+        if (!parsed.protocol.startsWith('http'))
+          return 'URL must start with http:// or https://'
+      } catch {
+        return 'Invalid URL'
+      }
+      return undefined
+    },
+  })
+  if (isCancel(url)) return null
+  return (url as string).trim() || DEFAULT_BASE_URL
+}
+
 async function askHost(current: string): Promise<string | null> {
   const host = await clack.select({
     message: 'Listen address',
@@ -163,6 +200,7 @@ export async function runWizard(): Promise<void> {
   let currentPort = DEFAULT_PORT
   let currentHost = DEFAULT_HOST
   let currentKey = ''
+  let currentBaseUrl = DEFAULT_BASE_URL
 
   if (existingPath) {
     clack.note(existingPath, 'Existing config found')
@@ -182,6 +220,7 @@ export async function runWizard(): Promise<void> {
       currentPort = existing.port
       currentHost = existing.host
       currentKey = existing.apiKey
+      currentBaseUrl = existing.baseUrl
     } catch {
       // use defaults
     }
@@ -199,6 +238,12 @@ export async function runWizard(): Promise<void> {
     return
   }
 
+  const baseUrl = await askBaseUrl(currentBaseUrl)
+  if (baseUrl === null) {
+    clack.outro('Cancelled')
+    return
+  }
+
   const host = await askHost(currentHost)
   if (host === null) {
     clack.outro('Cancelled')
@@ -211,7 +256,7 @@ export async function runWizard(): Promise<void> {
     return
   }
 
-  const yaml = buildYaml(apiKey, port, host, existingRaw)
+  const yaml = buildYaml(apiKey, port, host, baseUrl, existingRaw)
   clack.note(yaml, 'Preview')
 
   const save = await clack.confirm({
