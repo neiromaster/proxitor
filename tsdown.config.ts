@@ -17,17 +17,6 @@ export default defineConfig({
     __PROXITOR_VERSION__: JSON.stringify(pkg.version),
   },
   deps: {
-    alwaysBundle: [
-      '@clack/prompts',
-      '@hono/node-server',
-      'cmd-ts',
-      'conf',
-      'consola',
-      'dotenv',
-      'hono',
-      'js-yaml',
-      'yaml',
-      'zod',
-    ],
+    alwaysBundle: Object.keys(pkg.dependencies ?? {}),
   },
 })
