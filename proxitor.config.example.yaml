@@ -10,6 +10,8 @@ port: 8828
 # OpenRouter settings
 openrouterKey: '' # Or set OPENROUTER_API_KEY env var
 openrouterBaseUrl: 'https://openrouter.ai/api/v1'
+# Authentication type: "bearer" (default) or "oauth" for custom proxy providers
+# authType: bearer
 
 # Provider routing — controls which upstream provider handles requests
 # provider:

@@ -1,4 +1,5 @@
 import type { ProxyConfig } from '../config.js'
+import { formatAuthHeader } from '../utils.js'
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -41,7 +42,7 @@ export function buildRequestHeaders(
 ): Record<string, string> {
   const headers = filterHeaders(incoming, STRIP_REQUEST)
 
-  headers.Authorization = `Bearer ${config.openrouterKey}`
+  headers.Authorization = formatAuthHeader(config.openrouterKey, config.authType)
   headers['HTTP-Referer'] = config.attributionReferer
   headers['X-Title'] = config.attributionTitle
   headers['Accept-Encoding'] = 'identity'

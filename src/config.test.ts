@@ -201,6 +201,7 @@ describe('resolveModelConfig', () => {
     port: 8828,
     openrouterKey: 'test-key',
     openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+    authType: 'bearer',
     verbose: false,
     bodyLimit: '50mb',
     attributionReferer: 'http://localhost',

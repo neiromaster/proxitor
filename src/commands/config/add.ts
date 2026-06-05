@@ -1,6 +1,6 @@
 import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
-import { OpenRouterClient } from '../../openrouter/client.js'
+import type { OpenRouterClient } from '../../openrouter/client.js'
 import { fetchModels, formatPrice } from '../../openrouter/models.js'
 import type { OpenRouterModel } from '../../openrouter/types.js'
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js'
@@ -19,11 +19,10 @@ import {
 const CUSTOM_PATTERN = '__custom_pattern__'
 
 /** Run the interactive "Add model override" flow. */
-export async function addOverrideCommand(apiKey: string): Promise<void> {
+export async function addOverrideCommand(client: OpenRouterClient): Promise<void> {
   clack.intro('Add Model Override')
 
   const configPath = requireConfigPath()
-  const client = new OpenRouterClient(apiKey)
 
   const models = await loadModelsWithSpinner(client)
   if (!models) return

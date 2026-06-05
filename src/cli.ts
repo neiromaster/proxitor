@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { command, flag, number, option, optional, run, string, subcommands } from 'cmd-ts'
 import { config as loadDotenv } from 'dotenv'
-import { loadConfig } from './config.js'
+import { DEFAULTS, loadConfig } from './config.js'
 import { logger } from './logger.js'
+import { OpenRouterClient } from './openrouter/client.js'
 import { startProxyServer } from './proxy.js'
 import { version } from './version.js'
 
@@ -58,14 +59,14 @@ const startCommand = command({
       short: 'p',
       type: number,
       description: 'Proxy server port',
-      defaultValue: () => 8828,
+      defaultValue: () => DEFAULTS.port,
       defaultValueIsSerializable: true,
     }),
     host: option({
       long: 'host',
       type: string,
       description: 'Proxy server host',
-      defaultValue: () => '0.0.0.0',
+      defaultValue: () => DEFAULTS.host,
       defaultValueIsSerializable: true,
     }),
     config: option({
@@ -103,14 +104,21 @@ const startCommand = command({
   },
 })
 
-const withApiKey =
-  (fn: (apiKey: string) => Promise<void>) =>
+const withClient =
+  (fn: (client: OpenRouterClient) => Promise<void>) =>
   async (args: { config?: string; openrouterKey?: string }) => {
     const apiKey = await resolveApiKey(
       args.config ?? undefined,
       args.openrouterKey ?? undefined,
     )
-    if (apiKey) await fn(apiKey)
+    if (!apiKey) return
+
+    try {
+      const cfg = await loadConfig({ configPath: args.config ?? undefined })
+      await fn(new OpenRouterClient(apiKey, cfg.openrouterBaseUrl, cfg.authType))
+    } catch (error) {
+      logger.error('Failed to load config:', error)
+    }
   }
 
 const configCli = subcommands({
@@ -121,16 +129,16 @@ const configCli = subcommands({
       name: 'add',
       description: 'Add model override',
       args: configOptionArgs,
-      handler: withApiKey(async k =>
-        (await import('./commands/config/add.js')).addOverrideCommand(k),
+      handler: withClient(async client =>
+        (await import('./commands/config/add.js')).addOverrideCommand(client),
       ),
     }),
     edit: command({
       name: 'edit',
       description: 'Edit model override',
       args: configOptionArgs,
-      handler: withApiKey(async k =>
-        (await import('./commands/config/edit.js')).editOverrideCommand(k),
+      handler: withClient(async client =>
+        (await import('./commands/config/edit.js')).editOverrideCommand(client),
       ),
     }),
     remove: command({
@@ -151,8 +159,8 @@ const configCli = subcommands({
       name: 'browse',
       description: 'Browse models',
       args: configOptionArgs,
-      handler: withApiKey(async k =>
-        (await import('./commands/config/browse.js')).browseModelsCommand(k),
+      handler: withClient(async client =>
+        (await import('./commands/config/browse.js')).browseModelsCommand(client),
       ),
     }),
     validate: command({
@@ -166,8 +174,8 @@ const configCli = subcommands({
       name: 'menu',
       description: 'Interactive configuration menu',
       args: configOptionArgs,
-      handler: withApiKey(async k =>
-        (await import('./commands/config.js')).runConfigMenu(k),
+      handler: withClient(async client =>
+        (await import('./commands/config.js')).runConfigMenu(client),
       ),
     }),
     wizard: command({

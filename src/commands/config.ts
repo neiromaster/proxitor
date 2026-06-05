@@ -1,5 +1,6 @@
 import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
+import type { OpenRouterClient } from '../openrouter/client.js'
 import { addOverrideCommand } from './config/add.js'
 import { browseModelsCommand } from './config/browse.js'
 import { editOverrideCommand } from './config/edit.js'
@@ -8,7 +9,7 @@ import { removeOverrideCommand } from './config/remove.js'
 import { validateConfigCommand } from './config/validate.js'
 
 /** Run the interactive config manager menu. */
-export async function runConfigMenu(apiKey: string): Promise<void> {
+export async function runConfigMenu(client: OpenRouterClient): Promise<void> {
   clack.intro('Proxitor Config Manager')
 
   const action = await clack.select({
@@ -31,10 +32,10 @@ export async function runConfigMenu(apiKey: string): Promise<void> {
 
   switch (action) {
     case 'add':
-      await addOverrideCommand(apiKey)
+      await addOverrideCommand(client)
       break
     case 'edit':
-      await editOverrideCommand(apiKey)
+      await editOverrideCommand(client)
       break
     case 'remove':
       await removeOverrideCommand()
@@ -43,7 +44,7 @@ export async function runConfigMenu(apiKey: string): Promise<void> {
       await listOverridesCommand()
       break
     case 'browse':
-      await browseModelsCommand(apiKey)
+      await browseModelsCommand(client)
       break
     case 'validate':
       await validateConfigCommand()

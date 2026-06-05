@@ -1,6 +1,6 @@
 import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
-import { OpenRouterClient } from '../../openrouter/client.js'
+import type { OpenRouterClient } from '../../openrouter/client.js'
 import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js'
 import {
   fetchModels,
@@ -80,10 +80,8 @@ async function displayProviders(
 }
 
 /** Run the interactive "Browse models" flow. */
-export async function browseModelsCommand(apiKey: string): Promise<void> {
+export async function browseModelsCommand(client: OpenRouterClient): Promise<void> {
   clack.intro('Browse Models')
-
-  const client = new OpenRouterClient(apiKey)
 
   const s = clack.spinner()
   s.start('Loading models...')
@@ -130,5 +128,5 @@ export async function browseModelsCommand(apiKey: string): Promise<void> {
     return
   }
 
-  await addOverrideCommand(apiKey)
+  await addOverrideCommand(client)
 }

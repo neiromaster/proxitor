@@ -109,6 +109,8 @@ proxitor.config.yaml  →  proxitor.config.yml  →  proxitor.config.json
 
 **Priority:** CLI flags > config file > environment variables > defaults
 
+All defaults are derived from a single Zod schema (`DEFAULTS`) — no hardcoded constants scattered across modules. Config values are validated through Zod on load, including the final merged result.
+
 See [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) for the complete reference.
 
 ### Provider routing
