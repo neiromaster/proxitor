@@ -44,7 +44,7 @@ export function buildRequestHeaders(
 
   headers.Authorization = formatAuthHeader(config.openrouterKey, config.authType);
   headers['HTTP-Referer'] = config.attributionReferer;
-  headers['X-Title'] = config.attributionTitle;
+  headers['X-OpenRouter-Title'] = config.attributionTitle;
   headers['Accept-Encoding'] = 'identity';
 
   if (extraHeaders) {

@@ -11,7 +11,7 @@ describe('buildRequestHeaders', () => {
     const headers = buildRequestHeaders(incoming, baseConfig, false);
     expect(headers.Authorization).toBe('Bearer test-key');
     expect(headers['HTTP-Referer']).toBe('http://localhost');
-    expect(headers['X-Title']).toBe('proxitor');
+    expect(headers['X-OpenRouter-Title']).toBe('proxitor');
     expect(headers['Accept-Encoding']).toBe('identity');
   });
 

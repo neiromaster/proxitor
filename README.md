@@ -256,6 +256,24 @@ provider:
 curl http://localhost:8828/health
 ```
 
+### Cache usage logging
+
+Proxitor automatically logs cache token usage from upstream responses — both non-streaming JSON and streaming SSE. No configuration needed.
+
+```
+[abc123] Cache read: 50000, write: 25000 tokens
+[def456] Cache: no cached tokens
+```
+
+Supports both provider formats:
+
+| Provider format | Fields |
+|---|---|
+| Anthropic | `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` |
+| OpenAI / OpenRouter | `usage.prompt_tokens_details.cached_tokens` / `cache_write_tokens` |
+
+When both formats are present (e.g., OpenRouter relaying an Anthropic response), Anthropic fields take priority.
+
 ---
 
 ## Interactive Config Manager
