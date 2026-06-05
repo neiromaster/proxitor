@@ -1,5 +1,5 @@
 ---
-"@proxitor/proxitor": minor
+"proxitor": minor
 ---
 
 Add request correlation ID to proxy logs and shorten upstream URL display
