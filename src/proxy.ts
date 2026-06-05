@@ -199,11 +199,12 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     const controller = new AbortController();
     c.req.raw.signal.addEventListener('abort', () => controller.abort());
 
+    const upstreamShort = upstreamUrl.replace(/^https?:\/\//, '');
     const modelLog = resolved.modelName ? ` model=${resolved.modelName}` : '';
     logger.info(
       withReq(
         reqId,
-        `${method} ${path} → ${upstreamUrl}${resolved.inject ? ' [inject]' : ''}${modelLog}`,
+        `${method} ${path} → ${upstreamShort}${resolved.inject ? ' [inject]' : ''}${modelLog}`,
       ),
     );
 
