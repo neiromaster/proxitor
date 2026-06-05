@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { ProxyConfig } from '../config.js'
+import { DEFAULTS } from '../config.js'
 import { buildRequestHeaders } from './headers.js'
 
-const baseConfig: ProxyConfig = {
-  host: '0.0.0.0',
-  port: 8828,
-  openrouterKey: 'test-key',
-  openrouterBaseUrl: 'https://openrouter.ai/api/v1',
-  verbose: false,
-  bodyLimit: '50mb',
-  attributionReferer: 'http://localhost',
-  attributionTitle: 'proxitor',
-}
+const baseConfig: ProxyConfig = { ...DEFAULTS, openrouterKey: 'test-key' }
 
 describe('buildRequestHeaders', () => {
   it('should build basic headers without extraHeaders', () => {
@@ -54,5 +46,19 @@ describe('buildRequestHeaders', () => {
     expect(headers.authorization).toBeUndefined()
     expect(headers.host).toBeUndefined()
     expect(headers['x-forwarded-for']).toBe('1.2.3.4')
+  })
+
+  it('should use OAuth prefix when authType is oauth', () => {
+    const incoming = new Headers()
+    const config = { ...baseConfig, authType: 'oauth' as const }
+    const headers = buildRequestHeaders(incoming, config, false)
+    expect(headers.Authorization).toBe('OAuth test-key')
+  })
+
+  it('should use Bearer prefix when authType is bearer', () => {
+    const incoming = new Headers()
+    const config = { ...baseConfig, authType: 'bearer' as const }
+    const headers = buildRequestHeaders(incoming, config, false)
+    expect(headers.Authorization).toBe('Bearer test-key')
   })
 })

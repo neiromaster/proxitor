@@ -5,13 +5,16 @@ import * as yaml from 'js-yaml'
 import {
   ConfigParseError,
   ConfigValidationError,
+  DEFAULTS,
   type ProviderConfig,
   type ProxyConfig,
   proxyConfigFileSchema,
+  proxyConfigSchema,
 } from './config-schema.js'
 import { toArray } from './utils.js'
 
 export type {
+  AuthType,
   MaxPrice,
   ModelOverride,
   PercentileCutoffs,
@@ -19,35 +22,13 @@ export type {
   ProviderSort,
   ProxyConfig,
 } from './config-schema.js'
-export { ConfigParseError, ConfigValidationError } from './config-schema.js'
+export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-schema.js'
 
-/** Result of merging global config with a model-specific override */
 export type ResolvedModelConfig = {
   provider?: ProviderConfig
   headers?: Record<string, string>
 }
 
-const DEFAULT_CONFIG: ProxyConfig = {
-  host: '0.0.0.0',
-  port: 8828,
-  openrouterKey: '',
-  openrouterBaseUrl: 'https://openrouter.ai/api/v1',
-  verbose: false,
-  bodyLimit: '50mb',
-  attributionReferer: 'http://localhost',
-  attributionTitle: 'proxitor',
-}
-
-type LoadConfigOptions = {
-  configPath?: string
-  noConfig?: boolean
-  host?: string
-  openrouterKey?: string
-  port?: number
-  verbose?: boolean
-}
-
-/** Fields that need toArray normalization (string | string[] → string[] | undefined) */
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'only', apiName: 'only' },
   { key: 'order', apiName: 'order' },
@@ -55,7 +36,6 @@ const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }
   { key: 'quantizations', apiName: 'quantizations' },
 ] as const
 
-/** Direct camelCase → snake_case field mappings */
 const DIRECT_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'sort', apiName: 'sort' },
   { key: 'maxPrice', apiName: 'max_price' },
@@ -67,7 +47,6 @@ const DIRECT_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string 
   { key: 'preferredMaxLatency', apiName: 'preferred_max_latency' },
 ] as const
 
-/** Build the provider routing object for OpenRouter request body injection */
 export function buildProviderRouting(
   provider?: ProviderConfig,
 ): Record<string, unknown> | undefined {
@@ -95,7 +74,6 @@ export function buildProviderRouting(
   return Object.keys(result).length > 0 ? result : undefined
 }
 
-/** Score a pattern against a model name. Higher = better match. -1 = no match. */
 export function matchScore(pattern: string, modelName: string): number {
   if (pattern === modelName) return modelName.length + 1000
 
@@ -106,7 +84,6 @@ export function matchScore(pattern: string, modelName: string): number {
   return -1
 }
 
-/** Resolve the effective config for a given model by merging global defaults with the best-matching override */
 export function resolveModelConfig(
   config: ProxyConfig,
   modelName?: string,
@@ -142,37 +119,51 @@ export function resolveModelConfig(
   return result
 }
 
-export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
-  const config = { ...DEFAULT_CONFIG }
+type LoadConfigOptions = {
+  configPath?: string
+  noConfig?: boolean
+  host?: string
+  openrouterKey?: string
+  port?: number
+  verbose?: boolean
+}
 
+export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
+  let fileConfig: Partial<ProxyConfig> = {}
   if (!options.noConfig) {
     const configPath = findConfigFile(options.configPath)
     if (configPath) {
-      const fileConfig = readConfigFile(configPath)
-      Object.assign(config, fileConfig)
+      fileConfig = readConfigFile(configPath)
     }
   }
 
-  if (options.host) config.host = options.host
-  if (options.port) config.port = options.port
-  if (options.verbose) config.verbose = options.verbose
-
-  if (options.openrouterKey) {
-    config.openrouterKey = options.openrouterKey
-  } else if (!config.openrouterKey) {
-    config.openrouterKey = process.env.OPENROUTER_API_KEY ?? ''
+  const merged = {
+    ...DEFAULTS,
+    ...fileConfig,
+    ...(options.host ? { host: options.host } : {}),
+    ...(options.port ? { port: options.port } : {}),
+    ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
+    ...(options.openrouterKey ? { openrouterKey: options.openrouterKey } : {}),
   }
 
-  if (!config.openrouterKey) {
+  if (!merged.openrouterKey) {
+    merged.openrouterKey = process.env.OPENROUTER_API_KEY ?? ''
+  }
+
+  const result = proxyConfigSchema.safeParse(merged)
+  if (!result.success) {
+    throw new ConfigValidationError('(merged config)', result.error)
+  }
+
+  if (!result.data.openrouterKey) {
     throw new Error(
       'OpenRouter API key is required. Set OPENROUTER_API_KEY env var, pass --openrouter-key flag, or set it in config file.',
     )
   }
 
-  return config
+  return result.data
 }
 
-/** Resolve XDG config directory: $XDG_CONFIG_HOME/proxitor or ~/.config/proxitor */
 export function getXdgConfigDir(): string {
   const xdgHome = process.env.XDG_CONFIG_HOME
   return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor')

@@ -1,4 +1,5 @@
-const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
+import type { AuthType } from '../config-schema.js'
+import { formatAuthHeader } from '../utils.js'
 
 export class OpenRouterClientError extends Error {
   readonly status: number
@@ -10,14 +11,16 @@ export class OpenRouterClientError extends Error {
   }
 }
 
-/** HTTP client for OpenRouter REST endpoints. Auth header is only sent when apiKey is non-empty. */
+/** HTTP client for OpenRouter REST endpoints. */
 export class OpenRouterClient {
   private readonly apiKey: string
   private readonly baseUrl: string
+  private readonly authType: AuthType
 
-  constructor(apiKey: string, baseUrl?: string) {
+  constructor(apiKey: string, baseUrl: string, authType: AuthType) {
     this.apiKey = apiKey
-    this.baseUrl = baseUrl ?? DEFAULT_BASE_URL
+    this.baseUrl = baseUrl
+    this.authType = authType
   }
 
   async get<T>(path: string): Promise<T> {
@@ -25,7 +28,7 @@ export class OpenRouterClient {
 
     const res = await fetch(url, {
       headers: {
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+        Authorization: formatAuthHeader(this.apiKey, this.authType),
       },
     })
 

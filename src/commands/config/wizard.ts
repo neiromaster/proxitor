@@ -4,11 +4,13 @@ import { dirname, join, resolve } from 'node:path'
 import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
 import { parseDocument, stringify } from 'yaml'
-import { findConfigFile, getXdgConfigDir } from '../../config.js'
-
-const DEFAULT_PORT = 8828
-const DEFAULT_HOST = '0.0.0.0'
-const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
+import {
+  type AuthType,
+  DEFAULTS,
+  findConfigFile,
+  getXdgConfigDir,
+  readConfigFile,
+} from '../../config.js'
 
 type SaveLocation = 'local' | 'user' | 'xdg'
 
@@ -64,6 +66,7 @@ function buildYaml(
   port: number,
   host: string,
   baseUrl: string,
+  authType: string,
   existingRaw?: string,
 ): string {
   if (existingRaw) {
@@ -71,40 +74,27 @@ function buildYaml(
     doc.set('openrouterKey', apiKey)
     doc.set('port', port)
     doc.set('host', host)
-    if (baseUrl !== DEFAULT_BASE_URL) {
+    if (baseUrl !== DEFAULTS.openrouterBaseUrl) {
       doc.set('openrouterBaseUrl', baseUrl)
     } else {
       doc.delete('openrouterBaseUrl')
+    }
+    if (authType !== DEFAULTS.authType) {
+      doc.set('authType', authType)
+    } else {
+      doc.delete('authType')
     }
     return doc.toString()
   }
 
   const config: Record<string, unknown> = { openrouterKey: apiKey, port, host }
-  if (baseUrl !== DEFAULT_BASE_URL) {
+  if (baseUrl !== DEFAULTS.openrouterBaseUrl) {
     config.openrouterBaseUrl = baseUrl
   }
-  return stringify(config)
-}
-
-function readExistingConfig(path: string): {
-  raw: string
-  port: number
-  host: string
-  apiKey: string
-  baseUrl: string
-} {
-  const raw = readFileSync(path, 'utf-8')
-  const parsed = parseDocument(raw).toJSON() as Record<string, unknown>
-  return {
-    raw,
-    port: typeof parsed?.port === 'number' ? parsed.port : DEFAULT_PORT,
-    host: typeof parsed?.host === 'string' ? parsed.host : DEFAULT_HOST,
-    apiKey: typeof parsed?.openrouterKey === 'string' ? parsed.openrouterKey : '',
-    baseUrl:
-      typeof parsed?.openrouterBaseUrl === 'string'
-        ? parsed.openrouterBaseUrl
-        : DEFAULT_BASE_URL,
+  if (authType !== DEFAULTS.authType) {
+    config.authType = authType
   }
+  return stringify(config)
 }
 
 async function askApiKey(currentKey: string): Promise<string | null> {
@@ -133,7 +123,7 @@ async function askPort(current: number): Promise<number | null> {
   const input = await clack.text({
     message: 'Proxy port',
     initialValue: String(current),
-    placeholder: String(DEFAULT_PORT),
+    placeholder: String(DEFAULTS.port),
     validate: v => {
       if (!v?.trim()) return undefined
       const n = Number.parseInt(v, 10)
@@ -142,14 +132,14 @@ async function askPort(current: number): Promise<number | null> {
     },
   })
   if (isCancel(input)) return null
-  return (input as string).trim() ? Number.parseInt(input as string, 10) : DEFAULT_PORT
+  return (input as string).trim() ? Number.parseInt(input as string, 10) : DEFAULTS.port
 }
 
 async function askBaseUrl(current: string): Promise<string | null> {
   const url = await clack.text({
     message: 'OpenRouter API base URL',
-    placeholder: DEFAULT_BASE_URL,
-    initialValue: current === DEFAULT_BASE_URL ? '' : current,
+    placeholder: DEFAULTS.openrouterBaseUrl,
+    initialValue: current === DEFAULTS.openrouterBaseUrl ? '' : current,
     validate: v => {
       if (!v?.trim()) return undefined
       try {
@@ -163,7 +153,20 @@ async function askBaseUrl(current: string): Promise<string | null> {
     },
   })
   if (isCancel(url)) return null
-  return (url as string).trim() || DEFAULT_BASE_URL
+  return (url as string).trim() || DEFAULTS.openrouterBaseUrl
+}
+
+async function askAuthType(current: string): Promise<string | null> {
+  const authType = await clack.select({
+    message: 'Authentication type',
+    initialValue: current,
+    options: [
+      { value: 'bearer', label: 'Bearer token', hint: 'Standard OpenRouter' },
+      { value: 'oauth', label: 'OAuth token', hint: 'Custom proxy providers' },
+    ],
+  })
+  if (isCancel(authType)) return null
+  return authType as string
 }
 
 async function askHost(current: string): Promise<string | null> {
@@ -192,15 +195,50 @@ async function askSaveLocation(existingPath?: string): Promise<SaveLocation | nu
   return location as SaveLocation
 }
 
+type ExistingConfigState = {
+  raw?: string
+  port: number
+  host: string
+  apiKey: string
+  baseUrl: string
+  authType: AuthType
+}
+
+/** Load existing config using validated readConfigFile, falling back to defaults */
+function loadExistingConfig(path: string): ExistingConfigState {
+  try {
+    const fileConfig = readConfigFile(path)
+    const raw = readFileSync(path, 'utf-8')
+    return {
+      raw,
+      port: fileConfig.port ?? DEFAULTS.port,
+      host: fileConfig.host ?? DEFAULTS.host,
+      apiKey: fileConfig.openrouterKey ?? DEFAULTS.openrouterKey,
+      baseUrl: fileConfig.openrouterBaseUrl ?? DEFAULTS.openrouterBaseUrl,
+      authType: fileConfig.authType ?? DEFAULTS.authType,
+    }
+  } catch {
+    return {
+      raw: undefined,
+      port: DEFAULTS.port,
+      host: DEFAULTS.host,
+      apiKey: DEFAULTS.openrouterKey,
+      baseUrl: DEFAULTS.openrouterBaseUrl,
+      authType: DEFAULTS.authType,
+    }
+  }
+}
+
 export async function runWizard(): Promise<void> {
   clack.intro('Proxitor Setup Wizard')
 
   const existingPath = findConfigFile()
   let existingRaw: string | undefined
-  let currentPort = DEFAULT_PORT
-  let currentHost = DEFAULT_HOST
-  let currentKey = ''
-  let currentBaseUrl = DEFAULT_BASE_URL
+  let currentPort = DEFAULTS.port
+  let currentHost = DEFAULTS.host
+  let currentKey = DEFAULTS.openrouterKey
+  let currentBaseUrl = DEFAULTS.openrouterBaseUrl
+  let currentAuthType = DEFAULTS.authType
 
   if (existingPath) {
     clack.note(existingPath, 'Existing config found')
@@ -214,16 +252,13 @@ export async function runWizard(): Promise<void> {
       return
     }
 
-    try {
-      const existing = readExistingConfig(existingPath)
-      existingRaw = existing.raw
-      currentPort = existing.port
-      currentHost = existing.host
-      currentKey = existing.apiKey
-      currentBaseUrl = existing.baseUrl
-    } catch {
-      // use defaults
-    }
+    const existing = loadExistingConfig(existingPath)
+    existingRaw = existing.raw
+    currentPort = existing.port
+    currentHost = existing.host
+    currentKey = existing.apiKey
+    currentBaseUrl = existing.baseUrl
+    currentAuthType = existing.authType
   }
 
   const apiKey = await askApiKey(currentKey)
@@ -244,6 +279,12 @@ export async function runWizard(): Promise<void> {
     return
   }
 
+  const authType = await askAuthType(currentAuthType)
+  if (authType === null) {
+    clack.outro('Cancelled')
+    return
+  }
+
   const host = await askHost(currentHost)
   if (host === null) {
     clack.outro('Cancelled')
@@ -256,7 +297,7 @@ export async function runWizard(): Promise<void> {
     return
   }
 
-  const yaml = buildYaml(apiKey, port, host, baseUrl, existingRaw)
+  const yaml = buildYaml(apiKey, port, host, baseUrl, authType, existingRaw)
   clack.note(yaml, 'Preview')
 
   const save = await clack.confirm({

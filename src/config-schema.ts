@@ -1,10 +1,5 @@
 import { z } from 'zod'
 
-// ---------------------------------------------------------------------------
-// Zod schemas (bottom-up)
-// ---------------------------------------------------------------------------
-
-/** Percentile cutoffs for performance thresholds */
 export const percentileCutoffsSchema = z
   .object({
     p50: z.number().positive().optional(),
@@ -14,7 +9,6 @@ export const percentileCutoffsSchema = z
   })
   .strict()
 
-/** Provider sorting options */
 export const providerSortSchema = z.union([
   z.enum(['price', 'throughput', 'latency']),
   z
@@ -25,7 +19,6 @@ export const providerSortSchema = z.union([
     .strict(),
 ])
 
-/** Maximum pricing for a request */
 export const maxPriceSchema = z
   .object({
     prompt: z.number().nonnegative().optional(),
@@ -35,7 +28,6 @@ export const maxPriceSchema = z
   })
   .strict()
 
-/** Provider routing configuration */
 export const providerConfigSchema = z
   .object({
     only: z.union([z.string(), z.array(z.string())]).optional(),
@@ -58,7 +50,6 @@ export const providerConfigSchema = z
   })
   .strict()
 
-/** Per-model override: layers on top of global config */
 export const modelOverrideSchema = z
   .object({
     provider: providerConfigSchema.optional(),
@@ -66,29 +57,26 @@ export const modelOverrideSchema = z
   })
   .strict()
 
-/** Full proxy configuration */
 export const proxyConfigSchema = z
   .object({
-    host: z.string().min(1),
-    port: z.number().int().min(1).max(65535),
-    openrouterKey: z.string(),
-    openrouterBaseUrl: z.string().url(),
-    verbose: z.boolean(),
-    bodyLimit: z.string().min(1),
+    host: z.string().min(1).default('0.0.0.0'),
+    port: z.number().int().min(1).max(65535).default(8828),
+    openrouterKey: z.string().default(''),
+    openrouterBaseUrl: z.string().url().default('https://openrouter.ai/api/v1'),
+    authType: z.enum(['bearer', 'oauth']).default('bearer'),
+    verbose: z.boolean().default(false),
+    bodyLimit: z.string().min(1).default('50mb'),
     provider: providerConfigSchema.optional(),
-    attributionReferer: z.string().min(1),
-    attributionTitle: z.string().min(1),
+    attributionReferer: z.string().min(1).default('http://localhost'),
+    attributionTitle: z.string().min(1).default('proxitor'),
     headers: z.record(z.string(), z.string()).optional(),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
   })
   .strict()
 
-/** Schema for validating raw file content — all top-level keys optional */
-export const proxyConfigFileSchema = proxyConfigSchema.partial()
+export const DEFAULTS = proxyConfigSchema.parse({})
 
-// ---------------------------------------------------------------------------
-// Derived TypeScript types
-// ---------------------------------------------------------------------------
+export const proxyConfigFileSchema = proxyConfigSchema.partial()
 
 export type ProxyConfig = z.infer<typeof proxyConfigSchema>
 export type ProviderConfig = z.infer<typeof providerConfigSchema>
@@ -96,12 +84,8 @@ export type ModelOverride = z.infer<typeof modelOverrideSchema>
 export type MaxPrice = z.infer<typeof maxPriceSchema>
 export type PercentileCutoffs = z.infer<typeof percentileCutoffsSchema>
 export type ProviderSort = z.infer<typeof providerSortSchema>
+export type AuthType = z.infer<typeof proxyConfigSchema>['authType']
 
-// ---------------------------------------------------------------------------
-// Custom error classes
-// ---------------------------------------------------------------------------
-
-/** Wraps YAML/JSON parse errors with the config file path */
 export class ConfigParseError extends Error {
   constructor(filePath: string, cause?: Error) {
     super(
@@ -112,7 +96,6 @@ export class ConfigParseError extends Error {
   }
 }
 
-/** Formats zod validation issues into a readable multi-line message */
 export class ConfigValidationError extends Error {
   constructor(filePath: string, zodError: z.ZodError) {
     const lines = zodError.issues.map(issue => {
