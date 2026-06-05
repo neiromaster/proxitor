@@ -63,6 +63,7 @@ export const proxyConfigSchema = z
     port: z.number().int().min(1).max(65535).default(8828),
     openrouterKey: z.string().default(''),
     openrouterBaseUrl: z.string().url().default('https://openrouter.ai/api/v1'),
+    openrouterDataUrl: z.string().url().optional(),
     authType: z.enum(['bearer', 'oauth']).default('bearer'),
     verbose: z.boolean().default(false),
     bodyLimit: z.string().min(1).default('50mb'),
