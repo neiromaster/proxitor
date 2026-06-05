@@ -12,3 +12,5 @@ pre-push:
       run: pnpm exec tsc --noEmit
     tests:
       run: pnpm exec vitest run
+    changesets:
+      run: node scripts/validate-changesets.js
