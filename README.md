@@ -113,6 +113,16 @@ All defaults are derived from a single Zod schema (`DEFAULTS`) — no hardcoded 
 
 See [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) for the complete reference.
 
+### Authentication type
+
+By default, proxitor sends the API key as a `Bearer` token (`Authorization: Bearer sk-...`). If you're using a custom proxy provider that expects an `OAuth` header instead, set `authType` to `oauth`:
+
+```yaml
+authType: oauth    # "bearer" (default) or "oauth"
+```
+
+This changes the header to `Authorization: OAuth sk-...`.
+
 ### Provider routing
 
 Control which provider handles your requests. All three options accept a string or an array:
@@ -248,6 +258,7 @@ The wizard asks for:
 - **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
 - **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
 - **API base URL** — default `https://openrouter.ai/api/v1`; change for self-hosted or custom endpoints
+- **Authentication type** — `bearer` (default) or `oauth`; use `oauth` for custom proxy providers that pass tokens in the `Authorization: OAuth ...` header
 - **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)
 - **Save location** — project directory, `~/.config/proxitor/`, or `$XDG_CONFIG_HOME/proxitor/`
 
@@ -335,6 +346,7 @@ The interface uses live data from the OpenRouter API — model search with type-
 | `-c, --config <path>` | auto-discovered | Path to config file |
 | `--openrouter-key <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
 | `--verbose` | `false` | Enable verbose logging |
+| `--no-config` | | Skip config file discovery |
 | `-v, --version` | | Print version |
 | `--help` | | Print help |
 
