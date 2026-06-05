@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts'
 import { isCancel } from '@clack/prompts'
 import type { ModelOverride } from '../../config-schema.js'
-import type { OpenRouterClient } from '../../openrouter/client.js'
+import type { OpenRouterDataClient } from '../../openrouter/data-client.js'
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js'
 import {
   fetchProvidersForModel,
@@ -41,7 +41,7 @@ async function updateProviderRouting(
   configPath: string,
   modelKey: string,
   current: ModelOverride,
-  client: OpenRouterClient,
+  client: OpenRouterDataClient,
 ): Promise<void> {
   const isPattern = modelKey.includes('*')
 
@@ -76,7 +76,7 @@ async function updateProviderRouting(
 }
 
 /** Run the interactive "Edit model override" flow. */
-export async function editOverrideCommand(client: OpenRouterClient): Promise<void> {
+export async function editOverrideCommand(client: OpenRouterDataClient): Promise<void> {
   clack.intro('Edit Model Override')
 
   const configPath = requireConfigPath()

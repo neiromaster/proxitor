@@ -3,7 +3,7 @@ import { command, flag, number, option, optional, run, string, subcommands } fro
 import { config as loadDotenv } from 'dotenv'
 import { DEFAULTS, loadConfig } from './config.js'
 import { logger } from './logger.js'
-import { OpenRouterClient } from './openrouter/client.js'
+import { OpenRouterDataClient } from './openrouter/data-client.js'
 import { startProxyServer } from './proxy.js'
 import { version } from './version.js'
 
@@ -105,7 +105,7 @@ const startCommand = command({
 })
 
 const withClient =
-  (fn: (client: OpenRouterClient) => Promise<void>) =>
+  (fn: (client: OpenRouterDataClient) => Promise<void>) =>
   async (args: { config?: string; openrouterKey?: string }) => {
     const apiKey = await resolveApiKey(
       args.config ?? undefined,
@@ -115,7 +115,25 @@ const withClient =
 
     try {
       const cfg = await loadConfig({ configPath: args.config ?? undefined })
-      await fn(new OpenRouterClient(apiKey, cfg.openrouterBaseUrl, cfg.authType))
+      await fn(
+        new OpenRouterDataClient({
+          openrouterBaseUrl: cfg.openrouterBaseUrl,
+          openrouterDataUrl: cfg.openrouterDataUrl,
+          apiKey,
+          authType: cfg.authType,
+          onFallback: (path: string) => {
+            const endpoint =
+              path === '/providers'
+                ? 'providers'
+                : path === '/models'
+                  ? 'models'
+                  : 'model providers'
+            logger.warn(
+              `Custom API did not return ${endpoint}, using OpenRouter data as fallback`,
+            )
+          },
+        }),
+      )
     } catch (error) {
       logger.error('Failed to load config:', error)
     }
