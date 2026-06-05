@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+### Patch Changes
+
+- 3335700: Add automatic fallback to OpenRouter for data endpoints (`/providers`, `/models`, `/models/*/endpoints`) when a custom API URL doesn't support them. Add `openrouterDataUrl` config option for explicit control over the primary data source. Move cache to `~/.cache/proxitor/` (XDG-compliant).
+
 ## 0.5.1
 
 ### Patch Changes
