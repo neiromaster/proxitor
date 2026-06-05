@@ -44,7 +44,9 @@ describe('Proxy Integration', () => {
     expect(capturedBody.provider).toEqual({ only: ['deepinfra'] });
     expect(capturedBody.model).toBe('claude-sonnet-4-20250514');
     expect(capturedHeaders['authorization']).toBe('Bearer test-api-key');
-    expect(capturedHeaders['http-referer']).toBe('http://localhost');
+    expect(capturedHeaders['http-referer']).toBe(
+      'https://github.com/neiromaster/proxitor',
+    );
     expect(capturedHeaders['x-openrouter-title']).toBe('proxitor-test');
   });
 

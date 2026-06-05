@@ -68,7 +68,10 @@ export const proxyConfigSchema = z
     verbose: z.boolean().default(false),
     bodyLimit: z.string().min(1).default('50mb'),
     provider: providerConfigSchema.optional(),
-    attributionReferer: z.string().min(1).default('http://localhost'),
+    attributionReferer: z
+      .string()
+      .min(1)
+      .default('https://github.com/neiromaster/proxitor'),
     attributionTitle: z.string().min(1).default('proxitor'),
     headers: z.record(z.string(), z.string()).optional(),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
