@@ -250,6 +250,41 @@ provider:
     p90: 3                    # seconds (soft threshold)
 ```
 
+### Prompt caching
+
+By default, OpenRouter doesn't enable prompt caching — every request pays full token price. Proxitor can inject `cache_control` and `session_id` to make caching work automatically.
+
+**`cacheControl`** — injects `cache_control: { "type": "ephemeral" }` into the request body. OpenRouter uses this to set cache breakpoints and advance them as conversations grow.
+
+**`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
+
+Both support `auto` / `always` / `never` modes:
+
+| Mode | `cacheControl` | `sessionId` |
+|---|---|---|
+| `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Use `X-Claude-Code-Session-Id` header if present |
+| `always` | All models, all endpoints | Generate a proxy UUID for sticky routing |
+| `never` | Disabled | Disabled |
+
+```yaml
+cacheControl: auto    # safe default — Anthropic and safe endpoints only
+sessionId: auto       # derives from Claude Code session header
+
+# Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
+# cacheControl: always
+
+# Per-model overrides
+modelOverrides:
+  "gpt-*":
+    cacheControl: never   # OpenAI caches automatically, no injection needed
+    sessionId: always      # but sticky routing still helps
+```
+
+**Why both matter:**
+- **Anthropic models** — `cache_control` activates caching, `session_id` prevents provider flip-flopping that would invalidate it
+- **OpenAI models** — caching is automatic (no `cache_control` needed), but `session_id` ensures sticky routing from request #1 instead of waiting for a cache hit
+- **All models** — `session_id` prevents the provider switch that silently resets cache
+
 ### Health check
 
 ```sh
