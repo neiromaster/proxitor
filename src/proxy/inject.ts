@@ -15,7 +15,6 @@ export function isAnthropicModel(modelName: string): boolean {
   );
 }
 
-/** Extract the model name from a raw request body. Returns undefined if not parseable or absent. */
 export function extractModel(rawBody: ArrayBuffer): string | undefined {
   const json = tryParseBody(rawBody);
   return typeof json?.model === 'string' ? json.model : undefined;
@@ -53,7 +52,6 @@ export function injectBodyFields(
   return new TextEncoder().encode(JSON.stringify(json)).buffer as ArrayBuffer;
 }
 
-/** Inject provider routing into request body, always overwriting existing value */
 export function injectProvider(
   rawBody: ArrayBuffer,
   providerRouting: Record<string, unknown>,

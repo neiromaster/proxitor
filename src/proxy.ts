@@ -45,7 +45,6 @@ function shouldInjectCacheControl(
 ): boolean {
   if (mode === 'never') return false;
   if (mode === 'always') return true;
-  // auto: safe by endpoint
   if (path === '/v1/messages') return true;
   if (path === '/v1/responses') return true;
   if (path === '/v1/chat/completions' && modelName && isAnthropicModel(modelName))
