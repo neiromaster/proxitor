@@ -7,7 +7,7 @@ export type CacheEntry<T> = {
   fetchedAt: number
 }
 
-export const CACHE_DIR = join(homedir(), '.proxitor', 'cache')
+export const CACHE_DIR = join(homedir(), '.cache', 'proxitor')
 
 /** Read a cached value. Returns `null` when missing, expired (older than `ttlMs`), or unparseable. */
 export function readCache<T>(key: string, ttlMs: number): T | null {

@@ -1,12 +1,12 @@
 import * as clack from '@clack/prompts'
-import type { OpenRouterClient } from '../../openrouter/client.js'
+import type { OpenRouterDataClient } from '../../openrouter/data-client.js'
 import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js'
 import { parseModelAuthor, parseModelSlug } from '../../openrouter/models.js'
 import { fetchProviders } from '../../openrouter/providers.js'
 import { formatLatency, formatThroughput } from './format.js'
 
 export async function fetchProvidersForPattern(
-  client: OpenRouterClient,
+  client: OpenRouterDataClient,
 ): Promise<Array<{ value: string; label: string; hint?: string }> | null> {
   const s = clack.spinner()
   s.start('Fetching providers...')
@@ -25,7 +25,7 @@ export async function fetchProvidersForPattern(
 }
 
 export async function fetchEndpointsForModel(
-  client: OpenRouterClient,
+  client: OpenRouterDataClient,
   modelId: string,
 ): Promise<Array<{ value: string; label: string; hint?: string }> | null> {
   const author = parseModelAuthor(modelId)
@@ -58,7 +58,7 @@ export async function fetchEndpointsForModel(
 }
 
 export async function fetchProvidersForModel(
-  client: OpenRouterClient,
+  client: OpenRouterDataClient,
   modelKey: string,
   isPattern: boolean,
 ): Promise<Array<{ value: string; label: string; hint?: string }> | null> {

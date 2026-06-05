@@ -1,15 +1,12 @@
-import type { OpenRouterClient } from './client.js'
-import type { ModelEndpoint, ModelEndpointsResponse } from './types.js'
+import type { OpenRouterDataClient } from './data-client.js'
+import type { ModelEndpoint } from './types.js'
 
 export async function fetchModelEndpoints(
-  client: OpenRouterClient,
+  client: OpenRouterDataClient,
   author: string,
   slug: string,
 ): Promise<ModelEndpoint[]> {
-  const response = await client.get<ModelEndpointsResponse>(
-    `/models/${author}/${slug}/endpoints`,
-  )
-  return response.data.endpoints ?? []
+  return client.fetchModelEndpoints(author, slug)
 }
 
 export type ProviderOption = {
