@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+### Patch Changes
+
+- 779405c: Fix log output to consistently left-align tags by disabling date/time in Consola format options, preventing timestamp position jumps between short and long log lines.
+
 ## 0.6.0
 
 ### Minor Changes
