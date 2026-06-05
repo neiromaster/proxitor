@@ -13,24 +13,34 @@ export class OpenRouterClientError extends Error {
 
 /** HTTP client for OpenRouter REST endpoints. */
 export class OpenRouterClient {
-  private readonly apiKey: string
+  private readonly apiKey: string | undefined
   private readonly baseUrl: string
-  private readonly authType: AuthType
+  private readonly authType: AuthType | undefined
 
-  constructor(apiKey: string, baseUrl: string, authType: AuthType) {
-    this.apiKey = apiKey
-    this.baseUrl = baseUrl
-    this.authType = authType
+  constructor(apiKey: string, baseUrl: string, authType: AuthType)
+  /** Create an unauthenticated client for public endpoints (e.g. OpenRouter data endpoints). */
+  constructor(baseUrl: string)
+  constructor(apiKeyOrUrl: string, baseUrl?: string, authType?: AuthType) {
+    if (baseUrl !== undefined) {
+      this.apiKey = apiKeyOrUrl
+      this.baseUrl = baseUrl
+      this.authType = authType
+    } else {
+      this.apiKey = undefined
+      this.baseUrl = apiKeyOrUrl
+      this.authType = undefined
+    }
   }
 
   async get<T>(path: string): Promise<T> {
     const url = `${this.baseUrl}${path}`
 
-    const res = await fetch(url, {
-      headers: {
-        Authorization: formatAuthHeader(this.apiKey, this.authType),
-      },
-    })
+    const headers: Record<string, string> = {}
+    if (this.apiKey !== undefined && this.authType !== undefined) {
+      headers.Authorization = formatAuthHeader(this.apiKey, this.authType)
+    }
+
+    const res = await fetch(url, { headers })
 
     if (!res.ok) {
       const body = await res.text().catch(() => '')
