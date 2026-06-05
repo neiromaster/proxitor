@@ -54,7 +54,6 @@ function buildUpstreamResponse(upstream: Response, method: string): Response {
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 
-/** Read and process the request body, returning an error response on failure */
 async function readRawBody(
   request: Request,
   reqId: string,
@@ -83,7 +82,6 @@ type ResolvedRequest = {
   error?: Response;
 };
 
-/** Resolve per-request config: extract model, resolve overrides, build routing and body */
 function resolveRequest(
   rawBody: ArrayBuffer,
   config: ProxyConfig,
@@ -122,7 +120,48 @@ function resolveRequest(
   return { inject, body, modelName, headers: resolved.headers };
 }
 
-/** Execute upstream fetch, returning appropriate error responses on failure */
+/**
+ * Extract a readable error detail from an upstream response body.
+ *
+ * OpenRouter error format:
+ *   { error: { code: 400, message: "...", metadata: { raw: "...", provider_name: "..." } } }
+ *
+ * - `error.message` — human-readable summary
+ * - `error.metadata.provider_name` — which provider caused it (null = OpenRouter itself)
+ * - `error.metadata.raw` — the original provider error (most specific cause)
+ */
+function formatMetadata(meta: Record<string, unknown>): string[] {
+  const parts: string[] = [];
+  if (meta.provider_name) parts.push(`provider=${meta.provider_name}`);
+  if (meta.raw) {
+    const raw = typeof meta.raw === 'string' ? meta.raw : JSON.stringify(meta.raw);
+    parts.push(raw);
+  }
+  return parts;
+}
+
+export function extractErrorDetail(bodyText: string): string {
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (typeof parsed !== 'object' || parsed === null) return bodyText;
+
+    const err = parsed.error;
+    if (typeof err === 'object' && err !== null && err.message) {
+      const parts: string[] = [];
+      if (err.code != null) parts.push(String(err.code));
+      parts.push(String(err.message));
+      if (err.metadata && typeof err.metadata === 'object') {
+        parts.push(...formatMetadata(err.metadata as Record<string, unknown>));
+      }
+      return parts.join(' | ');
+    }
+    if (parsed.message) return String(parsed.message);
+  } catch {
+    // non-JSON
+  }
+  return bodyText;
+}
+
 async function executeUpstream(
   upstreamUrl: string,
   method: string,
@@ -152,6 +191,26 @@ async function executeUpstream(
       },
       { status: 502 },
     );
+  }
+
+  if (upstream.status >= 400) {
+    const bodyText = await upstream.text();
+    const detail = extractErrorDetail(bodyText);
+    const truncated = detail.length > 300 ? `${detail.slice(0, 300)}…` : detail;
+    const logFn = upstream.status >= 500 ? logger.error : logger.warn;
+
+    logFn(
+      withReq(
+        reqId,
+        `${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms): ${truncated}`,
+      ),
+    );
+
+    const responseHeaders = buildResponseHeaders(upstream.headers);
+    if (method === 'HEAD') {
+      return new Response(null, { status: upstream.status, headers: responseHeaders });
+    }
+    return new Response(bodyText, { status: upstream.status, headers: responseHeaders });
   }
 
   logger.info(
@@ -230,10 +289,8 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
   );
 }
 
-/** Shutdown deadline: force-close after this many ms */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-/** Start the proxy with graceful shutdown on SIGTERM/SIGINT */
 export function startProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
   const server = createProxyServer(config, onReady);
 
