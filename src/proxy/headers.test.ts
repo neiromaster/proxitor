@@ -10,7 +10,7 @@ describe('buildRequestHeaders', () => {
     const incoming = new Headers();
     const headers = buildRequestHeaders(incoming, baseConfig, false);
     expect(headers.Authorization).toBe('Bearer test-key');
-    expect(headers['HTTP-Referer']).toBe('http://localhost');
+    expect(headers['HTTP-Referer']).toBe('https://github.com/neiromaster/proxitor');
     expect(headers['X-OpenRouter-Title']).toBe('proxitor');
     expect(headers['Accept-Encoding']).toBe('identity');
   });

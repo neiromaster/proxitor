@@ -89,7 +89,7 @@ openrouterBaseUrl: 'https://openrouter.ai/api/v1'
 # bodyLimit: "50mb"
 
 # OpenRouter attribution
-# attributionReferer: "http://localhost"
+# attributionReferer: "https://github.com/neiromaster/proxitor"
 # attributionTitle: "proxitor"
 
 # Enable verbose logging
