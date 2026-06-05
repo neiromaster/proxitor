@@ -1,7 +1,7 @@
 import { type HttpBindings, type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { buildProviderRouting, type ProxyConfig, resolveModelConfig } from './config.js';
-import { logger } from './logger.js';
+import { logger, requestId, withReq } from './logger.js';
 import { buildRequestHeaders, buildResponseHeaders } from './proxy/headers.js';
 import { extractModel, injectProvider } from './proxy/inject.js';
 import { buildUpstreamUrl, shouldInject } from './proxy/paths.js';
@@ -57,13 +57,14 @@ function buildUpstreamResponse(upstream: Response, method: string): Response {
 /** Read and process the request body, returning an error response on failure */
 async function readRawBody(
   request: Request,
+  reqId: string,
 ): Promise<{ ok: true; body: ArrayBuffer } | { ok: false; response: Response }> {
   try {
     const body = await request.arrayBuffer();
     return { ok: true, body };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to read request body';
-    logger.error(message);
+    logger.error(withReq(reqId, message));
     return {
       ok: false,
       response: Response.json(
@@ -88,6 +89,7 @@ function resolveRequest(
   config: ProxyConfig,
   method: string,
   path: string,
+  reqId: string,
 ): ResolvedRequest {
   const modelName = extractModel(rawBody);
   const resolved = resolveModelConfig(config, modelName);
@@ -104,7 +106,7 @@ function resolveRequest(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to process request body';
-    logger.error(message);
+    logger.error(withReq(reqId, message));
     return {
       inject,
       body: undefined,
@@ -129,17 +131,18 @@ async function executeUpstream(
   signal: AbortSignal,
   path: string,
   startedAt: number,
+  reqId: string,
 ): Promise<Response> {
   let upstream: Response;
   try {
     upstream = await fetchUpstream(upstreamUrl, method, headers, body, signal);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      logger.warn(`Aborted: ${method} ${path}`);
+      logger.warn(withReq(reqId, `Aborted: ${method} ${path}`));
       return new Response(null, { status: 499 });
     }
 
-    logger.error('Upstream fetch error:', err);
+    logger.error(withReq(reqId, 'Upstream fetch error:'), err);
     return Response.json(
       {
         error: {
@@ -151,7 +154,12 @@ async function executeUpstream(
     );
   }
 
-  logger.info(`${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`);
+  logger.info(
+    withReq(
+      reqId,
+      `${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`,
+    ),
+  );
   return buildUpstreamResponse(upstream, method);
 }
 
@@ -173,11 +181,12 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     const path = new URL(c.req.url).pathname;
     const upstreamUrl = buildUpstreamUrl(c.req.url, config);
     const startedAt = Date.now();
+    const reqId = requestId();
 
-    const raw = await readRawBody(c.req.raw);
+    const raw = await readRawBody(c.req.raw, reqId);
     if (!raw.ok) return raw.response;
 
-    const resolved = resolveRequest(raw.body, config, method, path);
+    const resolved = resolveRequest(raw.body, config, method, path, reqId);
     if (resolved.error) return resolved.error;
 
     const headers = buildRequestHeaders(
@@ -192,7 +201,10 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
 
     const modelLog = resolved.modelName ? ` model=${resolved.modelName}` : '';
     logger.info(
-      `${method} ${path} → ${upstreamUrl}${resolved.inject ? ' [inject]' : ''}${modelLog}`,
+      withReq(
+        reqId,
+        `${method} ${path} → ${upstreamUrl}${resolved.inject ? ' [inject]' : ''}${modelLog}`,
+      ),
     );
 
     return executeUpstream(
@@ -203,6 +215,7 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
       controller.signal,
       path,
       startedAt,
+      reqId,
     );
   });
 
