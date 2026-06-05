@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
-import * as yaml from 'js-yaml'
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import * as yaml from 'js-yaml';
 import {
   ConfigParseError,
   ConfigValidationError,
@@ -10,8 +10,8 @@ import {
   type ProxyConfig,
   proxyConfigFileSchema,
   proxyConfigSchema,
-} from './config-schema.js'
-import { toArray } from './utils.js'
+} from './config-schema.js';
+import { toArray } from './utils.js';
 
 export type {
   AuthType,
@@ -21,20 +21,20 @@ export type {
   ProviderConfig,
   ProviderSort,
   ProxyConfig,
-} from './config-schema.js'
-export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-schema.js'
+} from './config-schema.js';
+export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-schema.js';
 
 export type ResolvedModelConfig = {
-  provider?: ProviderConfig
-  headers?: Record<string, string>
-}
+  provider?: ProviderConfig;
+  headers?: Record<string, string>;
+};
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'only', apiName: 'only' },
   { key: 'order', apiName: 'order' },
   { key: 'ignore', apiName: 'ignore' },
   { key: 'quantizations', apiName: 'quantizations' },
-] as const
+] as const;
 
 const DIRECT_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'sort', apiName: 'sort' },
@@ -45,43 +45,43 @@ const DIRECT_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string 
   { key: 'enforceDistillableText', apiName: 'enforce_distillable_text' },
   { key: 'preferredMinThroughput', apiName: 'preferred_min_throughput' },
   { key: 'preferredMaxLatency', apiName: 'preferred_max_latency' },
-] as const
+] as const;
 
 export function buildProviderRouting(
   provider?: ProviderConfig,
 ): Record<string, unknown> | undefined {
-  if (!provider) return undefined
+  if (!provider) return undefined;
 
-  const result: Record<string, unknown> = {}
+  const result: Record<string, unknown> = {};
 
   for (const { key, apiName } of ARRAY_FIELDS) {
-    const value = provider[key]
+    const value = provider[key];
     if (value !== undefined) {
-      const normalized = toArray(value as string | string[])
-      if (normalized) result[apiName] = normalized
+      const normalized = toArray(value as string | string[]);
+      if (normalized) result[apiName] = normalized;
     }
   }
 
   for (const { key, apiName } of DIRECT_FIELDS) {
-    const value = provider[key]
-    if (value !== undefined) result[apiName] = value
+    const value = provider[key];
+    if (value !== undefined) result[apiName] = value;
   }
 
   if (result.order) {
-    result.allow_fallbacks = provider.allowFallbacks ?? true
+    result.allow_fallbacks = provider.allowFallbacks ?? true;
   }
 
-  return Object.keys(result).length > 0 ? result : undefined
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export function matchScore(pattern: string, modelName: string): number {
-  if (pattern === modelName) return modelName.length + 1000
+  if (pattern === modelName) return modelName.length + 1000;
 
   if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
-    return pattern.length
+    return pattern.length;
   }
 
-  return -1
+  return -1;
 }
 
 export function resolveModelConfig(
@@ -91,49 +91,49 @@ export function resolveModelConfig(
   const result: ResolvedModelConfig = {
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
-  }
+  };
 
-  if (!modelName || !config.modelOverrides) return result
+  if (!modelName || !config.modelOverrides) return result;
 
-  let bestPattern: string | null = null
-  let bestScore = -1
+  let bestPattern: string | null = null;
+  let bestScore = -1;
 
   for (const pattern of Object.keys(config.modelOverrides)) {
-    const score = matchScore(pattern, modelName)
+    const score = matchScore(pattern, modelName);
     if (score > bestScore) {
-      bestScore = score
-      bestPattern = pattern
+      bestScore = score;
+      bestPattern = pattern;
     }
   }
 
   if (bestPattern) {
-    const override = config.modelOverrides[bestPattern]
+    const override = config.modelOverrides[bestPattern];
     if (override?.provider !== undefined) {
-      result.provider = override.provider
+      result.provider = override.provider;
     }
     if (override?.headers) {
-      result.headers = { ...(result.headers ?? {}), ...override.headers }
+      result.headers = { ...(result.headers ?? {}), ...override.headers };
     }
   }
 
-  return result
+  return result;
 }
 
 type LoadConfigOptions = {
-  configPath?: string
-  noConfig?: boolean
-  host?: string
-  openrouterKey?: string
-  port?: number
-  verbose?: boolean
-}
+  configPath?: string;
+  noConfig?: boolean;
+  host?: string;
+  openrouterKey?: string;
+  port?: number;
+  verbose?: boolean;
+};
 
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
-  let fileConfig: Partial<ProxyConfig> = {}
+  let fileConfig: Partial<ProxyConfig> = {};
   if (!options.noConfig) {
-    const configPath = findConfigFile(options.configPath)
+    const configPath = findConfigFile(options.configPath);
     if (configPath) {
-      fileConfig = readConfigFile(configPath)
+      fileConfig = readConfigFile(configPath);
     }
   }
 
@@ -144,37 +144,37 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     ...(options.port ? { port: options.port } : {}),
     ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
     ...(options.openrouterKey ? { openrouterKey: options.openrouterKey } : {}),
-  }
+  };
 
   if (!merged.openrouterKey) {
-    merged.openrouterKey = process.env.OPENROUTER_API_KEY ?? ''
+    merged.openrouterKey = process.env.OPENROUTER_API_KEY ?? '';
   }
 
-  const result = proxyConfigSchema.safeParse(merged)
+  const result = proxyConfigSchema.safeParse(merged);
   if (!result.success) {
-    throw new ConfigValidationError('(merged config)', result.error)
+    throw new ConfigValidationError('(merged config)', result.error);
   }
 
   if (!result.data.openrouterKey) {
     throw new Error(
       'OpenRouter API key is required. Set OPENROUTER_API_KEY env var, pass --openrouter-key flag, or set it in config file.',
-    )
+    );
   }
 
-  return result.data
+  return result.data;
 }
 
 export function getXdgConfigDir(): string {
-  const xdgHome = process.env.XDG_CONFIG_HOME
-  return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor')
+  const xdgHome = process.env.XDG_CONFIG_HOME;
+  return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor');
 }
 
 export function findConfigFile(explicitPath?: string): string | null {
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
-      throw new Error(`Config file not found: ${explicitPath}`)
+      throw new Error(`Config file not found: ${explicitPath}`);
     }
-    return resolve(explicitPath)
+    return resolve(explicitPath);
   }
 
   const localCandidates = [
@@ -184,43 +184,43 @@ export function findConfigFile(explicitPath?: string): string | null {
     '.proxitor.yaml',
     '.proxitor.yml',
     '.proxitor.json',
-  ]
+  ];
 
   for (const candidate of localCandidates) {
-    const fullPath = resolve(candidate)
+    const fullPath = resolve(candidate);
     if (existsSync(fullPath)) {
-      return fullPath
+      return fullPath;
     }
   }
 
-  const xdgDir = getXdgConfigDir()
-  const xdgCandidates = ['config.yaml', 'config.yml', 'config.json']
+  const xdgDir = getXdgConfigDir();
+  const xdgCandidates = ['config.yaml', 'config.yml', 'config.json'];
 
   for (const candidate of xdgCandidates) {
-    const fullPath = join(xdgDir, candidate)
+    const fullPath = join(xdgDir, candidate);
     if (existsSync(fullPath)) {
-      return fullPath
+      return fullPath;
     }
   }
 
-  return null
+  return null;
 }
 
 export function readConfigFile(filePath: string): Partial<ProxyConfig> {
-  const content = readFileSync(filePath, 'utf-8')
-  let raw: unknown
+  const content = readFileSync(filePath, 'utf-8');
+  let raw: unknown;
 
   try {
-    raw = filePath.endsWith('.json') ? JSON.parse(content) : yaml.load(content)
+    raw = filePath.endsWith('.json') ? JSON.parse(content) : yaml.load(content);
   } catch (err) {
     // biome-ignore lint/nursery/useErrorCause: cause is propagated inside ConfigParseError
-    throw new ConfigParseError(filePath, err instanceof Error ? err : undefined)
+    throw new ConfigParseError(filePath, err instanceof Error ? err : undefined);
   }
 
-  const result = proxyConfigFileSchema.safeParse(raw)
+  const result = proxyConfigFileSchema.safeParse(raw);
   if (!result.success) {
-    throw new ConfigValidationError(filePath, result.error)
+    throw new ConfigValidationError(filePath, result.error);
   }
 
-  return result.data
+  return result.data;
 }

@@ -30,6 +30,7 @@
       "style": {
         "noCommonJs": "error",
         "noNamespace": "error",
+        "noNestedTernary": "error",
         "useThrowNewError": "error",
         "useThrowOnlyError": "error",
         "useConsistentArrayType": "error",
@@ -61,7 +62,7 @@
       "lineWidth": 90,
       "quoteStyle": "single",
       "trailingCommas": "all",
-      "semicolons": "asNeeded",
+      "semicolons": "always",
       "bracketSameLine": false,
       "arrowParentheses": "asNeeded"
     }

@@ -1,21 +1,21 @@
-import type { AuthType } from '../config-schema.js'
-import { OpenRouterClient } from './client.js'
-import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js'
+import type { AuthType } from '../config-schema.js';
+import { OpenRouterClient } from './client.js';
+import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js';
 
-const OPENROUTER_FALLBACK_URL = 'https://openrouter.ai/api/v1'
+const OPENROUTER_FALLBACK_URL = 'https://openrouter.ai/api/v1';
 
 export type DataClientConfig = {
-  openrouterBaseUrl: string
-  openrouterDataUrl?: string
-  apiKey: string
-  authType: AuthType
-  onFallback?: (path: string) => void
-}
+  openrouterBaseUrl: string;
+  openrouterDataUrl?: string;
+  apiKey: string;
+  authType: AuthType;
+  onFallback?: (path: string) => void;
+};
 
 type FallbackResult<T> = {
-  data: T
-  usedFallback: boolean
-}
+  data: T;
+  usedFallback: boolean;
+};
 
 function isValidProvidersResponse(data: unknown): data is { data: OpenRouterProvider[] } {
   return (
@@ -23,7 +23,7 @@ function isValidProvidersResponse(data: unknown): data is { data: OpenRouterProv
     data !== null &&
     'data' in data &&
     Array.isArray((data as { data: unknown }).data)
-  )
+  );
 }
 
 function isValidModelsResponse(data: unknown): data is { data: OpenRouterModel[] } {
@@ -32,11 +32,11 @@ function isValidModelsResponse(data: unknown): data is { data: OpenRouterModel[]
     data !== null &&
     'data' in data &&
     Array.isArray((data as { data: unknown }).data)
-  )
+  );
 }
 
 function isValidEndpointsResponse(data: unknown): data is {
-  data: { endpoints: ModelEndpoint[] }
+  data: { endpoints: ModelEndpoint[] };
 } {
   return (
     typeof data === 'object' &&
@@ -46,7 +46,7 @@ function isValidEndpointsResponse(data: unknown): data is {
     (data as { data: unknown }).data !== null &&
     'endpoints' in ((data as { data: unknown }).data as object) &&
     Array.isArray((data as { data: { endpoints: unknown } }).data.endpoints)
-  )
+  );
 }
 
 /**
@@ -57,17 +57,17 @@ function isValidEndpointsResponse(data: unknown): data is {
  * which hosts public, unauthenticated endpoints for /providers, /models, etc.
  */
 export class OpenRouterDataClient {
-  private primaryClient: OpenRouterClient
-  private fallbackClient: OpenRouterClient
-  private skipFallback: boolean
-  private onFallback?: (path: string) => void
+  private primaryClient: OpenRouterClient;
+  private fallbackClient: OpenRouterClient;
+  private skipFallback: boolean;
+  private onFallback?: (path: string) => void;
 
   constructor(config: DataClientConfig) {
-    const primaryUrl = config.openrouterDataUrl ?? config.openrouterBaseUrl
-    this.skipFallback = primaryUrl === OPENROUTER_FALLBACK_URL
-    this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType)
-    this.fallbackClient = new OpenRouterClient(OPENROUTER_FALLBACK_URL)
-    this.onFallback = config.onFallback
+    const primaryUrl = config.openrouterDataUrl ?? config.openrouterBaseUrl;
+    this.skipFallback = primaryUrl === OPENROUTER_FALLBACK_URL;
+    this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType);
+    this.fallbackClient = new OpenRouterClient(OPENROUTER_FALLBACK_URL);
+    this.onFallback = config.onFallback;
   }
 
   async fetchProviders(): Promise<OpenRouterProvider[]> {
@@ -75,8 +75,8 @@ export class OpenRouterDataClient {
       '/providers',
       () => this.primaryClient.get<unknown>('/providers'),
       isValidProvidersResponse,
-    )
-    return result.data.data
+    );
+    return result.data.data;
   }
 
   async fetchModels(): Promise<OpenRouterModel[]> {
@@ -84,18 +84,18 @@ export class OpenRouterDataClient {
       '/models',
       () => this.primaryClient.get<unknown>('/models'),
       isValidModelsResponse,
-    )
-    return result.data.data
+    );
+    return result.data.data;
   }
 
   async fetchModelEndpoints(author: string, slug: string): Promise<ModelEndpoint[]> {
-    const path = `/models/${author}/${slug}/endpoints`
+    const path = `/models/${author}/${slug}/endpoints`;
     const result = await this.withFallback(
       path,
       () => this.primaryClient.get<unknown>(path),
       isValidEndpointsResponse,
-    )
-    return result.data.data.endpoints ?? []
+    );
+    return result.data.data.endpoints ?? [];
   }
 
   /**
@@ -108,27 +108,27 @@ export class OpenRouterDataClient {
     validate: (data: unknown) => data is T,
   ): Promise<FallbackResult<T>> {
     if (this.skipFallback) {
-      const data = await primaryFn()
+      const data = await primaryFn();
       if (!validate(data)) {
-        throw new Error(`Unexpected response format from primary API for ${path}`)
+        throw new Error(`Unexpected response format from primary API for ${path}`);
       }
-      return { data, usedFallback: false }
+      return { data, usedFallback: false };
     }
 
     // Try primary with 1 retry on network errors
     try {
-      const data = await primaryFn()
+      const data = await primaryFn();
       if (validate(data)) {
-        return { data, usedFallback: false }
+        return { data, usedFallback: false };
       }
       // Valid HTTP response but unexpected format — fall through to fallback
     } catch (error) {
       if (error instanceof Error && isNetworkError(error)) {
         // Retry once on network errors
         try {
-          const data = await primaryFn()
+          const data = await primaryFn();
           if (validate(data)) {
-            return { data, usedFallback: false }
+            return { data, usedFallback: false };
           }
         } catch {
           // Retry also failed — fall through to fallback
@@ -138,17 +138,17 @@ export class OpenRouterDataClient {
     }
 
     // Fallback to OpenRouter
-    this.onFallback?.(path)
-    const data = await this.fallbackClient.get<unknown>(path)
+    this.onFallback?.(path);
+    const data = await this.fallbackClient.get<unknown>(path);
     if (!validate(data)) {
-      throw new Error(`Unexpected response format from OpenRouter fallback for ${path}`)
+      throw new Error(`Unexpected response format from OpenRouter fallback for ${path}`);
     }
-    return { data, usedFallback: true }
+    return { data, usedFallback: true };
   }
 }
 
 function isNetworkError(error: Error): boolean {
-  const message = error.message.toLowerCase()
+  const message = error.message.toLowerCase();
   return (
     message.includes('fetch') ||
     message.includes('network') ||
@@ -157,5 +157,5 @@ function isNetworkError(error: Error): boolean {
     message.includes('timeout') ||
     message.includes('aborted') ||
     error.name === 'TypeError'
-  )
+  );
 }
