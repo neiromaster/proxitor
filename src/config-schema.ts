@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod';
 
 export const percentileCutoffsSchema = z
   .object({
@@ -7,7 +7,7 @@ export const percentileCutoffsSchema = z
     p90: z.number().positive().optional(),
     p99: z.number().positive().optional(),
   })
-  .strict()
+  .strict();
 
 export const providerSortSchema = z.union([
   z.enum(['price', 'throughput', 'latency']),
@@ -17,7 +17,7 @@ export const providerSortSchema = z.union([
       partition: z.enum(['model', 'none']).optional(),
     })
     .strict(),
-])
+]);
 
 export const maxPriceSchema = z
   .object({
@@ -26,7 +26,7 @@ export const maxPriceSchema = z
     request: z.number().nonnegative().optional(),
     image: z.number().nonnegative().optional(),
   })
-  .strict()
+  .strict();
 
 export const providerConfigSchema = z
   .object({
@@ -48,14 +48,14 @@ export const providerConfigSchema = z
       .union([z.number().positive(), percentileCutoffsSchema])
       .optional(),
   })
-  .strict()
+  .strict();
 
 export const modelOverrideSchema = z
   .object({
     provider: providerConfigSchema.optional(),
     headers: z.record(z.string(), z.string()).optional(),
   })
-  .strict()
+  .strict();
 
 export const proxyConfigSchema = z
   .object({
@@ -73,37 +73,37 @@ export const proxyConfigSchema = z
     headers: z.record(z.string(), z.string()).optional(),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
   })
-  .strict()
+  .strict();
 
-export const DEFAULTS = proxyConfigSchema.parse({})
+export const DEFAULTS = proxyConfigSchema.parse({});
 
-export const proxyConfigFileSchema = proxyConfigSchema.partial()
+export const proxyConfigFileSchema = proxyConfigSchema.partial();
 
-export type ProxyConfig = z.infer<typeof proxyConfigSchema>
-export type ProviderConfig = z.infer<typeof providerConfigSchema>
-export type ModelOverride = z.infer<typeof modelOverrideSchema>
-export type MaxPrice = z.infer<typeof maxPriceSchema>
-export type PercentileCutoffs = z.infer<typeof percentileCutoffsSchema>
-export type ProviderSort = z.infer<typeof providerSortSchema>
-export type AuthType = z.infer<typeof proxyConfigSchema>['authType']
+export type ProxyConfig = z.infer<typeof proxyConfigSchema>;
+export type ProviderConfig = z.infer<typeof providerConfigSchema>;
+export type ModelOverride = z.infer<typeof modelOverrideSchema>;
+export type MaxPrice = z.infer<typeof maxPriceSchema>;
+export type PercentileCutoffs = z.infer<typeof percentileCutoffsSchema>;
+export type ProviderSort = z.infer<typeof providerSortSchema>;
+export type AuthType = z.infer<typeof proxyConfigSchema>['authType'];
 
 export class ConfigParseError extends Error {
   constructor(filePath: string, cause?: Error) {
     super(
       `Failed to parse config file ${filePath}: ${cause?.message ?? 'unknown error'}`,
       { cause },
-    )
-    this.name = 'ConfigParseError'
+    );
+    this.name = 'ConfigParseError';
   }
 }
 
 export class ConfigValidationError extends Error {
   constructor(filePath: string, zodError: z.ZodError) {
     const lines = zodError.issues.map(issue => {
-      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
-      return `  ${path}: ${issue.message}`
-    })
-    super(`Invalid config in ${filePath}:\n${lines.join('\n')}`)
-    this.name = 'ConfigValidationError'
+      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+      return `  ${path}: ${issue.message}`;
+    });
+    super(`Invalid config in ${filePath}:\n${lines.join('\n')}`);
+    this.name = 'ConfigValidationError';
   }
 }

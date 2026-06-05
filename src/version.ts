@@ -1,3 +1,3 @@
-declare const __PROXITOR_VERSION__: string
+declare const __PROXITOR_VERSION__: string;
 
-export const version: string = __PROXITOR_VERSION__
+export const version: string = __PROXITOR_VERSION__;

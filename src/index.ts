@@ -9,7 +9,7 @@ export type {
   ProviderConfig,
   ProxyConfig,
   ResolvedModelConfig,
-} from './config.js'
+} from './config.js';
 export {
   buildProviderRouting,
   ConfigParseError,
@@ -17,7 +17,7 @@ export {
   loadConfig,
   matchScore,
   resolveModelConfig,
-} from './config.js'
-export { extractModel } from './proxy/inject.js'
-export { createProxyServer } from './proxy.js'
-export { toArray, tryParseBody } from './utils.js'
+} from './config.js';
+export { extractModel } from './proxy/inject.js';
+export { createProxyServer } from './proxy.js';
+export { toArray, tryParseBody } from './utils.js';
