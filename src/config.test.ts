@@ -206,6 +206,8 @@ describe('resolveModelConfig', () => {
     bodyLimit: '50mb',
     attributionReferer: 'https://github.com/neiromaster/proxitor',
     attributionTitle: 'proxitor',
+    cacheControl: 'auto',
+    sessionId: 'auto',
     provider: { only: 'deepinfra' },
     headers: { 'X-Global': 'global-value' },
   };
@@ -488,5 +490,99 @@ describe('config file validation', () => {
       expect(err).toBeInstanceOf(ConfigValidationError);
       expect((err as Error).message).toContain('dataCollection');
     }
+  });
+});
+
+describe('cacheControl and sessionId config', () => {
+  const baseConfig: ProxyConfig = {
+    host: '0.0.0.0',
+    port: 8828,
+    openrouterKey: 'test-key',
+    openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+    authType: 'bearer',
+    verbose: false,
+    bodyLimit: '50mb',
+    attributionReferer: 'https://github.com/neiromaster/proxitor',
+    attributionTitle: 'proxitor',
+    cacheControl: 'auto',
+    sessionId: 'auto',
+  };
+
+  it('accepts cacheControl: auto', () => {
+    const result = proxyConfigFileSchema.safeParse({ cacheControl: 'auto' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts cacheControl: always', () => {
+    const result = proxyConfigFileSchema.safeParse({ cacheControl: 'always' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts cacheControl: never', () => {
+    const result = proxyConfigFileSchema.safeParse({ cacheControl: 'never' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid cacheControl value', () => {
+    const result = proxyConfigFileSchema.safeParse({ cacheControl: 'sometimes' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts sessionId: auto', () => {
+    const result = proxyConfigFileSchema.safeParse({ sessionId: 'auto' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts sessionId: always', () => {
+    const result = proxyConfigFileSchema.safeParse({ sessionId: 'always' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid sessionId value', () => {
+    const result = proxyConfigFileSchema.safeParse({ sessionId: 'yes' });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults cacheControl to auto', async () => {
+    const config = await loadConfig({ openrouterKey: 'test-key' });
+    expect(config.cacheControl).toBe('auto');
+  });
+
+  it('defaults sessionId to auto', async () => {
+    const config = await loadConfig({ openrouterKey: 'test-key' });
+    expect(config.sessionId).toBe('auto');
+  });
+
+  it('allows per-model cacheControl override', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      cacheControl: 'auto',
+      modelOverrides: {
+        'gpt-*': { cacheControl: 'never' },
+      },
+    };
+    const resolved = resolveModelConfig(config, 'gpt-4o');
+    expect(resolved.cacheControl).toBe('never');
+  });
+
+  it('allows per-model sessionId override', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      sessionId: 'auto',
+      modelOverrides: {
+        'claude-*': { sessionId: 'always' },
+      },
+    };
+    const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+    expect(resolved.sessionId).toBe('always');
+  });
+
+  it('resolves global cacheControl when no model override', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      cacheControl: 'always',
+    };
+    const resolved = resolveModelConfig(config, 'gpt-4o');
+    expect(resolved.cacheControl).toBe('always');
   });
 });

@@ -4,7 +4,12 @@ import { buildProviderRouting, type ProxyConfig, resolveModelConfig } from './co
 import { logger, requestId, withReq } from './logger.js';
 import { buildUpstreamResponseWithLogging } from './proxy/cache-logging.js';
 import { buildRequestHeaders, buildResponseHeaders } from './proxy/headers.js';
-import { extractModel, injectProvider } from './proxy/inject.js';
+import {
+  extractModel,
+  type InjectionParams,
+  injectBodyFields,
+  isAnthropicModel,
+} from './proxy/inject.js';
 import { buildUpstreamUrl, shouldInject } from './proxy/paths.js';
 
 export {
@@ -20,19 +25,32 @@ type ProxyContext = {
   Bindings: HttpBindings;
 };
 
-function readRequestBody(
-  method: string,
-  raw: ArrayBuffer,
-  inject: boolean,
-  providerRouting: Record<string, unknown>,
-): ArrayBuffer | undefined {
-  if (['GET', 'HEAD'].includes(method)) return undefined;
+const PROXY_SESSION_ID = crypto.randomUUID();
 
-  if (inject) {
-    return injectProvider(raw, providerRouting);
-  }
+function deriveSessionId(
+  incomingHeaders: Headers,
+  mode: 'auto' | 'always' | 'never',
+): string | undefined {
+  if (mode === 'never') return undefined;
+  const fromClient = incomingHeaders.get('x-claude-code-session-id');
+  if (fromClient) return fromClient.slice(0, 256);
+  if (mode === 'always') return PROXY_SESSION_ID;
+  return undefined;
+}
 
-  return raw.byteLength > 0 ? raw : undefined;
+function shouldInjectCacheControl(
+  mode: 'auto' | 'always' | 'never',
+  modelName: string | undefined,
+  path: string,
+): boolean {
+  if (mode === 'never') return false;
+  if (mode === 'always') return true;
+  // auto: safe by endpoint
+  if (path === '/v1/messages') return true;
+  if (path === '/v1/responses') return true;
+  if (path === '/v1/chat/completions' && modelName && isAnthropicModel(modelName))
+    return true;
+  return false;
 }
 
 async function fetchUpstream(
@@ -85,20 +103,39 @@ function resolveRequest(
   method: string,
   path: string,
   reqId: string,
+  incomingHeaders: Headers,
 ): ResolvedRequest {
   const modelName = extractModel(rawBody);
   const resolved = resolveModelConfig(config, modelName);
   const providerRouting = buildProviderRouting(resolved.provider);
-  const inject = shouldInject(method, path) && providerRouting !== undefined;
+  const eligibleForInjection = shouldInject(method, path);
+
+  const cacheControlMode = resolved.cacheControl ?? 'auto';
+  const sessionIdMode = resolved.sessionId ?? 'auto';
+  const injectCacheControl =
+    eligibleForInjection && shouldInjectCacheControl(cacheControlMode, modelName, path);
+  const sessionId = eligibleForInjection
+    ? deriveSessionId(incomingHeaders, sessionIdMode)
+    : undefined;
+
+  const needsBodyModification =
+    eligibleForInjection &&
+    (providerRouting !== undefined || injectCacheControl || sessionId !== undefined);
+
+  const inject = needsBodyModification;
 
   let body: ArrayBuffer | undefined;
   try {
-    body = readRequestBody(
-      method,
-      rawBody,
-      inject,
-      providerRouting as Record<string, unknown>,
-    );
+    if (needsBodyModification) {
+      const params: InjectionParams = {
+        providerRouting: providerRouting as Record<string, unknown> | undefined,
+        cacheControl: injectCacheControl,
+        sessionId,
+      };
+      body = injectBodyFields(rawBody, params);
+    } else if (!['GET', 'HEAD'].includes(method)) {
+      body = rawBody.byteLength > 0 ? rawBody : undefined;
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to process request body';
     logger.error(withReq(reqId, message));
@@ -114,7 +151,12 @@ function resolveRequest(
     };
   }
 
-  return { inject, body, modelName, headers: resolved.headers };
+  const finalHeaders = { ...(resolved.headers ?? {}) };
+  if (sessionId !== undefined) {
+    finalHeaders['x-session-id'] = sessionId;
+  }
+
+  return { inject, body, modelName, headers: finalHeaders };
 }
 
 /**
@@ -243,7 +285,14 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     const raw = await readRawBody(c.req.raw, reqId);
     if (!raw.ok) return raw.response;
 
-    const resolved = resolveRequest(raw.body, config, method, path, reqId);
+    const resolved = resolveRequest(
+      raw.body,
+      config,
+      method,
+      path,
+      reqId,
+      c.req.raw.headers,
+    );
     if (resolved.error) return resolved.error;
 
     const headers = buildRequestHeaders(

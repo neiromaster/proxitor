@@ -50,10 +50,14 @@ export const providerConfigSchema = z
   })
   .strict();
 
+const triStateSchema = z.enum(['auto', 'always', 'never']);
+
 export const modelOverrideSchema = z
   .object({
     provider: providerConfigSchema.optional(),
     headers: z.record(z.string(), z.string()).optional(),
+    cacheControl: triStateSchema.optional(),
+    sessionId: triStateSchema.optional(),
   })
   .strict();
 
@@ -74,6 +78,8 @@ export const proxyConfigSchema = z
       .default('https://github.com/neiromaster/proxitor'),
     attributionTitle: z.string().min(1).default('proxitor'),
     headers: z.record(z.string(), z.string()).optional(),
+    cacheControl: triStateSchema.default('auto'),
+    sessionId: triStateSchema.default('auto'),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
   })
   .strict();

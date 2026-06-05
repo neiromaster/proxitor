@@ -18,6 +18,10 @@ export {
   matchScore,
   resolveModelConfig,
 } from './config.js';
-export { extractModel } from './proxy/inject.js';
+export {
+  extractModel,
+  injectBodyFields,
+  isAnthropicModel,
+} from './proxy/inject.js';
 export { createProxyServer } from './proxy.js';
 export { toArray, tryParseBody } from './utils.js';
