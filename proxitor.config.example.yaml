@@ -12,6 +12,10 @@ openrouterKey: '' # Or set OPENROUTER_API_KEY env var
 openrouterBaseUrl: 'https://openrouter.ai/api/v1'
 # Authentication type: "bearer" (default) or "oauth" for custom proxy providers
 # authType: bearer
+# Custom URL for fetching provider/model data (defaults to openrouterBaseUrl).
+# Set this if your custom API doesn't support OpenRouter data endpoints.
+# Fallback to https://openrouter.ai/api/v1 is automatic.
+# openrouterDataUrl: 'https://openrouter.ai/api/v1'
 
 # Provider routing — controls which upstream provider handles requests
 # provider:

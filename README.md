@@ -123,6 +123,23 @@ authType: oauth    # "bearer" (default) or "oauth"
 
 This changes the header to `Authorization: OAuth sk-...`.
 
+### Custom API URL and data fallback
+
+When using a custom `openrouterBaseUrl` that points to a third-party service, that service may not support OpenRouter-specific endpoints like `/providers` or `/models/{author}/{slug}/endpoints`. Proxitor handles this automatically:
+
+- **Automatic fallback** — if the custom API returns an error (4xx/5xx) or an unexpected response format for data endpoints, proxitor falls back to `https://openrouter.ai/api/v1` (no API key needed — these endpoints are public)
+- **`openrouterDataUrl`** — set this explicitly to control the primary URL for data fetching, independent of `openrouterBaseUrl` (which is used for proxying requests)
+
+```yaml
+# Proxy requests go to custom service, data fetching falls back to OpenRouter
+openrouterBaseUrl: 'https://custom-service.example.com/v1'
+
+# Explicitly set the primary data URL (optional, defaults to openrouterBaseUrl)
+# openrouterDataUrl: 'https://openrouter.ai/api/v1'
+```
+
+When a fallback occurs, proxitor logs a warning: `Custom API did not return providers, using OpenRouter data as fallback`.
+
 ### Provider routing
 
 Control which provider handles your requests. All three options accept a string or an array:
@@ -258,6 +275,7 @@ The wizard asks for:
 - **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
 - **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
 - **API base URL** — default `https://openrouter.ai/api/v1`; change for self-hosted or custom endpoints
+- **Data URL** — separate URL for provider/model data fetching; falls back to OpenRouter automatically if the custom API doesn't support these endpoints
 - **Authentication type** — `bearer` (default) or `oauth`; use `oauth` for custom proxy providers that pass tokens in the `Authorization: OAuth ...` header
 - **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)
 - **Save location** — project directory, `~/.config/proxitor/`, or `$XDG_CONFIG_HOME/proxitor/`

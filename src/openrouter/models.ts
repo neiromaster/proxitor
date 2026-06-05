@@ -1,17 +1,19 @@
 import { readCache, writeCache } from './cache.js'
-import type { OpenRouterClient } from './client.js'
-import type { OpenRouterModel, OpenRouterModelsResponse } from './types.js'
+import type { OpenRouterDataClient } from './data-client.js'
+import type { OpenRouterModel } from './types.js'
 
 const CACHE_KEY = 'models'
 const CACHE_TTL = 60 * 60 * 1000 // 1 hour
 
-export async function fetchModels(client: OpenRouterClient): Promise<OpenRouterModel[]> {
+export async function fetchModels(
+  client: OpenRouterDataClient,
+): Promise<OpenRouterModel[]> {
   const cached = readCache<OpenRouterModel[]>(CACHE_KEY, CACHE_TTL)
   if (cached) return cached
 
-  const response = await client.get<OpenRouterModelsResponse>('/models')
-  writeCache(CACHE_KEY, response.data)
-  return response.data
+  const models = await client.fetchModels()
+  writeCache(CACHE_KEY, models)
+  return models
 }
 
 /** `"anthropic/claude-sonnet-4"` → `"anthropic"` */
