@@ -2,9 +2,16 @@ import { type HttpBindings, type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { buildProviderRouting, type ProxyConfig, resolveModelConfig } from './config.js';
 import { logger, requestId, withReq } from './logger.js';
+import { buildUpstreamResponseWithLogging } from './proxy/cache-logging.js';
 import { buildRequestHeaders, buildResponseHeaders } from './proxy/headers.js';
 import { extractModel, injectProvider } from './proxy/inject.js';
 import { buildUpstreamUrl, shouldInject } from './proxy/paths.js';
+
+export {
+  type CacheUsage,
+  extractCacheUsage,
+  extractCacheUsageFromSSE,
+} from './proxy/cache-logging.js';
 
 type ProxyContext = {
   Variables: {
@@ -42,16 +49,6 @@ async function fetchUpstream(
     signal,
     duplex: body ? 'half' : undefined,
   });
-}
-
-function buildUpstreamResponse(upstream: Response, method: string): Response {
-  const headers = buildResponseHeaders(upstream.headers);
-
-  if (method === 'HEAD' || !upstream.body) {
-    return new Response(null, { status: upstream.status, headers });
-  }
-
-  return new Response(upstream.body, { status: upstream.status, headers });
 }
 
 async function readRawBody(
@@ -219,7 +216,8 @@ async function executeUpstream(
       `${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`,
     ),
   );
-  return buildUpstreamResponse(upstream, method);
+
+  return buildUpstreamResponseWithLogging(upstream, method, reqId);
 }
 
 export function createProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
