@@ -1,21 +1,21 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { createTestEnv, type TestEnv } from '../helpers.js'
+import { afterEach, describe, expect, it } from 'vitest';
+import { createTestEnv, type TestEnv } from '../helpers.js';
 
-const apiKey = process.env.OPENROUTER_API_KEY
-const describeE2e = apiKey ? describe : describe.skip
+const apiKey = process.env.OPENROUTER_API_KEY;
+const describeE2e = apiKey ? describe : describe.skip;
 
 describeE2e('E2E: OpenRouter', () => {
-  let env: TestEnv
+  let env: TestEnv;
 
   afterEach(async () => {
-    if (env) await env.cleanup()
-  })
+    if (env) await env.cleanup();
+  });
 
   it('[e2e-basic] gets a chat completion from OpenRouter', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
       openrouterBaseUrl: 'https://openrouter.ai/api/v1',
-    })
+    });
 
     const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -25,20 +25,20 @@ describeE2e('E2E: OpenRouter', () => {
         messages: [{ role: 'user', content: 'Reply with exactly: basic-test-ok' }],
         max_tokens: 10,
       }),
-    })
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.id).toBeDefined()
-    expect(data.choices).toBeDefined()
-    expect(data.choices.length).toBeGreaterThan(0)
-  })
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.id).toBeDefined();
+    expect(data.choices).toBeDefined();
+    expect(data.choices.length).toBeGreaterThan(0);
+  });
 
   it('[e2e-stream] streams a chat completion from OpenRouter', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
       openrouterBaseUrl: 'https://openrouter.ai/api/v1',
-    })
+    });
 
     const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -49,22 +49,22 @@ describeE2e('E2E: OpenRouter', () => {
         max_tokens: 10,
         stream: true,
       }),
-    })
+    });
 
-    expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toContain('text/event-stream')
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
 
-    const text = await res.text()
-    expect(text).toContain('data: ')
-    expect(text).toContain('[DONE]')
-  })
+    const text = await res.text();
+    expect(text).toContain('data: ');
+    expect(text).toContain('[DONE]');
+  });
 
   it('[e2e-deepinfra-only] routes through deepinfra only', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
       openrouterBaseUrl: 'https://openrouter.ai/api/v1',
       provider: { only: 'deepinfra' },
-    })
+    });
 
     const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -76,20 +76,20 @@ describeE2e('E2E: OpenRouter', () => {
         ],
         max_tokens: 10,
       }),
-    })
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.choices.length).toBeGreaterThan(0)
-    expect(data.provider).toBe('DeepInfra')
-  })
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.choices.length).toBeGreaterThan(0);
+    expect(data.provider).toBe('DeepInfra');
+  });
 
   it('[e2e-novita-order] routes through novita via order', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
       openrouterBaseUrl: 'https://openrouter.ai/api/v1',
       provider: { order: ['novita', 'deepinfra'] },
-    })
+    });
 
     const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -99,26 +99,26 @@ describeE2e('E2E: OpenRouter', () => {
         messages: [{ role: 'user', content: 'Reply with exactly: novita-order-test-ok' }],
         max_tokens: 10,
       }),
-    })
+    });
 
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.choices.length).toBeGreaterThan(0)
-    expect(data.provider).toBe('Novita')
-  })
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.choices.length).toBeGreaterThan(0);
+    expect(data.provider).toBe('Novita');
+  });
 
   it('[e2e-health] shows real config in health endpoint', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
       openrouterBaseUrl: 'https://openrouter.ai/api/v1',
       provider: { only: 'deepinfra' },
-    })
+    });
 
-    const res = await fetch(`${env.proxyUrl}/health`)
-    const data = await res.json()
+    const res = await fetch(`${env.proxyUrl}/health`);
+    const data = await res.json();
 
-    expect(data.ok).toBe(true)
-    expect(data.upstream).toBe('https://openrouter.ai/api/v1')
-    expect(data.provider).toEqual({ only: ['deepinfra'] })
-  })
-})
+    expect(data.ok).toBe(true);
+    expect(data.upstream).toBe('https://openrouter.ai/api/v1');
+    expect(data.provider).toEqual({ only: ['deepinfra'] });
+  });
+});

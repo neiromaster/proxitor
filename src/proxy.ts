@@ -4,7 +4,13 @@ import { buildProviderRouting, type ProxyConfig, resolveModelConfig } from './co
 import { logger, requestId, withReq } from './logger.js';
 import { buildUpstreamResponseWithLogging } from './proxy/cache-logging.js';
 import { buildRequestHeaders, buildResponseHeaders } from './proxy/headers.js';
-import { extractModel, injectProvider } from './proxy/inject.js';
+import {
+  extractModel,
+  type InjectionParams,
+  type InjectionResult,
+  injectBodyFields,
+  isAnthropicModel,
+} from './proxy/inject.js';
 import { buildUpstreamUrl, shouldInject } from './proxy/paths.js';
 
 export {
@@ -20,19 +26,30 @@ type ProxyContext = {
   Bindings: HttpBindings;
 };
 
-function readRequestBody(
-  method: string,
-  raw: ArrayBuffer,
-  inject: boolean,
-  providerRouting: Record<string, unknown>,
-): ArrayBuffer | undefined {
-  if (['GET', 'HEAD'].includes(method)) return undefined;
+const PROXY_SESSION_ID = crypto.randomUUID();
 
-  if (inject) {
-    return injectProvider(raw, providerRouting);
-  }
+function deriveSessionId(
+  incomingHeaders: Headers,
+  mode: 'auto' | 'always' | 'never',
+): string | undefined {
+  if (mode === 'never') return undefined;
+  const fromClient = incomingHeaders.get('x-claude-code-session-id');
+  if (fromClient) return fromClient.slice(0, 256);
+  // Both 'auto' and 'always' fall back to proxy UUID for maximum sticky routing
+  return PROXY_SESSION_ID;
+}
 
-  return raw.byteLength > 0 ? raw : undefined;
+function shouldInjectCacheControl(
+  mode: 'auto' | 'always' | 'never',
+  modelName: string | undefined,
+  path: string,
+): boolean {
+  if (mode === 'never') return false;
+  if (mode === 'always') return true;
+  // auto mode: only skip for non-Anthropic models on /v1/chat/completions
+  // (other injectable paths are always safe per OpenRouter API)
+  if (path === '/v1/chat/completions' && !isAnthropicModel(modelName ?? '')) return false;
+  return true;
 }
 
 async function fetchUpstream(
@@ -79,42 +96,100 @@ type ResolvedRequest = {
   error?: Response;
 };
 
+function isReadonlyMethod(method: string): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+type ResolvedModelConfig = Awaited<ReturnType<typeof resolveModelConfig>>;
+
+type InjectionDecision = {
+  params: InjectionParams;
+  sessionId: string | undefined;
+};
+
+function computeInjection(
+  rawBody: ArrayBuffer,
+  config: ProxyConfig,
+  path: string,
+  incomingHeaders: Headers,
+): { modelName: string | undefined; resolved: ResolvedModelConfig } & (
+  | { inject: false }
+  | (InjectionDecision & { inject: true })
+) {
+  const modelName = extractModel(rawBody);
+  const resolved = resolveModelConfig(config, modelName);
+  const providerRouting = buildProviderRouting(resolved.provider);
+  const eligibleForInjection = shouldInject('POST', path);
+  if (!eligibleForInjection) return { modelName, resolved, inject: false };
+
+  const cacheControlMode = resolved.cacheControl ?? 'auto';
+  const sessionIdMode = resolved.sessionId ?? 'auto';
+  const injectCacheControl = shouldInjectCacheControl(cacheControlMode, modelName, path);
+  const sessionId = deriveSessionId(incomingHeaders, sessionIdMode);
+
+  if (providerRouting === undefined && !injectCacheControl && sessionId === undefined) {
+    return { modelName, resolved, inject: false };
+  }
+
+  return {
+    modelName,
+    resolved,
+    inject: true,
+    params: {
+      providerRouting: providerRouting as Record<string, unknown> | undefined,
+      cacheControl: injectCacheControl,
+      sessionId,
+    },
+    sessionId,
+  };
+}
+
 function resolveRequest(
   rawBody: ArrayBuffer,
   config: ProxyConfig,
   method: string,
   path: string,
   reqId: string,
+  incomingHeaders: Headers,
 ): ResolvedRequest {
-  const modelName = extractModel(rawBody);
-  const resolved = resolveModelConfig(config, modelName);
-  const providerRouting = buildProviderRouting(resolved.provider);
-  const inject = shouldInject(method, path) && providerRouting !== undefined;
+  const decision = computeInjection(rawBody, config, path, incomingHeaders);
 
   let body: ArrayBuffer | undefined;
+  let bodyModified = false;
+  let effectiveSessionId: string | undefined;
+
   try {
-    body = readRequestBody(
-      method,
-      rawBody,
-      inject,
-      providerRouting as Record<string, unknown>,
-    );
+    if (decision.inject) {
+      const result: InjectionResult = injectBodyFields(rawBody, decision.params);
+      body = result.body;
+      bodyModified = true;
+      effectiveSessionId = result.effectiveSessionId;
+    } else if (!isReadonlyMethod(method)) {
+      body = rawBody.byteLength > 0 ? rawBody : undefined;
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to process request body';
-    logger.error(withReq(reqId, message));
-    return {
-      inject,
-      body: undefined,
-      modelName,
-      headers: resolved.headers,
-      error: new Response(
-        JSON.stringify({ error: { message, type: 'proxy_request_error' } }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
-      ),
-    };
+    // Fall back to forwarding as-is instead of returning 400
+    if (!isReadonlyMethod(method) && rawBody.byteLength > 0) {
+      body = rawBody;
+      logger.warn(withReq(reqId, `${message}; forwarding body as-is`));
+    } else {
+      body = undefined;
+      logger.warn(withReq(reqId, message));
+    }
   }
 
-  return { inject, body, modelName, headers: resolved.headers };
+  const finalHeaders = { ...(decision.resolved.headers ?? {}) };
+  if (effectiveSessionId !== undefined) {
+    finalHeaders['x-session-id'] = effectiveSessionId;
+  }
+
+  return {
+    inject: bodyModified,
+    body,
+    modelName: decision.modelName,
+    headers: finalHeaders,
+  };
 }
 
 /**
@@ -243,7 +318,14 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     const raw = await readRawBody(c.req.raw, reqId);
     if (!raw.ok) return raw.response;
 
-    const resolved = resolveRequest(raw.body, config, method, path, reqId);
+    const resolved = resolveRequest(
+      raw.body,
+      config,
+      method,
+      path,
+      reqId,
+      c.req.raw.headers,
+    );
     if (resolved.error) return resolved.error;
 
     const headers = buildRequestHeaders(

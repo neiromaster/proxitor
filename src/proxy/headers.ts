@@ -13,7 +13,14 @@ const HOP_BY_HOP = new Set([
 ]);
 
 /** Headers to strip from client request before forwarding */
-const STRIP_REQUEST = new Set(['authorization', 'x-api-key', 'host', 'content-length']);
+const STRIP_REQUEST = new Set([
+  'authorization',
+  'x-api-key',
+  'host',
+  'content-length',
+  'x-claude-code-session-id',
+  'x-session-id',
+]);
 
 /** Headers to strip from upstream response before forwarding */
 const STRIP_RESPONSE = new Set(['content-length', 'content-encoding']);

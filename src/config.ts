@@ -6,6 +6,7 @@ import {
   ConfigParseError,
   ConfigValidationError,
   DEFAULTS,
+  type ModelOverride,
   type ProviderConfig,
   type ProxyConfig,
   proxyConfigFileSchema,
@@ -27,6 +28,8 @@ export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-sche
 export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
+  cacheControl?: 'auto' | 'always' | 'never';
+  sessionId?: 'auto' | 'always' | 'never';
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
@@ -91,32 +94,39 @@ export function resolveModelConfig(
   const result: ResolvedModelConfig = {
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
+    cacheControl: config.cacheControl,
+    sessionId: config.sessionId,
   };
 
   if (!modelName || !config.modelOverrides) return result;
 
+  const bestPattern = findBestMatch(Object.keys(config.modelOverrides), modelName);
+  if (bestPattern) applyOverride(result, config.modelOverrides[bestPattern]);
+
+  return result;
+}
+
+function findBestMatch(patterns: string[], modelName: string): string | null {
   let bestPattern: string | null = null;
   let bestScore = -1;
-
-  for (const pattern of Object.keys(config.modelOverrides)) {
+  for (const pattern of patterns) {
     const score = matchScore(pattern, modelName);
     if (score > bestScore) {
       bestScore = score;
       bestPattern = pattern;
     }
   }
+  return bestPattern;
+}
 
-  if (bestPattern) {
-    const override = config.modelOverrides[bestPattern];
-    if (override?.provider !== undefined) {
-      result.provider = override.provider;
-    }
-    if (override?.headers) {
-      result.headers = { ...(result.headers ?? {}), ...override.headers };
-    }
+function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): void {
+  if (!override) return;
+  if (override.provider !== undefined) result.provider = override.provider;
+  if (override.headers) {
+    result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
-
-  return result;
+  if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
+  if (override.sessionId !== undefined) result.sessionId = override.sessionId;
 }
 
 type LoadConfigOptions = {

@@ -92,5 +92,14 @@ openrouterBaseUrl: 'https://openrouter.ai/api/v1'
 # attributionReferer: "https://github.com/neiromaster/proxitor"
 # attributionTitle: "proxitor"
 
+# Prompt caching: inject cache_control for automatic caching.
+# "auto" = Anthropic models only (safe default), "always" = all models, "never" = off
+# cacheControl: auto
+
+# Session sticky routing: inject session_id for provider stickiness from the first request.
+# "auto" = always active (uses X-Claude-Code-Session-Id header or generates proxy UUID),
+# "always" = same as auto, "never" = off
+# sessionId: auto
+
 # Enable verbose logging
 verbose: false
