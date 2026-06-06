@@ -19,6 +19,7 @@ const STRIP_REQUEST = new Set([
   'host',
   'content-length',
   'x-claude-code-session-id',
+  'x-session-id',
 ]);
 
 /** Headers to strip from upstream response before forwarding */

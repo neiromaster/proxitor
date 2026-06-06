@@ -381,12 +381,14 @@ describe('Proxy Integration', () => {
     expect(capturedHeaders['x-claude-code-session-id']).toBeUndefined();
   });
 
-  it('does not inject session_id when auto mode and no client header', async () => {
+  it('injects proxy-generated session_id in auto mode when no client header', async () => {
     let capturedBody: Record<string, unknown> = {};
+    let capturedHeaders: Record<string, string> = {};
 
     env = await createTestEnv({ sessionId: 'auto' }, upstream => {
       catchAll(upstream, async c => {
         capturedBody = await c.req.json().catch(() => ({}));
+        capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
         return c.json({ id: 'test' });
       });
     });
@@ -397,7 +399,10 @@ describe('Proxy Integration', () => {
       body: JSON.stringify({ model: 'test', messages: [] }),
     });
 
-    expect(capturedBody.session_id).toBeUndefined();
+    // Auto mode now falls back to proxy UUID for maximum sticky routing
+    expect(typeof capturedBody.session_id).toBe('string');
+    expect(capturedBody.session_id.length).toBeGreaterThan(0);
+    expect(capturedHeaders['x-session-id']).toBe(capturedBody.session_id);
   });
 
   it('injects generated session_id with always mode', async () => {
@@ -443,6 +448,86 @@ describe('Proxy Integration', () => {
     });
 
     expect(capturedBody.session_id).toBeUndefined();
+  });
+
+  it('strips x-session-id from incoming headers (prevents bypass)', async () => {
+    let capturedHeaders: Record<string, string> = {};
+
+    env = await createTestEnv({ sessionId: 'never' }, upstream => {
+      catchAll(upstream, async c => {
+        capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
+        return c.json({ id: 'test' });
+      });
+    });
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': 'malicious-session-bypass',
+      },
+      body: JSON.stringify({ model: 'test', messages: [] }),
+    });
+
+    // Client-sent x-session-id should be stripped, preventing bypass of sessionId: 'never'
+    expect(capturedHeaders['x-session-id']).toBeUndefined();
+  });
+
+  it('sets x-session-id header to match injected body session_id', async () => {
+    let capturedBody: Record<string, unknown> = {};
+    let capturedHeaders: Record<string, string> = {};
+
+    env = await createTestEnv({ sessionId: 'auto' }, upstream => {
+      catchAll(upstream, async c => {
+        capturedBody = await c.req.json().catch(() => ({}));
+        capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
+        return c.json({ id: 'test' });
+      });
+    });
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Claude-Code-Session-Id': 'header-session',
+      },
+      body: JSON.stringify({ model: 'test', messages: [] }),
+    });
+
+    // Both body and header should use the same session ID
+    expect(capturedBody.session_id).toBe('header-session');
+    expect(capturedHeaders['x-session-id']).toBe('header-session');
+  });
+
+  it('preserves existing session_id in body and uses it for header', async () => {
+    let capturedBody: Record<string, unknown> = {};
+    let capturedHeaders: Record<string, string> = {};
+
+    env = await createTestEnv({ sessionId: 'auto' }, upstream => {
+      catchAll(upstream, async c => {
+        capturedBody = await c.req.json().catch(() => ({}));
+        capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
+        return c.json({ id: 'test' });
+      });
+    });
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Claude-Code-Session-Id': 'proxy-derived-session',
+      },
+      body: JSON.stringify({
+        model: 'test',
+        messages: [],
+        session_id: 'client-existing-session',
+      }),
+    });
+
+    // Body keeps existing session_id (not overwritten)
+    expect(capturedBody.session_id).toBe('client-existing-session');
+    // Header uses the existing session_id from body (consistent with body)
+    expect(capturedHeaders['x-session-id']).toBe('client-existing-session');
   });
 
   // --- combined injection ---

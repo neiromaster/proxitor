@@ -7,6 +7,7 @@ import { buildRequestHeaders, buildResponseHeaders } from './proxy/headers.js';
 import {
   extractModel,
   type InjectionParams,
+  type InjectionResult,
   injectBodyFields,
   isAnthropicModel,
 } from './proxy/inject.js';
@@ -34,8 +35,8 @@ function deriveSessionId(
   if (mode === 'never') return undefined;
   const fromClient = incomingHeaders.get('x-claude-code-session-id');
   if (fromClient) return fromClient.slice(0, 256);
-  if (mode === 'always') return PROXY_SESSION_ID;
-  return undefined;
+  // Both 'auto' and 'always' fall back to proxy UUID for maximum sticky routing
+  return PROXY_SESSION_ID;
 }
 
 function shouldInjectCacheControl(
@@ -45,11 +46,10 @@ function shouldInjectCacheControl(
 ): boolean {
   if (mode === 'never') return false;
   if (mode === 'always') return true;
-  if (path === '/v1/messages') return true;
-  if (path === '/v1/responses') return true;
-  if (path === '/v1/chat/completions' && modelName && isAnthropicModel(modelName))
-    return true;
-  return false;
+  // auto mode: only skip for non-Anthropic models on /v1/chat/completions
+  // (other injectable paths are always safe per OpenRouter API)
+  if (path === '/v1/chat/completions' && !isAnthropicModel(modelName ?? '')) return false;
+  return true;
 }
 
 async function fetchUpstream(
@@ -96,6 +96,54 @@ type ResolvedRequest = {
   error?: Response;
 };
 
+function isReadonlyMethod(method: string): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+type ResolvedModelConfig = Awaited<ReturnType<typeof resolveModelConfig>>;
+
+type InjectionDecision = {
+  params: InjectionParams;
+  sessionId: string | undefined;
+};
+
+function computeInjection(
+  rawBody: ArrayBuffer,
+  config: ProxyConfig,
+  path: string,
+  incomingHeaders: Headers,
+): { modelName: string | undefined; resolved: ResolvedModelConfig } & (
+  | { inject: false }
+  | (InjectionDecision & { inject: true })
+) {
+  const modelName = extractModel(rawBody);
+  const resolved = resolveModelConfig(config, modelName);
+  const providerRouting = buildProviderRouting(resolved.provider);
+  const eligibleForInjection = shouldInject('POST', path);
+  if (!eligibleForInjection) return { modelName, resolved, inject: false };
+
+  const cacheControlMode = resolved.cacheControl ?? 'auto';
+  const sessionIdMode = resolved.sessionId ?? 'auto';
+  const injectCacheControl = shouldInjectCacheControl(cacheControlMode, modelName, path);
+  const sessionId = deriveSessionId(incomingHeaders, sessionIdMode);
+
+  if (providerRouting === undefined && !injectCacheControl && sessionId === undefined) {
+    return { modelName, resolved, inject: false };
+  }
+
+  return {
+    modelName,
+    resolved,
+    inject: true,
+    params: {
+      providerRouting: providerRouting as Record<string, unknown> | undefined,
+      cacheControl: injectCacheControl,
+      sessionId,
+    },
+    sessionId,
+  };
+}
+
 function resolveRequest(
   rawBody: ArrayBuffer,
   config: ProxyConfig,
@@ -104,58 +152,44 @@ function resolveRequest(
   reqId: string,
   incomingHeaders: Headers,
 ): ResolvedRequest {
-  const modelName = extractModel(rawBody);
-  const resolved = resolveModelConfig(config, modelName);
-  const providerRouting = buildProviderRouting(resolved.provider);
-  const eligibleForInjection = shouldInject(method, path);
-
-  const cacheControlMode = resolved.cacheControl ?? 'auto';
-  const sessionIdMode = resolved.sessionId ?? 'auto';
-  const injectCacheControl =
-    eligibleForInjection && shouldInjectCacheControl(cacheControlMode, modelName, path);
-  const sessionId = eligibleForInjection
-    ? deriveSessionId(incomingHeaders, sessionIdMode)
-    : undefined;
-
-  const needsBodyModification =
-    eligibleForInjection &&
-    (providerRouting !== undefined || injectCacheControl || sessionId !== undefined);
-
-  const inject = needsBodyModification;
+  const decision = computeInjection(rawBody, config, path, incomingHeaders);
 
   let body: ArrayBuffer | undefined;
+  let bodyModified = false;
+  let effectiveSessionId: string | undefined;
+
   try {
-    if (needsBodyModification) {
-      const params: InjectionParams = {
-        providerRouting: providerRouting as Record<string, unknown> | undefined,
-        cacheControl: injectCacheControl,
-        sessionId,
-      };
-      body = injectBodyFields(rawBody, params);
-    } else if (!['GET', 'HEAD'].includes(method)) {
+    if (decision.inject) {
+      const result: InjectionResult = injectBodyFields(rawBody, decision.params);
+      body = result.body;
+      bodyModified = true;
+      effectiveSessionId = result.effectiveSessionId;
+    } else if (!isReadonlyMethod(method)) {
       body = rawBody.byteLength > 0 ? rawBody : undefined;
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to process request body';
-    logger.error(withReq(reqId, message));
-    return {
-      inject,
-      body: undefined,
-      modelName,
-      headers: resolved.headers,
-      error: new Response(
-        JSON.stringify({ error: { message, type: 'proxy_request_error' } }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
-      ),
-    };
+    // Fall back to forwarding as-is instead of returning 400
+    if (!isReadonlyMethod(method) && rawBody.byteLength > 0) {
+      body = rawBody;
+      logger.warn(withReq(reqId, `${message}; forwarding body as-is`));
+    } else {
+      body = undefined;
+      logger.warn(withReq(reqId, message));
+    }
   }
 
-  const finalHeaders = { ...(resolved.headers ?? {}) };
-  if (sessionId !== undefined) {
-    finalHeaders['x-session-id'] = sessionId;
+  const finalHeaders = { ...(decision.resolved.headers ?? {}) };
+  if (effectiveSessionId !== undefined) {
+    finalHeaders['x-session-id'] = effectiveSessionId;
   }
 
-  return { inject, body, modelName, headers: finalHeaders };
+  return {
+    inject: bodyModified,
+    body,
+    modelName: decision.modelName,
+    headers: finalHeaders,
+  };
 }
 
 /**

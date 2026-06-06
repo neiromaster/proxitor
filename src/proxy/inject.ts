@@ -6,6 +6,12 @@ export type InjectionParams = {
   sessionId?: string;
 };
 
+export type InjectionResult = {
+  body: ArrayBuffer;
+  /** The session_id that ended up in the body (injected or existing). Undefined if none. */
+  effectiveSessionId?: string;
+};
+
 export function isAnthropicModel(modelName: string): boolean {
   const lower = modelName.toLowerCase();
   return (
@@ -23,7 +29,7 @@ export function extractModel(rawBody: ArrayBuffer): string | undefined {
 export function injectBodyFields(
   rawBody: ArrayBuffer,
   params: InjectionParams,
-): ArrayBuffer {
+): InjectionResult {
   if (rawBody.byteLength === 0) {
     throw new Error('Request body is empty; cannot inject');
   }
@@ -45,16 +51,26 @@ export function injectBodyFields(
     json.cache_control = { type: 'ephemeral' };
   }
 
-  if (params.sessionId && !('session_id' in json)) {
-    json.session_id = params.sessionId;
+  let effectiveSessionId: string | undefined;
+  if (params.sessionId) {
+    if ('session_id' in json) {
+      // Body already has session_id — use the existing value for header consistency
+      effectiveSessionId = String(json.session_id);
+    } else {
+      json.session_id = params.sessionId;
+      effectiveSessionId = params.sessionId;
+    }
   }
 
-  return new TextEncoder().encode(JSON.stringify(json)).buffer as ArrayBuffer;
+  return {
+    body: new TextEncoder().encode(JSON.stringify(json)).buffer as ArrayBuffer,
+    effectiveSessionId,
+  };
 }
 
 export function injectProvider(
   rawBody: ArrayBuffer,
   providerRouting: Record<string, unknown>,
 ): ArrayBuffer {
-  return injectBodyFields(rawBody, { providerRouting });
+  return injectBodyFields(rawBody, { providerRouting }).body;
 }

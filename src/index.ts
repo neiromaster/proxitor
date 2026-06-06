@@ -20,6 +20,8 @@ export {
 } from './config.js';
 export {
   extractModel,
+  type InjectionParams,
+  type InjectionResult,
   injectBodyFields,
   isAnthropicModel,
 } from './proxy/inject.js';

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractModel,
+  type InjectionResult,
   injectBodyFields,
   injectProvider,
   isAnthropicModel,
@@ -105,8 +106,8 @@ describe('injectProvider', () => {
 describe('injectBodyFields', () => {
   const encode = (obj: unknown) =>
     new TextEncoder().encode(JSON.stringify(obj)).buffer as ArrayBuffer;
-  const decode = (buf: ArrayBuffer) =>
-    JSON.parse(new TextDecoder().decode(buf)) as Record<string, unknown>;
+  const decode = (result: InjectionResult) =>
+    JSON.parse(new TextDecoder().decode(result.body)) as Record<string, unknown>;
 
   it('injects provider only', () => {
     const body = encode({ model: 'test', messages: [] });
@@ -127,6 +128,7 @@ describe('injectBodyFields', () => {
     const result = injectBodyFields(body, { sessionId: 'session-abc' });
     const parsed = decode(result);
     expect(parsed.session_id).toBe('session-abc');
+    expect(result.effectiveSessionId).toBe('session-abc');
   });
 
   it('injects all three together', () => {
@@ -140,6 +142,7 @@ describe('injectBodyFields', () => {
     expect(parsed.provider).toEqual({ only: ['anthropic'] });
     expect(parsed.cache_control).toEqual({ type: 'ephemeral' });
     expect(parsed.session_id).toBe('session-123');
+    expect(result.effectiveSessionId).toBe('session-123');
   });
 
   it('does not inject cache_control when already present', () => {
@@ -156,6 +159,19 @@ describe('injectBodyFields', () => {
     const body = encode({ model: 'test', messages: [], session_id: 'existing' });
     const result = injectBodyFields(body, { sessionId: 'new-session' });
     expect(decode(result).session_id).toBe('existing');
+  });
+
+  it('returns effectiveSessionId from existing body when session_id already present', () => {
+    const body = encode({ model: 'test', messages: [], session_id: 'client-sess' });
+    const result = injectBodyFields(body, { sessionId: 'proxy-sess' });
+    // Body keeps existing value, but effectiveSessionId reflects what's in the body
+    expect(result.effectiveSessionId).toBe('client-sess');
+  });
+
+  it('returns undefined effectiveSessionId when no sessionId param', () => {
+    const body = encode({ model: 'test', messages: [] });
+    const result = injectBodyFields(body, { cacheControl: true });
+    expect(result.effectiveSessionId).toBeUndefined();
   });
 
   it('always overwrites provider', () => {

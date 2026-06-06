@@ -56,6 +56,24 @@ describe('buildRequestHeaders', () => {
     expect(headers['x-claude-code-session-id']).toBeUndefined();
   });
 
+  it('should strip x-session-id from incoming headers', () => {
+    const incoming = new Headers({
+      'x-session-id': 'client-session-456',
+    });
+    const headers = buildRequestHeaders(incoming, baseConfig, false);
+    expect(headers['x-session-id']).toBeUndefined();
+  });
+
+  it('should strip both session headers simultaneously', () => {
+    const incoming = new Headers({
+      'x-claude-code-session-id': 'session-abc',
+      'x-session-id': 'session-xyz',
+    });
+    const headers = buildRequestHeaders(incoming, baseConfig, false);
+    expect(headers['x-claude-code-session-id']).toBeUndefined();
+    expect(headers['x-session-id']).toBeUndefined();
+  });
+
   it('should use OAuth prefix when authType is oauth', () => {
     const incoming = new Headers();
     const config = { ...baseConfig, authType: 'oauth' as const };

@@ -262,13 +262,13 @@ Both support `auto` / `always` / `never` modes:
 
 | Mode | `cacheControl` | `sessionId` |
 |---|---|---|
-| `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Use `X-Claude-Code-Session-Id` header if present |
+| `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Use `X-Claude-Code-Session-Id` header if present; otherwise generate proxy UUID |
 | `always` | All models, all endpoints | Generate a proxy UUID for sticky routing |
 | `never` | Disabled | Disabled |
 
 ```yaml
 cacheControl: auto    # safe default — Anthropic and safe endpoints only
-sessionId: auto       # derives from Claude Code session header
+sessionId: auto       # always ensures sticky routing (client header or proxy UUID)
 
 # Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
 # cacheControl: always
