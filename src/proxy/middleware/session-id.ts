@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { classifyEndpoint } from '../paths.js';
 
 type Message = { role?: string; content?: unknown };
 
@@ -9,31 +10,35 @@ function extractConversationFingerprint(
   let system: unknown;
   let user: unknown;
 
-  if (path === '/v1/responses') {
-    system = parsedBody.instructions;
-    user = parsedBody.input;
-  } else if (path === '/v1/messages') {
-    system = parsedBody.system;
-    const messages = parsedBody.messages;
-    if (Array.isArray(messages)) {
-      const firstUser = messages.find(
-        (m: Message) => m.role === 'user' && m.content != null,
-      );
-      user = firstUser?.content;
+  switch (classifyEndpoint(path)) {
+    case 'responses':
+      system = parsedBody.instructions;
+      user = parsedBody.input;
+      break;
+    case 'messages': {
+      system = parsedBody.system;
+      const messages = parsedBody.messages;
+      if (Array.isArray(messages)) {
+        const firstUser = messages.find(
+          (m: Message) => m.role === 'user' && m.content != null,
+        );
+        user = firstUser?.content;
+      }
+      break;
     }
-  } else {
-    // /v1/chat/completions and any future paths
-    const messages = parsedBody.messages;
-    if (Array.isArray(messages)) {
-      const firstSystem = messages.find(
-        (m: Message) =>
-          (m.role === 'system' || m.role === 'developer') && m.content != null,
-      );
-      const firstUser = messages.find(
-        (m: Message) => m.role === 'user' && m.content != null,
-      );
-      system = firstSystem?.content;
-      user = firstUser?.content;
+    default: {
+      const messages = parsedBody.messages;
+      if (Array.isArray(messages)) {
+        const firstSystem = messages.find(
+          (m: Message) =>
+            (m.role === 'system' || m.role === 'developer') && m.content != null,
+        );
+        const firstUser = messages.find(
+          (m: Message) => m.role === 'user' && m.content != null,
+        );
+        system = firstSystem?.content;
+        user = firstUser?.content;
+      }
     }
   }
 

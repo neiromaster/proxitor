@@ -1,4 +1,5 @@
 import { isAnthropicModel } from '../inject.js';
+import { classifyEndpoint } from '../paths.js';
 
 export function shouldInjectCacheControl(
   mode: 'auto' | 'always' | 'never',
@@ -7,6 +8,7 @@ export function shouldInjectCacheControl(
 ): boolean {
   if (mode === 'never') return false;
   if (mode === 'always') return true;
-  if (path === '/v1/chat/completions' && !isAnthropicModel(modelName ?? '')) return false;
+  if (classifyEndpoint(path) === 'chat-completions' && !isAnthropicModel(modelName ?? ''))
+    return false;
   return true;
 }

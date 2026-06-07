@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const OPENROUTER_API_URL = 'https://openrouter.ai/api';
+
 export const percentileCutoffsSchema = z
   .object({
     p50: z.number().positive().optional(),
@@ -66,7 +68,7 @@ export const proxyConfigSchema = z
     host: z.string().min(1).default('0.0.0.0'),
     port: z.number().int().min(1).max(65535).default(8828),
     openrouterKey: z.string().default(''),
-    openrouterBaseUrl: z.string().url().default('https://openrouter.ai/api/v1'),
+    openrouterBaseUrl: z.string().url().default(OPENROUTER_API_URL),
     openrouterDataUrl: z.string().url().optional(),
     authType: z.enum(['bearer', 'oauth']).default('bearer'),
     verbose: z.boolean().default(false),

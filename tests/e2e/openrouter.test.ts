@@ -14,7 +14,7 @@ describeE2e('E2E: OpenRouter', () => {
   it('[e2e-basic] gets a chat completion from OpenRouter', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
-      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openrouterBaseUrl: 'https://openrouter.ai/api',
     });
 
     const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
@@ -37,7 +37,7 @@ describeE2e('E2E: OpenRouter', () => {
   it('[e2e-stream] streams a chat completion from OpenRouter', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
-      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openrouterBaseUrl: 'https://openrouter.ai/api',
     });
 
     const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
@@ -62,7 +62,7 @@ describeE2e('E2E: OpenRouter', () => {
   it('[e2e-deepinfra-only] routes through deepinfra only', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
-      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openrouterBaseUrl: 'https://openrouter.ai/api',
       provider: { only: 'deepinfra' },
     });
 
@@ -87,7 +87,7 @@ describeE2e('E2E: OpenRouter', () => {
   it('[e2e-novita-order] routes through novita via order', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
-      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openrouterBaseUrl: 'https://openrouter.ai/api',
       provider: { order: ['novita', 'deepinfra'] },
     });
 
@@ -110,7 +110,7 @@ describeE2e('E2E: OpenRouter', () => {
   it('[e2e-health] shows real config in health endpoint', async () => {
     env = await createTestEnv({
       openrouterKey: apiKey!,
-      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openrouterBaseUrl: 'https://openrouter.ai/api',
       provider: { only: 'deepinfra' },
     });
 
@@ -118,7 +118,7 @@ describeE2e('E2E: OpenRouter', () => {
     const data = await res.json();
 
     expect(data.ok).toBe(true);
-    expect(data.upstream).toBe('https://openrouter.ai/api/v1');
+    expect(data.upstream).toBe('https://openrouter.ai/api');
     expect(data.provider).toEqual({ only: ['deepinfra'] });
   });
 });
