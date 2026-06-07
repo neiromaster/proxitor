@@ -18,6 +18,6 @@ export {
   matchScore,
   resolveModelConfig,
 } from './config.js';
-export { isAnthropicModel } from './proxy/inject.js';
+export { isAnthropicModel } from './proxy/utils/model.js';
 export { createProxyServer } from './proxy.js';
 export { toArray } from './utils.js';

@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import type { ProxyEnv } from '../context.js';
-import { shouldInjectCacheControl } from './cache-control.js';
+import { shouldInjectCacheControl } from '../utils/cache-control.js';
 
 export const injectCacheControl = createMiddleware<ProxyEnv>(async (c, next) => {
   const resolved = c.var.resolvedConfig;
