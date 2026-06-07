@@ -28,8 +28,8 @@ export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-sche
 export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
-  cacheControl?: 'auto' | 'always' | 'never';
-  sessionId?: 'auto' | 'always' | 'never';
+  cacheControl: 'auto' | 'always' | 'never';
+  sessionId: 'auto' | 'always' | 'never';
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [

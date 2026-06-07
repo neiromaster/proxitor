@@ -11,7 +11,7 @@ export const injectCacheControl = createMiddleware<ProxyEnv>(async (c, next) => 
     return;
   }
 
-  const mode = resolved.cacheControl ?? 'auto';
+  const mode = resolved.cacheControl;
   const shouldInject = shouldInjectCacheControl(mode, c.var.modelName, c.var.path);
 
   if (shouldInject && !('cache_control' in parsedBody)) {
