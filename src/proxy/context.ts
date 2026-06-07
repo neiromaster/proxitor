@@ -1,7 +1,8 @@
 import type { HttpBindings } from '@hono/node-server';
-import type { ResolvedModelConfig } from '../config.js';
+import type { ProxyConfig, ResolvedModelConfig } from '../config.js';
 
 export type ProxyVariables = {
+  config: ProxyConfig;
   reqId: string;
   method: string;
   path: string;

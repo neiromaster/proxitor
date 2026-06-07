@@ -36,7 +36,7 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
 
   // Config middleware — inject ProxyConfig into every request
   app.use('*', async (c, next) => {
-    c.set('config' as keyof ProxyEnv['Variables'], config as never);
+    c.set('config', config);
     await next();
   });
 
