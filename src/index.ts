@@ -21,8 +21,6 @@ export {
 export {
   extractModel,
   type InjectionParams,
-  type InjectionResult,
-  injectBodyFields,
   isAnthropicModel,
 } from './proxy/inject.js';
 export { createProxyServer } from './proxy.js';

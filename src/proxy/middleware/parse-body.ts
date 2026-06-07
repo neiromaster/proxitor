@@ -1,0 +1,25 @@
+import { createMiddleware } from 'hono/factory';
+import type { ProxyEnv } from '../context.js';
+
+export const parseBody = createMiddleware<ProxyEnv>(async (c, next) => {
+  const rawBody = c.var.rawBody;
+
+  if (!rawBody || rawBody.byteLength === 0) {
+    c.set('parsedBody', undefined);
+    c.set('modelName', undefined);
+    await next();
+    return;
+  }
+
+  try {
+    const json = JSON.parse(new TextDecoder().decode(rawBody)) as Record<string, unknown>;
+    c.set('parsedBody', json);
+    c.set('modelName', typeof json.model === 'string' ? json.model : undefined);
+  } catch {
+    // Not valid JSON — forward raw body as-is
+    c.set('parsedBody', undefined);
+    c.set('modelName', undefined);
+  }
+
+  await next();
+});
