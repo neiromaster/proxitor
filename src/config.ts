@@ -29,6 +29,7 @@ export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
   cacheControl: 'auto' | 'always' | 'never';
+  cacheControlTtl?: '5m' | '1h';
   sessionId: 'auto' | 'always' | 'never';
 };
 
@@ -95,6 +96,7 @@ export function resolveModelConfig(
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
     cacheControl: config.cacheControl,
+    cacheControlTtl: config.cacheControlTtl,
     sessionId: config.sessionId,
   };
 
@@ -126,6 +128,11 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
   if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
+  if (override.cacheControlTtl === 'default') {
+    result.cacheControlTtl = undefined;
+  } else if (override.cacheControlTtl !== undefined) {
+    result.cacheControlTtl = override.cacheControlTtl;
+  }
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
 }
 

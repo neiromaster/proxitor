@@ -256,32 +256,48 @@ By default, OpenRouter doesn't enable prompt caching — every request pays full
 
 **`cacheControl`** — injects `cache_control: { "type": "ephemeral" }` into the request body. OpenRouter uses this to set cache breakpoints and advance them as conversations grow.
 
+**`cacheControlTtl`** — controls the cache time-to-live. Anthropic's default TTL is 5 minutes (300s). Set to `1h` for a 1-hour cache at higher write cost (2× vs 1.25×). Only applies to Anthropic models — other providers don't support TTL.
+
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
-Both support `auto` / `always` / `never` modes:
+Both `cacheControl` and `sessionId` support `auto` / `always` / `never` modes:
 
 | Mode | `cacheControl` | `sessionId` |
-|---|---|---|
+| --- | --- | --- |
 | `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Use `X-Claude-Code-Session-Id` header if present; otherwise generate proxy UUID |
 | `always` | All models, all endpoints | Generate a proxy UUID for sticky routing |
 | `never` | Disabled | Disabled |
+
+`cacheControlTtl` values:
+
+| Value | TTL | Write cost | Use when |
+| --- | --- | --- | --- |
+| _(not set)_ | 5 min (Anthropic default) | 1.25× | High-frequency requests (>1 per 5 min) |
+| `5m` | 5 minutes | 1.25× | Explicit short cache |
+| `1h` | 1 hour | 2.0× | Low-frequency or long-running sessions |
 
 ```yaml
 cacheControl: auto    # safe default — Anthropic and safe endpoints only
 sessionId: auto       # always ensures sticky routing (client header or proxy UUID)
 
+# Use 1-hour cache for all Anthropic models (higher write cost, longer TTL)
+cacheControlTtl: 1h
+
 # Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
 # cacheControl: always
 
-# Per-model overrides
+# Per-model overrides — TTL supports '5m', '1h', or 'default' (cancel global TTL)
 modelOverrides:
   "gpt-*":
-    cacheControl: never   # OpenAI caches automatically, no injection needed
-    sessionId: always      # but sticky routing still helps
+    cacheControl: never       # OpenAI caches automatically, no injection needed
+    sessionId: always          # but sticky routing still helps
+  "claude-opus-*":
+    cacheControlTtl: default   # cancel global 1h TTL for Opus — use Anthropic's 5 min default
 ```
 
-**Why both matter:**
-- **Anthropic models** — `cache_control` activates caching, `session_id` prevents provider flip-flopping that would invalidate it
+**Why all three matter:**
+
+- **Anthropic models** — `cache_control` activates caching, `cacheControlTtl` extends it beyond 5 min, `session_id` prevents provider flip-flopping that would invalidate it
 - **OpenAI models** — caching is automatic (no `cache_control` needed), but `session_id` ensures sticky routing from request #1 instead of waiting for a cache hit
 - **All models** — `session_id` prevents the provider switch that silently resets cache
 

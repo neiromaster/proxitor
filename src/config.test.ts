@@ -585,4 +585,87 @@ describe('cacheControl and sessionId config', () => {
     const resolved = resolveModelConfig(config, 'gpt-4o');
     expect(resolved.cacheControl).toBe('always');
   });
+
+  describe('cacheControlTtl', () => {
+    it('accepts cacheControlTtl: 5m in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: '5m' });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts cacheControlTtl: 1h in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: '1h' });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects invalid cacheControlTtl in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: '10m' });
+      expect(result.success).toBe(false);
+    });
+
+    it('defaults cacheControlTtl to undefined', async () => {
+      const config = await loadConfig({ openrouterKey: 'test-key' });
+      expect(config.cacheControlTtl).toBeUndefined();
+    });
+
+    it('accepts cacheControlTtl: default in model override', () => {
+      const result = proxyConfigFileSchema.safeParse({
+        modelOverrides: { 'gpt-*': { cacheControlTtl: 'default' } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts cacheControlTtl: 1h in model override', () => {
+      const result = proxyConfigFileSchema.safeParse({
+        modelOverrides: { 'gpt-*': { cacheControlTtl: '1h' } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects cacheControlTtl: default in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: 'default' });
+      expect(result.success).toBe(false);
+    });
+
+    it('propagates global cacheControlTtl to resolved config', () => {
+      const config: ProxyConfig = { ...baseConfig, cacheControlTtl: '1h' };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBe('1h');
+    });
+
+    it('allows per-model cacheControlTtl override', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'claude-*': { cacheControlTtl: '5m' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+      expect(resolved.cacheControlTtl).toBe('5m');
+    });
+
+    it('resolves default override to undefined (cancels global TTL)', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'gpt-*': { cacheControlTtl: 'default' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBeUndefined();
+    });
+
+    it('inherits global cacheControlTtl when override is undefined', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'claude-*': { cacheControl: 'always' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+      expect(resolved.cacheControlTtl).toBe('1h');
+    });
+  });
 });

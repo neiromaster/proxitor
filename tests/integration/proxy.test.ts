@@ -352,6 +352,270 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toBeUndefined();
   });
 
+  // --- cache_control TTL integration ---
+
+  it('injects cache_control with ttl:3600 for Anthropic model when cacheControlTtl is 1h', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '1h' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+  });
+
+  it('injects cache_control with ttl:300 for Anthropic model when cacheControlTtl is 5m', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '5m' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', content: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 100,
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 300 });
+  });
+
+  it('injects cache_control without ttl for non-Anthropic model even when cacheControlTtl is set', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '1h' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(capturedBody.cache_control).toBeUndefined();
+  });
+
+  it('injects cache_control without ttl when cacheControlTtl is not configured', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv({ cacheControl: 'auto' }, upstream => {
+      catchAll(upstream, async c => {
+        capturedBody = await c.req.json().catch(() => ({}));
+        return c.json({ id: 'test', choices: [] });
+      });
+    });
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('injects cache_control without ttl for non-Anthropic model in always mode with cacheControlTtl', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'always', cacheControlTtl: '1h' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('injects cache_control with ttl via model override', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      {
+        cacheControl: 'auto',
+        modelOverrides: { 'anthropic/*': { cacheControlTtl: '1h' } },
+      },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+  });
+
+  it('adds ttl to existing cache_control without ttl for Anthropic model', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '1h' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+        cache_control: { type: 'ephemeral' },
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+  });
+
+  it('does not overwrite existing ttl in cache_control', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '1h' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+        cache_control: { type: 'ephemeral', ttl: 600 },
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 600 });
+  });
+
+  it('does not inject ttl when model override has default', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      {
+        cacheControl: 'auto',
+        cacheControlTtl: '1h',
+        modelOverrides: { 'anthropic/*': { cacheControlTtl: 'default' } },
+      },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('does not strip existing ttl when model override has default', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      {
+        cacheControl: 'auto',
+        cacheControlTtl: '1h',
+        modelOverrides: { 'anthropic/*': { cacheControlTtl: 'default' } },
+      },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'test', choices: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4-20250514',
+        messages: [{ role: 'user', content: 'Hello' }],
+        cache_control: { type: 'ephemeral', ttl: 600 },
+      }),
+    });
+
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 600 });
+  });
+
   // --- session_id integration ---
 
   it('derives session_id from X-Claude-Code-Session-Id header with auto mode', async () => {

@@ -59,6 +59,7 @@ export const modelOverrideSchema = z
     provider: providerConfigSchema.optional(),
     headers: z.record(z.string(), z.string()).optional(),
     cacheControl: triStateSchema.optional(),
+    cacheControlTtl: z.enum(['5m', '1h', 'default']).optional(),
     sessionId: triStateSchema.optional(),
   })
   .strict();
@@ -81,6 +82,7 @@ export const proxyConfigSchema = z
     attributionTitle: z.string().min(1).default('proxitor'),
     headers: z.record(z.string(), z.string()).optional(),
     cacheControl: triStateSchema.default('auto'),
+    cacheControlTtl: z.enum(['5m', '1h']).optional(),
     sessionId: triStateSchema.default('auto'),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
   })
