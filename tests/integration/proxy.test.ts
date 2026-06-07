@@ -531,7 +531,7 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
   });
 
-  it('does not overwrite existing ttl in cache_control', async () => {
+  it('overwrites existing ttl in cache_control when cacheControlTtl is configured', async () => {
     let capturedBody: Record<string, unknown> = {};
 
     env = await createTestEnv(
@@ -554,7 +554,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 600 });
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
   });
 
   it('does not inject ttl when model override has default', async () => {

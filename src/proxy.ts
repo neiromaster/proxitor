@@ -2,7 +2,7 @@ import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { buildProviderRouting, type ProxyConfig } from './config.js';
 import { logger, withReq } from './logger.js';
-import type { ProxyEnv } from './proxy/context.js';
+import type { ProxyEnv, ProxyVariables } from './proxy/context.js';
 import { buildUpstreamReq } from './proxy/middleware/build-upstream-req.js';
 import { forwardRequest } from './proxy/middleware/forward-request.js';
 import { injectCacheControl } from './proxy/middleware/inject-cache-control.js';
@@ -22,7 +22,6 @@ export {
 
 export { extractErrorDetail } from './proxy/middleware/forward-request.js';
 
-// Reusable injection chain — applied to injectable POST endpoints
 const injectChain = [
   parseBody,
   resolveConfig,
@@ -34,13 +33,11 @@ const injectChain = [
 export function createProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
   const app = new Hono<ProxyEnv>();
 
-  // Config middleware — inject ProxyConfig into every request
   app.use('*', async (c, next) => {
     c.set('config', config);
     await next();
   });
 
-  // Health check
   app.get('/health', c => {
     const globalRouting = buildProviderRouting(config.provider);
     return c.json({
@@ -51,7 +48,6 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     });
   });
 
-  // Injectable endpoints — full middleware chain with body injection
   for (const path of INJECT_PATHS) {
     app.post(
       path,
@@ -63,12 +59,10 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     );
   }
 
-  // Pass-through for everything else — no injection middleware
   app.all('*', setupRequest, readBody, buildUpstreamReq, forwardRequest);
 
-  // Global error handler
   app.onError((err, c) => {
-    const reqId = (c.var as Record<string, unknown>).reqId ?? 'unknown';
+    const reqId = (c.var as ProxyVariables).reqId ?? 'unknown';
     logger.error(withReq(String(reqId), `Unhandled error: ${err.message}`));
     return Response.json(
       { error: { message: 'Internal proxy error', type: 'proxy_internal_error' } },

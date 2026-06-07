@@ -15,9 +15,13 @@ export const readBody = createMiddleware<ProxyEnv>(async (c, next) => {
     const body = await c.req.raw.arrayBuffer();
     c.set('rawBody', body.byteLength > 0 ? body : undefined);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to read request body';
-    logger.error(withReq(c.var.reqId, message));
-    return c.json({ error: { message, type: 'proxy_request_error' } }, { status: 400 });
+    const internalMessage =
+      err instanceof Error ? err.message : 'Failed to read request body';
+    logger.error(withReq(c.var.reqId, internalMessage));
+    return c.json(
+      { error: { message: 'Failed to read request body', type: 'proxy_request_error' } },
+      { status: 400 },
+    );
   }
 
   await next();

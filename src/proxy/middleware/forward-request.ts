@@ -45,7 +45,8 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     c.var;
 
   const controller = new AbortController();
-  c.req.raw.signal.addEventListener('abort', () => controller.abort());
+  const onClientAbort = () => controller.abort();
+  c.req.raw.signal.addEventListener('abort', onClientAbort);
 
   const upstreamShort = upstreamUrl.replace(/^https?:\/\//, '');
   const modelLog = c.var.modelName ? ` model=${c.var.modelName}` : '';
@@ -66,6 +67,7 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
       duplex: forwardBody ? 'half' : undefined,
     });
   } catch (err) {
+    c.req.raw.signal.removeEventListener('abort', onClientAbort);
     if (err instanceof DOMException && err.name === 'AbortError') {
       logger.warn(withReq(reqId, `Aborted: ${method} ${path}`));
       return new Response(null, { status: 499 });
@@ -82,6 +84,8 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
       { status: 502 },
     );
   }
+
+  c.req.raw.signal.removeEventListener('abort', onClientAbort);
 
   if (upstream.status >= 400) {
     const bodyText = await upstream.text();
