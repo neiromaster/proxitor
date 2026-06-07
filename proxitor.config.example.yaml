@@ -14,8 +14,8 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 # authType: bearer
 # Custom URL for fetching provider/model data (defaults to openrouterBaseUrl).
 # Set this if your custom API doesn't support OpenRouter data endpoints.
-# Fallback to https://openrouter.ai/api/v1 is automatic.
-# openrouterDataUrl: 'https://openrouter.ai/api/v1'
+# Fallback to https://openrouter.ai/api is automatic.
+# openrouterDataUrl: 'https://openrouter.ai/api'
 
 # Provider routing — controls which upstream provider handles requests
 # provider:

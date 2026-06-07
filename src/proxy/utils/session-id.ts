@@ -5,7 +5,7 @@ const PROXY_SESSION_ID = crypto.randomUUID();
 
 type Message = { role?: string; content?: unknown };
 
-function extractConversationFingerprint(
+export function extractConversationFingerprint(
   parsedBody: Record<string, unknown>,
   path: string,
 ): string | null {

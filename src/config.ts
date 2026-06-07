@@ -12,6 +12,7 @@ import {
   proxyConfigFileSchema,
   proxyConfigSchema,
 } from './config-schema.js';
+import { logger } from './logger.js';
 import { toArray } from './utils.js';
 
 export type {
@@ -136,6 +137,26 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
 }
 
+/**
+ * Warn if a URL ends with /v1 — a common misconfiguration after the URL routing change.
+ * Paths like /v1/chat/completions are now forwarded as-is, so including /v1 in the base
+ * URL would produce doubled paths like /v1/v1/chat/completions.
+ */
+function warnIfV1Suffix(url: string, field: string): void {
+  try {
+    const { pathname } = new URL(url);
+    if (pathname.endsWith('/v1') || pathname.endsWith('/v1/')) {
+      logger.warn(
+        `${field} (${url}) ends with /v1 — request paths like /v1/chat/completions are now ` +
+          `forwarded as-is, which would produce doubled paths like /v1/v1/chat/completions. ` +
+          `Remove /v1 from the URL or update to the new default: https://openrouter.ai/api`,
+      );
+    }
+  } catch {
+    // Invalid URL — Zod validation will catch it separately
+  }
+}
+
 type LoadConfigOptions = {
   configPath?: string;
   noConfig?: boolean;
@@ -176,6 +197,11 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     throw new Error(
       'OpenRouter API key is required. Set OPENROUTER_API_KEY env var, pass --openrouter-key flag, or set it in config file.',
     );
+  }
+
+  warnIfV1Suffix(result.data.openrouterBaseUrl, 'openrouterBaseUrl');
+  if (result.data.openrouterDataUrl) {
+    warnIfV1Suffix(result.data.openrouterDataUrl, 'openrouterDataUrl');
   }
 
   return result.data;

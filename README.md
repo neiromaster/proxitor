@@ -132,7 +132,9 @@ When using a custom `openrouterBaseUrl` that points to a third-party service, th
 
 ```yaml
 # Proxy requests go to custom service, data fetching falls back to OpenRouter
-openrouterBaseUrl: 'https://custom-service.example.com/v1'
+# NOTE: do NOT include /v1 in the base URL — request paths like /v1/chat/completions
+# are forwarded as-is, so /v1 would be duplicated if included here
+openrouterBaseUrl: 'https://custom-service.example.com/api'
 
 # Explicitly set the primary data URL (optional, defaults to openrouterBaseUrl)
 # openrouterDataUrl: 'https://openrouter.ai/api'
