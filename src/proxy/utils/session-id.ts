@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { classifyEndpoint } from '../paths.js';
 
+const PROXY_SESSION_ID = crypto.randomUUID();
+
 type Message = { role?: string; content?: unknown };
 
 function extractConversationFingerprint(
@@ -83,5 +85,5 @@ export function deriveSessionId(
     if (fingerprint) return fingerprint;
   }
 
-  return crypto.randomUUID();
+  return PROXY_SESSION_ID;
 }

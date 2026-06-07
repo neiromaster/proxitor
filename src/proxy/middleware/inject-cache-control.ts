@@ -18,6 +18,7 @@ export const injectCacheControl = createMiddleware<ProxyEnv>(async (c, next) => 
 
   const mode = resolved.cacheControl;
   const shouldInject = shouldInjectCacheControl(mode, c.var.modelName, c.var.path);
+  const isAnthropic = isAnthropicEndpoint(c.var.modelName, c.var.path);
 
   if (shouldInject && !('cache_control' in parsedBody)) {
     parsedBody.cache_control = buildCacheControlValue(
@@ -28,9 +29,9 @@ export const injectCacheControl = createMiddleware<ProxyEnv>(async (c, next) => 
     c.set('parsedBody', parsedBody);
     c.set('bodyMutated', true);
   } else if (shouldInject && resolved.cacheControlTtl) {
-    const cc = parsedBody.cache_control as Record<string, unknown> | undefined;
-    if (cc && !('ttl' in cc) && isAnthropicEndpoint(c.var.modelName, c.var.path)) {
-      cc.ttl = TTL_SECONDS[resolved.cacheControlTtl];
+    const cc = parsedBody.cache_control;
+    if (cc && typeof cc === 'object' && !('ttl' in cc) && isAnthropic) {
+      (cc as Record<string, unknown>).ttl = TTL_SECONDS[resolved.cacheControlTtl];
       c.set('parsedBody', parsedBody);
       c.set('bodyMutated', true);
     }
