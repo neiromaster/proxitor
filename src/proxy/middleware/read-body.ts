@@ -5,7 +5,6 @@ import type { ProxyEnv } from '../context.js';
 export const readBody = createMiddleware<ProxyEnv>(async (c, next) => {
   const method = c.var.method;
 
-  // Skip body read for readonly methods
   if (method === 'GET' || method === 'HEAD') {
     c.set('rawBody', undefined);
     await next();

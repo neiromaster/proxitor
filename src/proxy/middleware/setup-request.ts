@@ -13,7 +13,6 @@ export const setupRequest = createMiddleware<ProxyEnv>(async (c, next) => {
   c.set('upstreamUrl', buildUpstreamUrl(c.req.url, c.var.config));
   c.set('startedAt', Date.now());
 
-  // Initialise all variables so downstream middleware never reads undefined
   c.set('rawBody', undefined);
   c.set('parsedBody', undefined);
   c.set('modelName', undefined);

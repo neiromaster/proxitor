@@ -6,7 +6,6 @@ import { filterHeaders, STRIP_REQUEST } from '../headers.js';
 export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
   const config = c.var.config;
 
-  // --- Body ---
   if (c.var.bodyMutated && c.var.parsedBody) {
     c.set(
       'forwardBody',
@@ -18,7 +17,6 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
     c.set('forwardBody', undefined);
   }
 
-  // --- Headers ---
   const headers = filterHeaders(c.req.raw.headers, STRIP_REQUEST);
 
   headers.Authorization = formatAuthHeader(config.openrouterKey, config.authType);
@@ -26,18 +24,15 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
   headers['X-OpenRouter-Title'] = config.attributionTitle;
   headers['Accept-Encoding'] = 'identity';
 
-  // Model-specific extra headers
   const extraHeaders = c.var.resolvedConfig.headers;
   if (extraHeaders) {
     Object.assign(headers, extraHeaders);
   }
 
-  // Session ID header (derived in injectSessionId)
   if (c.var.effectiveSessionId !== undefined) {
     headers['x-session-id'] = c.var.effectiveSessionId;
   }
 
-  // Content-Type when body was modified
   if (c.var.bodyMutated) {
     headers['Content-Type'] = 'application/json';
   }

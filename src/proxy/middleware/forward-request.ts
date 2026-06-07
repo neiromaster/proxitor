@@ -5,14 +5,8 @@ import type { ProxyEnv } from '../context.js';
 import { buildResponseHeaders } from '../headers.js';
 
 /**
- * Extract a readable error detail from an upstream response body.
- *
  * OpenRouter error format:
- *   { error: { code: 400, message: "...", metadata: { raw: "...", provider_name: "..." } } }
- *
- * - `error.message` — human-readable summary
- * - `error.metadata.provider_name` — which provider caused it (null = OpenRouter itself)
- * - `error.metadata.raw` — the original provider error (most specific cause)
+ *   { error: { code, message, metadata: { raw, provider_name } } }
  */
 function formatMetadata(meta: Record<string, unknown>): string[] {
   const parts: string[] = [];
@@ -50,11 +44,9 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   const { upstreamUrl, forwardBody, upstreamHeaders, reqId, path, startedAt, method } =
     c.var;
 
-  // Set up abort signal
   const controller = new AbortController();
   c.req.raw.signal.addEventListener('abort', () => controller.abort());
 
-  // Log outgoing request
   const upstreamShort = upstreamUrl.replace(/^https?:\/\//, '');
   const modelLog = c.var.modelName ? ` model=${c.var.modelName}` : '';
   logger.info(
@@ -64,7 +56,6 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     ),
   );
 
-  // --- Execute upstream fetch ---
   let upstream: Response;
   try {
     upstream = await fetch(upstreamUrl, {
@@ -92,7 +83,6 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     );
   }
 
-  // --- Handle upstream error responses ---
   if (upstream.status >= 400) {
     const bodyText = await upstream.text();
     const detail = extractErrorDetail(bodyText);
@@ -113,7 +103,6 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     return new Response(bodyText, { status: upstream.status, headers: responseHeaders });
   }
 
-  // --- Success ---
   logger.info(
     withReq(
       reqId,

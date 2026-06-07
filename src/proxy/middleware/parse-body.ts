@@ -16,7 +16,6 @@ export const parseBody = createMiddleware<ProxyEnv>(async (c, next) => {
     c.set('parsedBody', json);
     c.set('modelName', typeof json.model === 'string' ? json.model : undefined);
   } catch {
-    // Not valid JSON — forward raw body as-is
     c.set('parsedBody', undefined);
     c.set('modelName', undefined);
   }
