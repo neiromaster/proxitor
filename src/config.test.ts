@@ -607,9 +607,9 @@ describe('cacheControl and sessionId config', () => {
       expect(config.cacheControlTtl).toBeUndefined();
     });
 
-    it('accepts cacheControlTtl: default in model override', () => {
+    it('accepts cacheControlTtl: null in model override', () => {
       const result = proxyConfigFileSchema.safeParse({
-        modelOverrides: { 'gpt-*': { cacheControlTtl: 'default' } },
+        modelOverrides: { 'gpt-*': { cacheControlTtl: null } },
       });
       expect(result.success).toBe(true);
     });
@@ -621,8 +621,8 @@ describe('cacheControl and sessionId config', () => {
       expect(result.success).toBe(true);
     });
 
-    it('rejects cacheControlTtl: default in global config', () => {
-      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: 'default' });
+    it('rejects cacheControlTtl: null in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: null });
       expect(result.success).toBe(false);
     });
 
@@ -644,12 +644,12 @@ describe('cacheControl and sessionId config', () => {
       expect(resolved.cacheControlTtl).toBe('5m');
     });
 
-    it('resolves default override to undefined (cancels global TTL)', () => {
+    it('resolves null override to undefined (cancels global TTL)', () => {
       const config: ProxyConfig = {
         ...baseConfig,
         cacheControlTtl: '1h',
         modelOverrides: {
-          'gpt-*': { cacheControlTtl: 'default' },
+          'gpt-*': { cacheControlTtl: null },
         },
       };
       const resolved = resolveModelConfig(config, 'gpt-4o');

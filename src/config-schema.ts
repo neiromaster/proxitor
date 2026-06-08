@@ -59,7 +59,7 @@ export const modelOverrideSchema = z
     provider: providerConfigSchema.optional(),
     headers: z.record(z.string(), z.string()).optional(),
     cacheControl: triStateSchema.optional(),
-    cacheControlTtl: z.enum(['5m', '1h', 'default']).optional(),
+    cacheControlTtl: z.union([z.enum(['5m', '1h']), z.null()]).optional(),
     sessionId: triStateSchema.optional(),
   })
   .strict();

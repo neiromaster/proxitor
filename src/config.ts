@@ -128,7 +128,10 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
   if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
-  if (override.cacheControlTtl === 'default') {
+  // `null` means "cancel the inherited global TTL and revert to Anthropic's
+  // default" — normalize it to `undefined` so downstream consumers don't
+  // need a separate case for it.
+  if (override.cacheControlTtl === null) {
     result.cacheControlTtl = undefined;
   } else if (override.cacheControlTtl !== undefined) {
     result.cacheControlTtl = override.cacheControlTtl;

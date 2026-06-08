@@ -27,13 +27,12 @@ export const TTL_SECONDS: Readonly<Record<'5m' | '1h', number>> = {
 /**
  * Build cache_control value for injection.
  * Merges existing cache_control with configured TTL.
- * If TTL is configured and endpoint is Anthropic, it always overrides.
+ * If TTL is configured and the endpoint is Anthropic, it always overrides.
  */
 export function buildCacheControl(
   existing: unknown,
   ttl: '5m' | '1h' | undefined,
-  modelName: string | undefined,
-  path: string,
+  isAnthropic: boolean,
 ): Record<string, unknown> {
   // Reject arrays, null, and other non-plain-object shapes — a malformed
   // existing cache_control (e.g. an array) should not leak into the request
@@ -51,7 +50,7 @@ export function buildCacheControl(
     result.type = 'ephemeral';
   }
 
-  if (ttl && isAnthropicEndpoint(modelName, path)) {
+  if (ttl && isAnthropic) {
     result.ttl = TTL_SECONDS[ttl];
   }
 

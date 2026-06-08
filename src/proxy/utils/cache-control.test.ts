@@ -79,88 +79,58 @@ describe('shouldInjectCacheControl', () => {
 
 describe('buildCacheControl', () => {
   it('returns default ephemeral when no existing and no TTL', () => {
-    const result = buildCacheControl(
-      undefined,
-      undefined,
-      'claude-sonnet-4-6',
-      '/v1/messages',
-    );
+    const result = buildCacheControl(undefined, undefined, true);
     expect(result).toEqual({ type: 'ephemeral' });
   });
 
   it('adds ttl when TTL is set and endpoint is Anthropic', () => {
-    const result = buildCacheControl(
-      undefined,
-      '5m',
-      'claude-sonnet-4-6',
-      '/v1/messages',
-    );
+    const result = buildCacheControl(undefined, '5m', true);
     expect(result).toEqual({ type: 'ephemeral', ttl: 300 });
   });
 
   it('omits ttl when TTL is set but endpoint is non-Anthropic', () => {
-    const result = buildCacheControl(undefined, '5m', 'gpt-4o', '/v1/chat/completions');
+    const result = buildCacheControl(undefined, '5m', false);
     expect(result).toEqual({ type: 'ephemeral' });
     expect(result).not.toHaveProperty('ttl');
   });
 
   it('overrides ttl on existing cache_control for Anthropic endpoint', () => {
     const existing = { type: 'ephemeral', ttl: 999 };
-    const result = buildCacheControl(existing, '1h', 'claude-sonnet-4-6', '/v1/messages');
+    const result = buildCacheControl(existing, '1h', true);
     expect(result).toEqual({ type: 'ephemeral', ttl: 3600 });
   });
 
   it('preserves other fields from existing cache_control', () => {
     const existing = { type: 'ephemeral', custom: 'value', count: 42 };
-    const result = buildCacheControl(
-      existing,
-      '5m',
-      'claude-sonnet-4-6',
-      '/v1/responses',
-    );
+    const result = buildCacheControl(existing, '5m', true);
     expect(result).toEqual({ type: 'ephemeral', custom: 'value', count: 42, ttl: 300 });
   });
 
   it('does not mutate the original existing object', () => {
     const existing = { type: 'ephemeral' };
-    buildCacheControl(existing, '5m', 'claude-sonnet-4-6', '/v1/messages');
+    buildCacheControl(existing, '5m', true);
     expect(existing).toEqual({ type: 'ephemeral' });
   });
 
   it('defaults type to ephemeral when existing object lacks it', () => {
-    const result = buildCacheControl(
-      { ttl: 600 },
-      undefined,
-      'claude-sonnet-4-6',
-      '/v1/messages',
-    );
+    const result = buildCacheControl({ ttl: 600 }, undefined, true);
     expect(result).toEqual({ type: 'ephemeral', ttl: 600 });
   });
 
   it('adds type to object without type even when no TTL is set', () => {
-    const result = buildCacheControl(
-      { custom: 'value' },
-      undefined,
-      'claude-sonnet-4-6',
-      '/v1/messages',
-    );
+    const result = buildCacheControl({ custom: 'value' }, undefined, true);
     expect(result).toEqual({ type: 'ephemeral', custom: 'value' });
   });
 
   it('treats array existing as no existing — returns default ephemeral', () => {
-    const result = buildCacheControl(
-      ['ephemeral', '1h'],
-      undefined,
-      'claude-sonnet-4-6',
-      '/v1/messages',
-    );
+    const result = buildCacheControl(['ephemeral', '1h'] as unknown, undefined, true);
     expect(result).toEqual({ type: 'ephemeral' });
     expect(Object.keys(result)).not.toContain('0');
     expect(Object.keys(result)).not.toContain('1');
   });
 
   it('treats array existing as no existing — still adds TTL when configured', () => {
-    const result = buildCacheControl([], '1h', 'claude-sonnet-4-6', '/v1/messages');
+    const result = buildCacheControl([] as unknown, '1h', true);
     expect(result).toEqual({ type: 'ephemeral', ttl: 3600 });
   });
 });

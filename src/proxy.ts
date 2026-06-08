@@ -2,7 +2,7 @@ import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { buildProviderRouting, type ProxyConfig } from './config.js';
 import { logger, withReq } from './logger.js';
-import type { ProxyEnv, ProxyVariables } from './proxy/context.js';
+import type { ProxyEnv } from './proxy/context.js';
 import { buildUpstreamReq } from './proxy/middleware/build-upstream-req.js';
 import { forwardRequest } from './proxy/middleware/forward-request.js';
 import { injectCacheControl } from './proxy/middleware/inject-cache-control.js';
@@ -62,7 +62,7 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
   app.all('*', setupRequest, readBody, resolveConfig, buildUpstreamReq, forwardRequest);
 
   app.onError((err, c) => {
-    const reqId = (c.var as ProxyVariables).reqId ?? 'unknown';
+    const reqId = c.var.reqId ?? 'unknown';
     logger.error(withReq(String(reqId), `Unhandled error: ${err.message}`));
     return Response.json(
       { error: { message: 'Internal proxy error', type: 'proxy_internal_error' } },

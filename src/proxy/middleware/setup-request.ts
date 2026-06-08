@@ -15,14 +15,11 @@ export const setupRequest = createMiddleware<ProxyEnv>(async (c, next) => {
   c.set('path', path);
   c.set('upstreamUrl', buildUpstreamUrl(path, c.var.config));
   c.set('startedAt', Date.now());
-
-  c.set('rawBody', undefined);
-  c.set('parsedBody', undefined);
-  c.set('modelName', undefined);
+  // `bodyMutated` is the only field whose type isn't `T | undefined`, so it
+  // needs an explicit false default — every other ProxyVariables field is
+  // already undefined until the middleware that owns it sets a value, and
+  // Hono's per-request context would return undefined for unset keys anyway.
   c.set('bodyMutated', false);
-  c.set('effectiveSessionId', undefined);
-  c.set('forwardBody', undefined);
-  c.set('upstreamHeaders', {});
 
   await next();
 });

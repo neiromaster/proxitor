@@ -603,7 +603,7 @@ describe('Proxy Integration', () => {
       {
         cacheControl: 'auto',
         cacheControlTtl: '1h',
-        modelOverrides: { 'anthropic/*': { cacheControlTtl: 'default' } },
+        modelOverrides: { 'anthropic/*': { cacheControlTtl: null } },
       },
       upstream => {
         catchAll(upstream, async c => {
@@ -632,7 +632,7 @@ describe('Proxy Integration', () => {
       {
         cacheControl: 'auto',
         cacheControlTtl: '1h',
-        modelOverrides: { 'anthropic/*': { cacheControlTtl: 'default' } },
+        modelOverrides: { 'anthropic/*': { cacheControlTtl: null } },
       },
       upstream => {
         catchAll(upstream, async c => {
