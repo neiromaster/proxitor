@@ -127,15 +127,17 @@ This changes the header to `Authorization: OAuth sk-...`.
 
 When using a custom `openrouterBaseUrl` that points to a third-party service, that service may not support OpenRouter-specific endpoints like `/providers` or `/models/{author}/{slug}/endpoints`. Proxitor handles this automatically:
 
-- **Automatic fallback** — if the custom API returns an error (4xx/5xx) or an unexpected response format for data endpoints, proxitor falls back to `https://openrouter.ai/api/v1` (no API key needed — these endpoints are public)
+- **Automatic fallback** — if the custom API returns an error (4xx/5xx) or an unexpected response format for data endpoints, proxitor falls back to `https://openrouter.ai/api` (no API key needed — these endpoints are public)
 - **`openrouterDataUrl`** — set this explicitly to control the primary URL for data fetching, independent of `openrouterBaseUrl` (which is used for proxying requests)
 
 ```yaml
 # Proxy requests go to custom service, data fetching falls back to OpenRouter
-openrouterBaseUrl: 'https://custom-service.example.com/v1'
+# NOTE: do NOT include /v1 in the base URL — request paths like /v1/chat/completions
+# are forwarded as-is, so /v1 would be duplicated if included here
+openrouterBaseUrl: 'https://custom-service.example.com/api'
 
 # Explicitly set the primary data URL (optional, defaults to openrouterBaseUrl)
-# openrouterDataUrl: 'https://openrouter.ai/api/v1'
+# openrouterDataUrl: 'https://openrouter.ai/api'
 ```
 
 When a fallback occurs, proxitor logs a warning: `Custom API did not return providers, using OpenRouter data as fallback`.
@@ -256,32 +258,48 @@ By default, OpenRouter doesn't enable prompt caching — every request pays full
 
 **`cacheControl`** — injects `cache_control: { "type": "ephemeral" }` into the request body. OpenRouter uses this to set cache breakpoints and advance them as conversations grow.
 
+**`cacheControlTtl`** — controls the cache time-to-live. Anthropic's default TTL is 5 minutes (300s). Set to `1h` for a 1-hour cache at higher write cost (2× vs 1.25×). Only applies to Anthropic models — other providers don't support TTL.
+
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
-Both support `auto` / `always` / `never` modes:
+Both `cacheControl` and `sessionId` support `auto` / `always` / `never` modes:
 
 | Mode | `cacheControl` | `sessionId` |
-|---|---|---|
+| --- | --- | --- |
 | `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Use `X-Claude-Code-Session-Id` header if present; otherwise generate proxy UUID |
 | `always` | All models, all endpoints | Generate a proxy UUID for sticky routing |
 | `never` | Disabled | Disabled |
+
+`cacheControlTtl` values:
+
+| Value | TTL | Write cost | Use when |
+| --- | --- | --- | --- |
+| _(not set)_ | 5 min (Anthropic default) | 1.25× | High-frequency requests (>1 per 5 min) |
+| `5m` | 5 minutes | 1.25× | Explicit short cache |
+| `1h` | 1 hour | 2.0× | Low-frequency or long-running sessions |
 
 ```yaml
 cacheControl: auto    # safe default — Anthropic and safe endpoints only
 sessionId: auto       # always ensures sticky routing (client header or proxy UUID)
 
+# Use 1-hour cache for all Anthropic models (higher write cost, longer TTL)
+cacheControlTtl: 1h
+
 # Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
 # cacheControl: always
 
-# Per-model overrides
+# Per-model overrides — TTL supports '5m', '1h', or 'default' (cancel global TTL)
 modelOverrides:
   "gpt-*":
-    cacheControl: never   # OpenAI caches automatically, no injection needed
-    sessionId: always      # but sticky routing still helps
+    cacheControl: never       # OpenAI caches automatically, no injection needed
+    sessionId: always          # but sticky routing still helps
+  "claude-opus-*":
+    cacheControlTtl: default   # cancel global 1h TTL for Opus — use Anthropic's 5 min default
 ```
 
-**Why both matter:**
-- **Anthropic models** — `cache_control` activates caching, `session_id` prevents provider flip-flopping that would invalidate it
+**Why all three matter:**
+
+- **Anthropic models** — `cache_control` activates caching, `cacheControlTtl` extends it beyond 5 min, `session_id` prevents provider flip-flopping that would invalidate it
 - **OpenAI models** — caching is automatic (no `cache_control` needed), but `session_id` ensures sticky routing from request #1 instead of waiting for a cache hit
 - **All models** — `session_id` prevents the provider switch that silently resets cache
 
@@ -327,7 +345,7 @@ The wizard asks for:
 
 - **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
 - **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
-- **API base URL** — default `https://openrouter.ai/api/v1`; change for self-hosted or custom endpoints
+- **API base URL** — default `https://openrouter.ai/api`; change for self-hosted or custom endpoints
 - **Data URL** — separate URL for provider/model data fetching; falls back to OpenRouter automatically if the custom API doesn't support these endpoints
 - **Authentication type** — `bearer` (default) or `oauth`; use `oauth` for custom proxy providers that pass tokens in the `Authorization: OAuth ...` header
 - **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)

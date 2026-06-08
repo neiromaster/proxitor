@@ -28,8 +28,9 @@ export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-sche
 export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
-  cacheControl?: 'auto' | 'always' | 'never';
-  sessionId?: 'auto' | 'always' | 'never';
+  cacheControl: 'auto' | 'always' | 'never';
+  cacheControlTtl?: '5m' | '1h';
+  sessionId: 'auto' | 'always' | 'never';
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
@@ -95,6 +96,7 @@ export function resolveModelConfig(
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
     cacheControl: config.cacheControl,
+    cacheControlTtl: config.cacheControlTtl,
     sessionId: config.sessionId,
   };
 
@@ -126,7 +128,30 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
   if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
+  // `null` means "cancel the inherited global TTL and revert to Anthropic's
+  // default" — normalize it to `undefined` so downstream consumers don't
+  // need a separate case for it.
+  if (override.cacheControlTtl === null) {
+    result.cacheControlTtl = undefined;
+  } else if (override.cacheControlTtl !== undefined) {
+    result.cacheControlTtl = override.cacheControlTtl;
+  }
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
+}
+
+/**
+ * Throw if a URL ends with /v1 — a common misconfiguration after the URL routing change.
+ * Paths like /v1/chat/completions are now forwarded as-is, so including /v1 in the base
+ * URL would produce doubled paths like /v1/v1/chat/completions.
+ */
+function throwIfV1Suffix(url: string, field: string): void {
+  const { pathname } = new URL(url);
+  if (pathname.endsWith('/v1') || pathname.endsWith('/v1/')) {
+    throw new Error(
+      `${field} "${url}" ends with /v1 — paths are now forwarded as-is, so this would produce doubled paths like /v1/v1/chat/completions. ` +
+        `Remove the /v1 suffix (use "${url.replace(/\/v1\/?$/, '')}")`,
+    );
+  }
 }
 
 type LoadConfigOptions = {
@@ -169,6 +194,11 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     throw new Error(
       'OpenRouter API key is required. Set OPENROUTER_API_KEY env var, pass --openrouter-key flag, or set it in config file.',
     );
+  }
+
+  throwIfV1Suffix(result.data.openrouterBaseUrl, 'openrouterBaseUrl');
+  if (result.data.openrouterDataUrl) {
+    throwIfV1Suffix(result.data.openrouterDataUrl, 'openrouterDataUrl');
   }
 
   return result.data;

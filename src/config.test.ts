@@ -200,7 +200,7 @@ describe('resolveModelConfig', () => {
     host: '0.0.0.0',
     port: 8828,
     openrouterKey: 'test-key',
-    openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+    openrouterBaseUrl: 'https://openrouter.ai/api',
     authType: 'bearer',
     verbose: false,
     bodyLimit: '50mb',
@@ -330,7 +330,7 @@ describe('proxyConfigFileSchema', () => {
       host: '127.0.0.1',
       port: 3000,
       openrouterKey: 'sk-test',
-      openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openrouterBaseUrl: 'https://openrouter.ai/api',
       verbose: true,
       bodyLimit: '10mb',
       attributionReferer: 'https://github.com/neiromaster/proxitor',
@@ -498,7 +498,7 @@ describe('cacheControl and sessionId config', () => {
     host: '0.0.0.0',
     port: 8828,
     openrouterKey: 'test-key',
-    openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+    openrouterBaseUrl: 'https://openrouter.ai/api',
     authType: 'bearer',
     verbose: false,
     bodyLimit: '50mb',
@@ -584,5 +584,154 @@ describe('cacheControl and sessionId config', () => {
     };
     const resolved = resolveModelConfig(config, 'gpt-4o');
     expect(resolved.cacheControl).toBe('always');
+  });
+
+  describe('cacheControlTtl', () => {
+    it('accepts cacheControlTtl: 5m in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: '5m' });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts cacheControlTtl: 1h in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: '1h' });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects invalid cacheControlTtl in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: '10m' });
+      expect(result.success).toBe(false);
+    });
+
+    it('defaults cacheControlTtl to undefined', async () => {
+      const config = await loadConfig({ openrouterKey: 'test-key' });
+      expect(config.cacheControlTtl).toBeUndefined();
+    });
+
+    it('accepts cacheControlTtl: null in model override', () => {
+      const result = proxyConfigFileSchema.safeParse({
+        modelOverrides: { 'gpt-*': { cacheControlTtl: null } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts cacheControlTtl: 1h in model override', () => {
+      const result = proxyConfigFileSchema.safeParse({
+        modelOverrides: { 'gpt-*': { cacheControlTtl: '1h' } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects cacheControlTtl: null in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: null });
+      expect(result.success).toBe(false);
+    });
+
+    it('propagates global cacheControlTtl to resolved config', () => {
+      const config: ProxyConfig = { ...baseConfig, cacheControlTtl: '1h' };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBe('1h');
+    });
+
+    it('allows per-model cacheControlTtl override', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'claude-*': { cacheControlTtl: '5m' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+      expect(resolved.cacheControlTtl).toBe('5m');
+    });
+
+    it('resolves null override to undefined (cancels global TTL)', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'gpt-*': { cacheControlTtl: null },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBeUndefined();
+    });
+
+    it('inherits global cacheControlTtl when override is undefined', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'claude-*': { cacheControl: 'always' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+      expect(resolved.cacheControlTtl).toBe('1h');
+    });
+  });
+});
+
+describe('throwIfV1Suffix (via loadConfig)', () => {
+  it('should throw when openrouterBaseUrl ends with /v1', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api/v1"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'ends with /v1',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should throw when openrouterBaseUrl ends with /v1/', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api/v1/"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'ends with /v1',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should suggest the corrected URL without /v1 suffix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api/v1"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'https://openrouter.ai/api',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should accept URL without /v1 suffix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api"');
+    try {
+      const config = await loadConfig({ configPath, openrouterKey: 'test-key' });
+      expect(config.openrouterBaseUrl).toBe('https://openrouter.ai/api');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should throw when openrouterDataUrl ends with /v1', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterDataUrl: "https://openrouter.ai/api/v1"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'ends with /v1',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

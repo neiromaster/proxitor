@@ -1,8 +1,9 @@
 import type { AuthType } from '../config-schema.js';
+import { OPENROUTER_API_URL } from '../config-schema.js';
 import { OpenRouterClient } from './client.js';
 import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js';
 
-const OPENROUTER_FALLBACK_URL = 'https://openrouter.ai/api/v1';
+const OPENROUTER_FALLBACK_URL = OPENROUTER_API_URL;
 
 export type DataClientConfig = {
   openrouterBaseUrl: string;
@@ -53,7 +54,7 @@ function isValidEndpointsResponse(data: unknown): data is {
  * Client for fetching provider/model data with automatic fallback to OpenRouter.
  *
  * When the primary API (openrouterDataUrl or openrouterBaseUrl) doesn't support
- * OpenRouter-specific data endpoints, falls back to https://openrouter.ai/api/v1
+ * OpenRouter-specific data endpoints, falls back to https://openrouter.ai/api
  * which hosts public, unauthenticated endpoints for /providers, /models, etc.
  */
 export class OpenRouterDataClient {
@@ -72,8 +73,8 @@ export class OpenRouterDataClient {
 
   async fetchProviders(): Promise<OpenRouterProvider[]> {
     const result = await this.withFallback(
-      '/providers',
-      () => this.primaryClient.get<unknown>('/providers'),
+      '/v1/providers',
+      () => this.primaryClient.get<unknown>('/v1/providers'),
       isValidProvidersResponse,
     );
     return result.data.data;
@@ -81,15 +82,15 @@ export class OpenRouterDataClient {
 
   async fetchModels(): Promise<OpenRouterModel[]> {
     const result = await this.withFallback(
-      '/models',
-      () => this.primaryClient.get<unknown>('/models'),
+      '/v1/models',
+      () => this.primaryClient.get<unknown>('/v1/models'),
       isValidModelsResponse,
     );
     return result.data.data;
   }
 
   async fetchModelEndpoints(author: string, slug: string): Promise<ModelEndpoint[]> {
-    const path = `/models/${author}/${slug}/endpoints`;
+    const path = `/v1/models/${author}/${slug}/endpoints`;
     const result = await this.withFallback(
       path,
       () => this.primaryClient.get<unknown>(path),

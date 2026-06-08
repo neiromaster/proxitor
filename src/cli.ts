@@ -132,9 +132,9 @@ const withClient =
           authType: cfg.authType,
           onFallback: (path: string) => {
             let endpoint: string;
-            if (path === '/providers') {
+            if (path === '/v1/providers') {
               endpoint = 'providers';
-            } else if (path === '/models') {
+            } else if (path === '/v1/models') {
               endpoint = 'models';
             } else {
               endpoint = 'model providers';

@@ -96,7 +96,7 @@ describe('OpenRouterDataClient', () => {
 
     it('skips fallback when primary equals OpenRouter', () => {
       const client = new OpenRouterDataClient({
-        openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+        openrouterBaseUrl: 'https://openrouter.ai/api',
         apiKey: 'test-key',
         authType: 'bearer',
       });
@@ -175,7 +175,7 @@ describe('OpenRouterDataClient', () => {
       const providers = await client.fetchProviders();
 
       expect(providers).toEqual([{ slug: 'openai', name: 'OpenAI' }]);
-      expect(onFallback).toHaveBeenCalledWith('/providers');
+      expect(onFallback).toHaveBeenCalledWith('/v1/providers');
     });
 
     it('falls back when primary returns 500', async () => {
@@ -191,7 +191,7 @@ describe('OpenRouterDataClient', () => {
       const models = await client.fetchModels();
 
       expect(models).toEqual([{ id: 'openai/gpt-4o', name: 'GPT-4o' }]);
-      expect(onFallback).toHaveBeenCalledWith('/models');
+      expect(onFallback).toHaveBeenCalledWith('/v1/models');
     });
 
     it('falls back when primary returns 429', async () => {
@@ -209,7 +209,7 @@ describe('OpenRouterDataClient', () => {
       expect(endpoints).toEqual([
         { model_name: 'gpt-4o', name: 'OpenAI', tag: 'openai' },
       ]);
-      expect(onFallback).toHaveBeenCalledWith('/models/openai/gpt-4o/endpoints');
+      expect(onFallback).toHaveBeenCalledWith('/v1/models/openai/gpt-4o/endpoints');
     });
   });
 
@@ -249,7 +249,7 @@ describe('OpenRouterDataClient', () => {
       const providers = await client.fetchProviders();
 
       expect(providers).toEqual([{ slug: 'openai', name: 'OpenAI' }]);
-      expect(onFallback).toHaveBeenCalledWith('/providers');
+      expect(onFallback).toHaveBeenCalledWith('/v1/providers');
     });
 
     it('falls back on ECONNREFUSED', async () => {
@@ -330,7 +330,7 @@ describe('OpenRouterDataClient', () => {
       const providers = await client.fetchProviders();
 
       expect(providers).toEqual([{ slug: 'openai', name: 'OpenAI' }]);
-      expect(onFallback).toHaveBeenCalledWith('/providers');
+      expect(onFallback).toHaveBeenCalledWith('/v1/providers');
     });
 
     it('falls back when primary returns null', async () => {
@@ -405,7 +405,7 @@ describe('OpenRouterDataClient', () => {
       );
 
       const client = new OpenRouterDataClient({
-        openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+        openrouterBaseUrl: 'https://openrouter.ai/api',
         apiKey: 'test-key',
         authType: 'bearer',
       });
@@ -422,13 +422,13 @@ describe('OpenRouterDataClient', () => {
       );
 
       const client = new OpenRouterDataClient({
-        openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+        openrouterBaseUrl: 'https://openrouter.ai/api',
         apiKey: 'test-key',
         authType: 'bearer',
       });
 
       await expect(client.fetchProviders()).rejects.toThrow(
-        'Unexpected response format from primary API for /providers',
+        'Unexpected response format from primary API for /v1/providers',
       );
     });
 
@@ -442,13 +442,13 @@ describe('OpenRouterDataClient', () => {
 
       const client = new OpenRouterDataClient({
         openrouterBaseUrl: 'https://custom.example.com/v1',
-        openrouterDataUrl: 'https://openrouter.ai/api/v1',
+        openrouterDataUrl: 'https://openrouter.ai/api',
         apiKey: 'test-key',
         authType: 'bearer',
       });
 
       await expect(client.fetchModels()).rejects.toThrow(
-        'Unexpected response format from primary API for /models',
+        'Unexpected response format from primary API for /v1/models',
       );
     });
   });
@@ -464,7 +464,7 @@ describe('OpenRouterDataClient', () => {
 
       const client = new OpenRouterDataClient(makeConfig());
       await expect(client.fetchProviders()).rejects.toThrow(
-        'Unexpected response format from OpenRouter fallback for /providers',
+        'Unexpected response format from OpenRouter fallback for /v1/providers',
       );
     });
 
@@ -476,7 +476,7 @@ describe('OpenRouterDataClient', () => {
 
       const client = new OpenRouterDataClient(makeConfig());
       await expect(client.fetchModels()).rejects.toThrow(
-        'Unexpected response format from OpenRouter fallback for /models',
+        'Unexpected response format from OpenRouter fallback for /v1/models',
       );
     });
 
@@ -492,7 +492,7 @@ describe('OpenRouterDataClient', () => {
 
       const client = new OpenRouterDataClient(makeConfig());
       await expect(client.fetchProviders()).rejects.toThrow(
-        'Unexpected response format from OpenRouter fallback for /providers',
+        'Unexpected response format from OpenRouter fallback for /v1/providers',
       );
       expect(callCount).toBe(2);
     });
@@ -512,7 +512,7 @@ describe('OpenRouterDataClient', () => {
       await client.fetchProviders();
 
       expect(onFallback).toHaveBeenCalledOnce();
-      expect(onFallback).toHaveBeenCalledWith('/providers');
+      expect(onFallback).toHaveBeenCalledWith('/v1/providers');
     });
 
     it('calls onFallback with path for models', async () => {
@@ -526,7 +526,7 @@ describe('OpenRouterDataClient', () => {
       await client.fetchModels();
 
       expect(onFallback).toHaveBeenCalledOnce();
-      expect(onFallback).toHaveBeenCalledWith('/models');
+      expect(onFallback).toHaveBeenCalledWith('/v1/models');
     });
 
     it('calls onFallback with path for model endpoints', async () => {
@@ -540,7 +540,7 @@ describe('OpenRouterDataClient', () => {
       await client.fetchModelEndpoints('anthropic', 'claude-3');
 
       expect(onFallback).toHaveBeenCalledOnce();
-      expect(onFallback).toHaveBeenCalledWith('/models/anthropic/claude-3/endpoints');
+      expect(onFallback).toHaveBeenCalledWith('/v1/models/anthropic/claude-3/endpoints');
     });
 
     it('works without onFallback callback', async () => {

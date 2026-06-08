@@ -1,33 +1,25 @@
 import type { ProxyConfig } from '../config.js';
 
-/**
- * Paths where provider routing is injected into the request body.
- * All three are OpenRouter-supported endpoints:
- *   /v1/chat/completions — OpenAI Chat Completions
- *   /v1/responses        — OpenAI Responses API
- *   /v1/messages         — Anthropic Messages API
- */
-export const INJECT_PATHS = new Set([
-  '/v1/chat/completions',
-  '/v1/responses',
-  '/v1/messages',
+export type Endpoint = 'chat-completions' | 'responses' | 'messages' | 'other';
+
+const ENDPOINT_MAP: Record<string, Endpoint> = {
+  '/v1/chat/completions': 'chat-completions',
+  '/v1/responses': 'responses',
+  '/v1/messages': 'messages',
+};
+
+export const INJECT_PATHS = new Set(Object.keys(ENDPOINT_MAP));
+
+/** Endpoints that are natively Anthropic (cache_control is always safe regardless of model). */
+export const ANTHROPIC_NATIVE_ENDPOINTS: ReadonlySet<Endpoint> = new Set([
+  'messages',
+  'responses',
 ]);
 
-/** Check if this request should have provider routing injected */
-export function shouldInject(method: string, path: string): boolean {
-  return method === 'POST' && INJECT_PATHS.has(path);
+export function classifyEndpoint(pathname: string): Endpoint {
+  return ENDPOINT_MAP[pathname] ?? 'other';
 }
 
-/** Strip /v1 prefix from path: /v1/chat/completions → /chat/completions */
-export function toUpstreamPath(pathname: string): string {
-  if (pathname.startsWith('/v1')) {
-    return pathname.slice('/v1'.length);
-  }
-  return pathname;
-}
-
-/** Build full upstream URL from request and config */
-export function buildUpstreamUrl(requestUrl: string, config: ProxyConfig): string {
-  const { pathname } = new URL(requestUrl);
-  return `${config.openrouterBaseUrl}${toUpstreamPath(pathname)}`;
+export function buildUpstreamUrl(pathname: string, config: ProxyConfig): string {
+  return `${config.openrouterBaseUrl}${pathname}`;
 }

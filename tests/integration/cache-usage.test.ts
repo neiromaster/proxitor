@@ -5,7 +5,7 @@ import { createTestEnv } from '../helpers.js';
 describe('Cache usage logging', () => {
   it('passes through JSON responses with cache metadata', async () => {
     const { proxyUrl, cleanup } = await createTestEnv(undefined, app => {
-      app.post('/chat/completions', async c => {
+      app.post('/v1/chat/completions', async c => {
         return c.json({
           id: 'chatcmpl-123',
           choices: [],
@@ -36,7 +36,7 @@ describe('Cache usage logging', () => {
     const infoSpy = vi.spyOn(logger, 'info');
 
     const { proxyUrl, cleanup } = await createTestEnv(undefined, app => {
-      app.post('/chat/completions', async c => {
+      app.post('/v1/chat/completions', async c => {
         return c.json({
           id: 'chatcmpl-456',
           choices: [],
@@ -78,7 +78,7 @@ describe('Cache usage logging', () => {
     const infoSpy = vi.spyOn(logger, 'info');
 
     const { proxyUrl, cleanup } = await createTestEnv(undefined, app => {
-      app.post('/chat/completions', async c => {
+      app.post('/v1/chat/completions', async c => {
         return c.json({
           id: 'chatcmpl-789',
           choices: [],
@@ -127,7 +127,7 @@ describe('Cache usage logging', () => {
     ];
 
     const { proxyUrl, cleanup } = await createTestEnv(undefined, app => {
-      app.post('/chat/completions', async _c => {
+      app.post('/v1/chat/completions', async _c => {
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
           start(controller) {
@@ -181,7 +181,7 @@ describe('Cache usage logging', () => {
     ];
 
     const { proxyUrl, cleanup } = await createTestEnv(undefined, app => {
-      app.post('/chat/completions', async _c => {
+      app.post('/v1/chat/completions', async _c => {
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
           start(controller) {
