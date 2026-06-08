@@ -20,7 +20,7 @@ export {
   extractCacheUsageFromSSE,
 } from './proxy/cache-logging.js';
 
-export { extractErrorDetail } from './proxy/middleware/forward-request.js';
+export { extractErrorDetail } from './proxy/utils/error.js';
 
 const injectChain = [
   parseBody,
@@ -59,7 +59,7 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     );
   }
 
-  app.all('*', setupRequest, readBody, buildUpstreamReq, forwardRequest);
+  app.all('*', setupRequest, readBody, resolveConfig, buildUpstreamReq, forwardRequest);
 
   app.onError((err, c) => {
     const reqId = (c.var as ProxyVariables).reqId ?? 'unknown';

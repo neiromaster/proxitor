@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import { logger, withReq } from '../../logger.js';
-import type { ProxyEnv } from '../context.js';
+import type { ParsedRequestBody, ProxyEnv } from '../context.js';
 
 const decoder = new TextDecoder();
 
@@ -15,7 +15,7 @@ export const parseBody = createMiddleware<ProxyEnv>(async (c, next) => {
   }
 
   try {
-    const json = JSON.parse(decoder.decode(rawBody)) as Record<string, unknown>;
+    const json = JSON.parse(decoder.decode(rawBody)) as ParsedRequestBody;
     c.set('parsedBody', json);
     c.set('modelName', typeof json.model === 'string' ? json.model : undefined);
   } catch {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ParsedRequestBody } from '../context.js';
 import { classifyEndpoint } from '../paths.js';
 
 const PROXY_SESSION_ID = crypto.randomUUID();
@@ -6,7 +7,7 @@ const PROXY_SESSION_ID = crypto.randomUUID();
 type Message = { role?: string; content?: unknown };
 
 export function extractConversationFingerprint(
-  parsedBody: Record<string, unknown>,
+  parsedBody: ParsedRequestBody,
   path: string,
 ): string | null {
   let system: unknown;
@@ -63,7 +64,7 @@ export function extractConversationFingerprint(
  */
 export function deriveSessionId(
   incomingHeaders: Headers,
-  parsedBody: Record<string, unknown> | undefined,
+  parsedBody: ParsedRequestBody | undefined,
   path: string,
   mode: 'auto' | 'always' | 'never',
 ): string | undefined {

@@ -1,10 +1,5 @@
-import { classifyEndpoint, type Endpoint } from '../paths.js';
+import { ANTHROPIC_NATIVE_ENDPOINTS, classifyEndpoint } from '../paths.js';
 import { isAnthropicModel } from './model.js';
-
-const ANTHROPIC_NATIVE_ENDPOINTS: ReadonlySet<Endpoint> = new Set([
-  'messages',
-  'responses',
-]);
 
 export function isAnthropicEndpoint(
   modelName: string | undefined,

@@ -1,5 +1,4 @@
 import { createMiddleware } from 'hono/factory';
-import { resolveModelConfig } from '../../config.js';
 import { requestId } from '../../logger.js';
 import type { ProxyEnv } from '../context.js';
 import { buildUpstreamUrl } from '../paths.js';
@@ -17,7 +16,6 @@ export const setupRequest = createMiddleware<ProxyEnv>(async (c, next) => {
   c.set('rawBody', undefined);
   c.set('parsedBody', undefined);
   c.set('modelName', undefined);
-  c.set('resolvedConfig', resolveModelConfig(c.var.config, undefined));
   c.set('bodyMutated', false);
   c.set('effectiveSessionId', undefined);
   c.set('forwardBody', undefined);

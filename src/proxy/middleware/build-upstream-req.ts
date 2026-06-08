@@ -34,11 +34,8 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
   }
 
   if (c.var.bodyMutated) {
-    // Remove any existing content-type passed through from client (case-insensitive)
     for (const key of Object.keys(headers)) {
-      if (key.toLowerCase() === 'content-type') {
-        delete headers[key];
-      }
+      if (key.toLowerCase() === 'content-type') delete headers[key];
     }
     headers['Content-Type'] = 'application/json';
   }

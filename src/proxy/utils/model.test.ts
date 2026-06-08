@@ -17,4 +17,13 @@ describe('isAnthropicModel', () => {
     expect(isAnthropicModel('deepseek/deepseek-r1')).toBe(false);
     expect(isAnthropicModel('meta-llama/llama-3')).toBe(false);
   });
+
+  // Documents intentional narrowing: the old `.includes('claude')` heuristic
+  // matched any model whose name contained "claude" anywhere (e.g.
+  // "google/claude-3-opus").  The stricter prefix check ensures only genuine
+  // Anthropic-hosted models are recognised.
+  it('rejects models with "claude" in a non-Anthropic provider prefix', () => {
+    expect(isAnthropicModel('google/claude-3-opus')).toBe(false);
+    expect(isAnthropicModel('custom/claude-variant')).toBe(false);
+  });
 });

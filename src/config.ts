@@ -12,7 +12,6 @@ import {
   proxyConfigFileSchema,
   proxyConfigSchema,
 } from './config-schema.js';
-import { logger } from './logger.js';
 import { toArray } from './utils.js';
 
 export type {
@@ -138,22 +137,17 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
 }
 
 /**
- * Warn if a URL ends with /v1 — a common misconfiguration after the URL routing change.
+ * Throw if a URL ends with /v1 — a common misconfiguration after the URL routing change.
  * Paths like /v1/chat/completions are now forwarded as-is, so including /v1 in the base
  * URL would produce doubled paths like /v1/v1/chat/completions.
  */
-function warnIfV1Suffix(url: string, field: string): void {
-  try {
-    const { pathname } = new URL(url);
-    if (pathname.endsWith('/v1') || pathname.endsWith('/v1/')) {
-      logger.warn(
-        `${field} (${url}) ends with /v1 — request paths like /v1/chat/completions are now ` +
-          `forwarded as-is, which would produce doubled paths like /v1/v1/chat/completions. ` +
-          `Remove /v1 from the URL or update to the new default: https://openrouter.ai/api`,
-      );
-    }
-  } catch {
-    // Invalid URL — Zod validation will catch it separately
+function throwIfV1Suffix(url: string, field: string): void {
+  const { pathname } = new URL(url);
+  if (pathname.endsWith('/v1') || pathname.endsWith('/v1/')) {
+    throw new Error(
+      `${field} "${url}" ends with /v1 — paths are now forwarded as-is, so this would produce doubled paths like /v1/v1/chat/completions. ` +
+        `Remove the /v1 suffix (use "${url.replace(/\/v1\/?$/, '')}")`,
+    );
   }
 }
 
@@ -199,9 +193,9 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     );
   }
 
-  warnIfV1Suffix(result.data.openrouterBaseUrl, 'openrouterBaseUrl');
+  throwIfV1Suffix(result.data.openrouterBaseUrl, 'openrouterBaseUrl');
   if (result.data.openrouterDataUrl) {
-    warnIfV1Suffix(result.data.openrouterDataUrl, 'openrouterDataUrl');
+    throwIfV1Suffix(result.data.openrouterDataUrl, 'openrouterDataUrl');
   }
 
   return result.data;

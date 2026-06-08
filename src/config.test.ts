@@ -208,6 +208,7 @@ describe('resolveModelConfig', () => {
     attributionTitle: 'proxitor',
     cacheControl: 'auto',
     sessionId: 'auto',
+    upstreamTimeoutMs: 300_000,
     provider: { only: 'deepinfra' },
     headers: { 'X-Global': 'global-value' },
   };
@@ -506,6 +507,7 @@ describe('cacheControl and sessionId config', () => {
     attributionTitle: 'proxitor',
     cacheControl: 'auto',
     sessionId: 'auto',
+    upstreamTimeoutMs: 300_000,
   };
 
   it('accepts cacheControl: auto', () => {
@@ -667,5 +669,71 @@ describe('cacheControl and sessionId config', () => {
       const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
       expect(resolved.cacheControlTtl).toBe('1h');
     });
+  });
+});
+
+describe('throwIfV1Suffix (via loadConfig)', () => {
+  it('should throw when openrouterBaseUrl ends with /v1', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api/v1"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'ends with /v1',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should throw when openrouterBaseUrl ends with /v1/', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api/v1/"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'ends with /v1',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should suggest the corrected URL without /v1 suffix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api/v1"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'https://openrouter.ai/api',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should accept URL without /v1 suffix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterBaseUrl: "https://openrouter.ai/api"');
+    try {
+      const config = await loadConfig({ configPath, openrouterKey: 'test-key' });
+      expect(config.openrouterBaseUrl).toBe('https://openrouter.ai/api');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should throw when openrouterDataUrl ends with /v1', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterDataUrl: "https://openrouter.ai/api/v1"');
+    try {
+      await expect(loadConfig({ configPath, openrouterKey: 'test-key' })).rejects.toThrow(
+        'ends with /v1',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

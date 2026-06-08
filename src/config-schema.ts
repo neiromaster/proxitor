@@ -85,6 +85,7 @@ export const proxyConfigSchema = z
     cacheControlTtl: z.enum(['5m', '1h']).optional(),
     sessionId: triStateSchema.default('auto'),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
+    upstreamTimeoutMs: z.number().int().positive().default(300_000),
   })
   .strict();
 

@@ -3,50 +3,48 @@ import { logger, withReq } from '../../logger.js';
 import { buildUpstreamResponseWithLogging } from '../cache-logging.js';
 import type { ProxyEnv } from '../context.js';
 import { buildResponseHeaders } from '../headers.js';
+import { extractErrorDetail } from '../utils/error.js';
 
-/**
- * OpenRouter error format:
- *   { error: { code, message, metadata: { raw, provider_name } } }
- */
-function formatMetadata(meta: Record<string, unknown>): string[] {
-  const parts: string[] = [];
-  if (meta.provider_name) parts.push(`provider=${meta.provider_name}`);
-  if (meta.raw) {
-    const raw = typeof meta.raw === 'string' ? meta.raw : JSON.stringify(meta.raw);
-    parts.push(raw);
+function handleAbortError(
+  err: unknown,
+  clientSignal: AbortSignal,
+  reqId: string,
+  method: string,
+  path: string,
+): Response | null {
+  if (!(err instanceof DOMException) || err.name !== 'AbortError') return null;
+
+  const isTimeout = !clientSignal.aborted;
+  if (isTimeout) {
+    return Response.json(
+      {
+        error: {
+          message: 'Upstream request timed out',
+          type: 'proxy_upstream_timeout',
+        },
+      },
+      { status: 504 },
+    );
   }
-  return parts;
-}
-
-export function extractErrorDetail(bodyText: string): string {
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (typeof parsed !== 'object' || parsed === null) return bodyText;
-
-    const err = parsed.error;
-    if (typeof err === 'object' && err !== null && err.message) {
-      const parts: string[] = [];
-      if (err.code != null) parts.push(String(err.code));
-      parts.push(String(err.message));
-      if (err.metadata && typeof err.metadata === 'object') {
-        parts.push(...formatMetadata(err.metadata as Record<string, unknown>));
-      }
-      return parts.join(' | ');
-    }
-    if (parsed.message) return String(parsed.message);
-  } catch {
-    // non-JSON
-  }
-  return bodyText;
+  logger.warn(withReq(reqId, `Aborted: ${method} ${path}`));
+  return new Response(null, { status: 499 });
 }
 
 export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   const { upstreamUrl, forwardBody, upstreamHeaders, reqId, path, startedAt, method } =
     c.var;
 
+  const timeoutMs = c.var.config.upstreamTimeoutMs;
   const controller = new AbortController();
   const onClientAbort = () => controller.abort();
   c.req.raw.signal.addEventListener('abort', onClientAbort);
+
+  const timeoutId = setTimeout(() => {
+    logger.warn(
+      withReq(reqId, `Upstream timeout after ${timeoutMs}ms: ${method} ${path}`),
+    );
+    controller.abort();
+  }, timeoutMs);
 
   const upstreamShort = upstreamUrl.replace(/^https?:\/\//, '');
   const modelLog = c.var.modelName ? ` model=${c.var.modelName}` : '';
@@ -68,10 +66,10 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     });
   } catch (err) {
     c.req.raw.signal.removeEventListener('abort', onClientAbort);
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      logger.warn(withReq(reqId, `Aborted: ${method} ${path}`));
-      return new Response(null, { status: 499 });
-    }
+    clearTimeout(timeoutId);
+
+    const abortResponse = handleAbortError(err, c.req.raw.signal, reqId, method, path);
+    if (abortResponse) return abortResponse;
 
     logger.error(withReq(reqId, 'Upstream fetch error:'), err);
     return Response.json(
@@ -86,6 +84,7 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   }
 
   c.req.raw.signal.removeEventListener('abort', onClientAbort);
+  clearTimeout(timeoutId);
 
   if (upstream.status >= 400) {
     const bodyText = await upstream.text();

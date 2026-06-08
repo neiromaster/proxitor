@@ -60,6 +60,7 @@ export async function createTestEnv(
     bodyLimit: '50mb',
     attributionReferer: 'https://github.com/neiromaster/proxitor',
     attributionTitle: 'proxitor-test',
+    upstreamTimeoutMs: 300_000,
     ...configOverrides,
   };
 
