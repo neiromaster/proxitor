@@ -126,6 +126,43 @@ describe('buildCacheControl', () => {
     buildCacheControl(existing, '5m', 'claude-sonnet-4-6', '/v1/messages');
     expect(existing).toEqual({ type: 'ephemeral' });
   });
+
+  it('defaults type to ephemeral when existing object lacks it', () => {
+    const result = buildCacheControl(
+      { ttl: 600 },
+      undefined,
+      'claude-sonnet-4-6',
+      '/v1/messages',
+    );
+    expect(result).toEqual({ type: 'ephemeral', ttl: 600 });
+  });
+
+  it('adds type to object without type even when no TTL is set', () => {
+    const result = buildCacheControl(
+      { custom: 'value' },
+      undefined,
+      'claude-sonnet-4-6',
+      '/v1/messages',
+    );
+    expect(result).toEqual({ type: 'ephemeral', custom: 'value' });
+  });
+
+  it('treats array existing as no existing — returns default ephemeral', () => {
+    const result = buildCacheControl(
+      ['ephemeral', '1h'],
+      undefined,
+      'claude-sonnet-4-6',
+      '/v1/messages',
+    );
+    expect(result).toEqual({ type: 'ephemeral' });
+    expect(Object.keys(result)).not.toContain('0');
+    expect(Object.keys(result)).not.toContain('1');
+  });
+
+  it('treats array existing as no existing — still adds TTL when configured', () => {
+    const result = buildCacheControl([], '1h', 'claude-sonnet-4-6', '/v1/messages');
+    expect(result).toEqual({ type: 'ephemeral', ttl: 3600 });
+  });
 });
 
 // ---------------------------------------------------------------------------

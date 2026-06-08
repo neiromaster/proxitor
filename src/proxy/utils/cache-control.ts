@@ -35,10 +35,21 @@ export function buildCacheControl(
   modelName: string | undefined,
   path: string,
 ): Record<string, unknown> {
-  const result: Record<string, unknown> =
-    existing && typeof existing === 'object'
-      ? { ...(existing as Record<string, unknown>) }
-      : { type: 'ephemeral' };
+  // Reject arrays, null, and other non-plain-object shapes — a malformed
+  // existing cache_control (e.g. an array) should not leak into the request
+  // as numeric keys or missing `type`. Treat it the same as "no existing."
+  const isPlainObject =
+    existing !== null && typeof existing === 'object' && !Array.isArray(existing);
+  const result: Record<string, unknown> = isPlainObject
+    ? { ...(existing as Record<string, unknown>) }
+    : { type: 'ephemeral' };
+
+  // The Anthropic cache_control contract requires a `type`. If the client
+  // sent an object without one (e.g. { ttl: 600 }), default to 'ephemeral'
+  // so upstream doesn't reject the payload.
+  if (!('type' in result)) {
+    result.type = 'ephemeral';
+  }
 
   if (ttl && isAnthropicEndpoint(modelName, path)) {
     result.ttl = TTL_SECONDS[ttl];

@@ -123,6 +123,24 @@ describe('extractConversationFingerprint', () => {
     const b = extractConversationFingerprint(body, '/v1/chat/completions');
     expect(a).toBe(b);
   });
+
+  it('falls back gracefully when system content is non-serializable', () => {
+    // Circular references inside `system` would normally throw inside
+    // JSON.stringify. The implementation should skip the failing field and
+    // still produce a fingerprint from the remaining (user) content.
+    const circular: Record<string, unknown> = { role: 'system' };
+    circular.self = circular;
+
+    const body = {
+      model: 'claude-sonnet-4-6',
+      system: circular,
+      messages: [{ role: 'user', content: 'Hello' }],
+    };
+
+    const fp = extractConversationFingerprint(body, '/v1/messages');
+    expect(fp).toBeTypeOf('string');
+    expect(fp!.length).toBe(64);
+  });
 });
 
 // ---------------------------------------------------------------------------

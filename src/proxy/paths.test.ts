@@ -62,4 +62,22 @@ describe('buildUpstreamUrl', () => {
       'http://localhost:8080/v1/responses',
     );
   });
+
+  it('preserves a single query parameter', () => {
+    expect(
+      buildUpstreamUrl(
+        '/v1/chat/completions?stream=true',
+        makeConfig('https://openrouter.ai/api'),
+      ),
+    ).toBe('https://openrouter.ai/api/v1/chat/completions?stream=true');
+  });
+
+  it('preserves multiple query parameters', () => {
+    expect(
+      buildUpstreamUrl(
+        '/v1/models?order=price&test=foo',
+        makeConfig('https://openrouter.ai/api'),
+      ),
+    ).toBe('https://openrouter.ai/api/v1/models?order=price&test=foo');
+  });
 });

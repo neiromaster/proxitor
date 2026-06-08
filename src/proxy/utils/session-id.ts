@@ -47,10 +47,21 @@ export function extractConversationFingerprint(
 
   if (system == null && user == null) return null;
 
+  // Stringify each field independently so a non-serializable value in one
+  // (e.g. BigInt) doesn't drop the whole fingerprint. A failed field is
+  // hashed as the empty string, leaving the other field(s) to contribute.
+  const safeStringify = (value: unknown): string => {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  };
+
   const hash = createHash('sha256');
   hash.update(String(parsedBody.model ?? ''));
-  if (system != null) hash.update(JSON.stringify(system));
-  if (user != null) hash.update(JSON.stringify(user));
+  if (system != null) hash.update(safeStringify(system));
+  if (user != null) hash.update(safeStringify(user));
   return hash.digest('hex');
 }
 

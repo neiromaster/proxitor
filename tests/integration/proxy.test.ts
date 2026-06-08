@@ -157,6 +157,45 @@ describe('Proxy Integration', () => {
     expect(capturedHeaders['x-custom']).toBe('value');
   });
 
+  it('does not propagate __proto__ from model override headers to upstream', async () => {
+    let capturedHeaders: Record<string, string> = {};
+
+    env = await createTestEnv(
+      {
+        modelOverrides: {
+          // Object literal with __proto__ as a regular key (ES2018+) would
+          // be assigned into the prototype chain by Object.assign. The
+          // implementation must skip dangerous keys.
+          'gpt-*': {
+            headers: {
+              __proto__: { polluted: 'true' } as unknown as string,
+              'X-Legit': 'safe',
+            },
+          },
+        },
+      },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
+          return c.json({ id: 'test' });
+        });
+      },
+    );
+
+    const res = await fetch(`${env.proxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-4o', messages: [] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedHeaders['x-legit']).toBe('safe');
+    // __proto__ should not appear as an own header on the outgoing request
+    expect(capturedHeaders).not.toHaveProperty('__proto__');
+    // And the safe sibling header should still be present
+    expect(capturedHeaders['x-legit']).toBe('safe');
+  });
+
   it('passes GET requests without body modification', async () => {
     let capturedMethod = '';
 

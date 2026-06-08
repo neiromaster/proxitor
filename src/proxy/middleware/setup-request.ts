@@ -5,7 +5,10 @@ import { buildUpstreamUrl } from '../paths.js';
 
 export const setupRequest = createMiddleware<ProxyEnv>(async (c, next) => {
   const method = c.req.method;
-  const { pathname: path } = new URL(c.req.url);
+  const { pathname, search } = new URL(c.req.url);
+  // `path` carries both pathname and query string so the upstream URL
+  // preserves any `?stream=true` or other client-side parameters.
+  const path = `${pathname}${search}`;
 
   c.set('reqId', requestId());
   c.set('method', method);
