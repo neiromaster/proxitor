@@ -4,5 +4,11 @@
   "initialVersions": {
     "proxitor": "0.8.0"
   },
-  "changesets": ["cache-control-and-session"]
+  "changesets": [
+    "cache-control-and-session",
+    "cache-control-ttl",
+    "dead-code-and-url-cleanup",
+    "middleware-architecture",
+    "remove-upstream-timeout"
+  ]
 }

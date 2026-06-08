@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.9.0-beta.1
+
+### Minor Changes
+
+- b63df3c: Add `cacheControlTtl` option for Anthropic prompt cache TTL control
+
+  - **`cacheControlTtl`** (`'5m'` | `'1h'`, optional) — controls the cache time-to-live for Anthropic models. Without it, Anthropic's default 5-minute TTL applies. Set to `'1h'` for a 1-hour cache (2× write cost vs 1.25×, same 90% read discount). TTL is only injected for Anthropic models/endpoints — other providers don't support it.
+  - **`null` in model overrides** — per-model `cacheControlTtl` accepts `null` to cancel a global TTL and revert to Anthropic's default behavior for specific models.
+  - **Existing `cache_control` handling** — when the request body already contains `cache_control` without `ttl`, proxitor adds `ttl` if configured. If `ttl` is already present, it's preserved unchanged.
+
+- b63df3c: Remove dead code and simplify URL routing
+
+  - **Breaking**: `openrouterBaseUrl` default changed from `https://openrouter.ai/api/v1` to `https://openrouter.ai/api` — incoming request paths (e.g. `/v1/chat/completions`) are now forwarded as-is instead of stripping `/v1`
+  - **Breaking**: removed `extractModel`, `InjectionParams`, and `tryParseBody` from public API (unused after middleware refactor)
+  - **Breaking**: removed `shouldInject` and `toUpstreamPath` from `src/proxy/paths.ts`
+  - Added runtime warning when `openrouterBaseUrl` or `openrouterDataUrl` ends with `/v1` — helps catch configs from previous versions that would produce doubled paths like `/v1/v1/chat/completions`
+  - Added `classifyEndpoint()` for centralized endpoint type detection, replacing scattered string comparisons across middleware
+  - Added `tsc --noEmit` to pre-commit hook alongside biome
+  - Added `config: ProxyConfig` to `ProxyVariables` context type (removed unsafe `as never` casts)
+  - Data client paths updated to `/v1/providers`, `/v1/models`, `/v1/models/{author}/{slug}/endpoints`
+
+- b63df3c: Refactor proxy request processing into composable Hono middleware architecture
+
+  - **Breaking**: removed `injectBodyFields`, `injectProvider`, `buildRequestHeaders`, and `InjectionResult` from public API
+  - **Breaking**: session_id is now sent exclusively via `x-session-id` header instead of body injection (universal across all OpenRouter endpoints)
+  - Decomposed monolithic proxy handler into 9 ordered middleware: setupRequest, readBody, parseBody, resolveConfig, injectProvider, injectCacheControl, injectSessionId, buildUpstreamReq, forwardRequest
+  - Route-based middleware composition: injection middleware only registered on `/v1/chat/completions`, `/v1/responses`, `/v1/messages`; all other paths pass through without overhead
+  - Eliminated double JSON parse — single parse in parseBody, in-place mutation by injection middleware, single serialize in buildUpstreamReq
+  - Content-based session ID derivation for clients without session support: SHA-256 fingerprint of model + first system message + first user message gives stable per-conversation stickiness without cross-session pollution
+  - Session ID sources (priority order): `x-claude-code-session-id` header (Claude Code) → `session_id` from body (Codex CLI) → content hash fingerprint → random UUID fallback
+  - Shared `ProxyVariables` context type for type-safe data flow across middleware chain
+  - Global `app.onError()` handler for unhandled errors
+
+- b63df3c: Remove upstream request timeout — trust the upstream (OpenRouter) to enforce its own deadline and the client to cancel if it gives up.
+
+  - **Breaking**: removed `upstreamTimeoutMs` config option (default was 5 minutes). The proxy no longer aborts upstream requests on its own timer; a slow OpenRouter response will stream as long as it takes, and Anthropic SSE generations of any length are no longer cut off mid-stream.
+  - **Client cancellation** is still honored — when the client disconnects, the proxy aborts the upstream fetch and returns `499 Client Closed Request` (previously this surfaced as `500` via the global error handler).
+  - **Network-level failures** (ECONNREFUSED, DNS, connection reset) still return `502 Bad Gateway` with `proxy_upstream_error` — the documented contract is preserved.
+
 ## 0.9.0-beta.0
 
 ### Minor Changes
