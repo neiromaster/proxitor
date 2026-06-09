@@ -14,9 +14,10 @@ import {
 
 type SaveLocation = 'local' | 'user' | 'xdg';
 
-function maskKey(key: string): string {
+export function maskKey(key: string): string {
+  if (!key) return '(none)';
   if (key.length <= 11) return '****';
-  return `${key.slice(0, 7)}...${key.slice(-4)}`;
+  return `${key.slice(0, 7)}…${key.slice(-4)}`;
 }
 
 function resolveSavePath(location: SaveLocation): string {
