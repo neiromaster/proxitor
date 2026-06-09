@@ -5,6 +5,10 @@ import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types
 
 const OPENROUTER_FALLBACK_URL = OPENROUTER_API_URL;
 
+const MODELS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+type CacheEntry = { at: number; models: OpenRouterModel[] };
+const modelsCache = new Map<string, CacheEntry>();
+
 export type DataClientConfig = {
   openrouterBaseUrl: string;
   openrouterDataUrl?: string;
@@ -62,6 +66,7 @@ export class OpenRouterDataClient {
   private fallbackClient: OpenRouterClient;
   private skipFallback: boolean;
   private onFallback?: (path: string) => void;
+  private cacheKey: string;
 
   constructor(config: DataClientConfig) {
     const primaryUrl = config.openrouterDataUrl ?? config.openrouterBaseUrl;
@@ -69,6 +74,8 @@ export class OpenRouterDataClient {
     this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType);
     this.fallbackClient = new OpenRouterClient(OPENROUTER_FALLBACK_URL);
     this.onFallback = config.onFallback;
+    // Key the cache by upstream + authType so different configs don't collide.
+    this.cacheKey = `${primaryUrl}|${config.authType}`;
   }
 
   async fetchProviders(): Promise<OpenRouterProvider[]> {
@@ -81,12 +88,18 @@ export class OpenRouterDataClient {
   }
 
   async fetchModels(): Promise<OpenRouterModel[]> {
+    const cached = modelsCache.get(this.cacheKey);
+    if (cached && Date.now() - cached.at < MODELS_CACHE_TTL_MS) {
+      return cached.models;
+    }
     const result = await this.withFallback(
       '/v1/models',
       () => this.primaryClient.get<unknown>('/v1/models'),
       isValidModelsResponse,
     );
-    return result.data.data;
+    const models = result.data.data;
+    modelsCache.set(this.cacheKey, { at: Date.now(), models });
+    return models;
   }
 
   async fetchModelEndpoints(author: string, slug: string): Promise<ModelEndpoint[]> {
@@ -159,4 +172,9 @@ function isNetworkError(error: Error): boolean {
     message.includes('aborted') ||
     error.name === 'TypeError'
   );
+}
+
+/** Drop the in-memory model cache. Useful in tests; rarely needed at runtime. */
+export function clearModelsCache(): void {
+  modelsCache.clear();
 }

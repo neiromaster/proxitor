@@ -94,6 +94,15 @@ export function matchScore(pattern: string, modelName: string): number {
   return -1;
 }
 
+/**
+ * Boolean wrapper around {@link matchScore} — true when a model name matches
+ * a pattern. Use this in user-facing code (e.g. wizard, `add`) instead of
+ * re-implementing the `*` wildcard rule.
+ */
+export function matchesPattern(pattern: string, modelName: string): boolean {
+  return matchScore(pattern, modelName) >= 0;
+}
+
 export function resolveModelConfig(
   config: ProxyConfig,
   modelName?: string,

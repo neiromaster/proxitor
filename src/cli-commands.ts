@@ -151,7 +151,7 @@ export const configCli = subcommands({
       args: { ...configArgs },
       handler: async args => {
         const client = await makeClient(args);
-        await addOverrideCommand(client);
+        await addOverrideCommand({ client });
       },
     }),
     edit: command({

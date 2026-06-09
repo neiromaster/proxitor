@@ -128,5 +128,5 @@ export async function browseModelsCommand(client: OpenRouterDataClient): Promise
     return;
   }
 
-  await addOverrideCommand(client);
+  await addOverrideCommand({ client, presetModelId: model.id });
 }
