@@ -171,15 +171,38 @@ async function askAuthType(current: string): Promise<string | null> {
 }
 
 async function askHost(current: string): Promise<string | null> {
+  const isPreset = (v: string) => v === '0.0.0.0' || v === '127.0.0.1';
   const host = await clack.select({
     message: 'Listen address',
-    initialValue: current as '0.0.0.0' | '127.0.0.1',
+    initialValue: isPreset(current) ? (current as '0.0.0.0' | '127.0.0.1') : '__custom__',
     options: [
       { value: '0.0.0.0', label: 'All interfaces (0.0.0.0)', hint: 'Default' },
       { value: '127.0.0.1', label: 'Localhost only (127.0.0.1)', hint: 'More secure' },
+      {
+        value: '__custom__',
+        label: 'Custom address…',
+        hint: 'Specific IP, hostname, or unix:/path',
+      },
     ],
   });
   if (isCancel(host)) return null;
+  if (host === '__custom__') {
+    const custom = await clack.text({
+      message: 'Custom listen address',
+      placeholder: '192.168.1.1',
+      initialValue: isPreset(current) ? '' : current,
+      validate: v => {
+        const t = v?.trim();
+        if (!t) return 'Address is required';
+        if (t.startsWith('unix:')) return undefined;
+        if (!/^[\w.\-:]+$/.test(t))
+          return 'Invalid host (allowed: IP, hostname, or unix:…)';
+        return undefined;
+      },
+    });
+    if (isCancel(custom)) return null;
+    return (custom as string).trim();
+  }
   return host as string;
 }
 
