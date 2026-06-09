@@ -178,3 +178,36 @@ function isNetworkError(error: Error): boolean {
 export function clearModelsCache(): void {
   modelsCache.clear();
 }
+
+/**
+ * Best-effort probe of the upstream API. Non-blocking — used by the wizard
+ * to give early feedback on key validity without preventing save.
+ */
+export async function probeUpstream(
+  baseUrl: string,
+  apiKey: string,
+  authType: AuthType,
+  timeoutMs = 3_000,
+): Promise<{ ok: true; modelCount: number } | { ok: false; reason: string }> {
+  const url = `${baseUrl.replace(/\/$/, '')}/v1/models`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers: Record<string, string> = {};
+    if (apiKey)
+      headers.Authorization = `${authType === 'oauth' ? 'OAuth' : 'Bearer'} ${apiKey}`;
+    const res = await fetch(url, { signal: controller.signal, headers });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, reason: `Key rejected (${res.status})` };
+    }
+    if (!res.ok) {
+      return { ok: false, reason: `HTTP ${res.status}` };
+    }
+    const body = (await res.json().catch(() => null)) as { data?: unknown[] } | null;
+    return { ok: true, modelCount: Array.isArray(body?.data) ? body.data.length : 0 };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
+}

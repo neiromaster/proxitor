@@ -11,6 +11,7 @@ import {
   readConfigFile,
   tryFindConfigFile,
 } from '../../config.js';
+import { probeUpstream } from '../../openrouter/data-client.js';
 
 type SaveLocation = 'local' | 'user' | 'xdg';
 
@@ -307,6 +308,19 @@ export async function runWizard(opts: { configPath?: string } = {}): Promise<voi
   if (authType === null) {
     clack.outro('Cancelled');
     return;
+  }
+
+  // Best-effort upstream probe — non-blocking
+  if (apiKey) {
+    clack.log.step('Testing upstream connection…');
+    const probe = await probeUpstream(baseUrl, apiKey, authType as AuthType);
+    if (probe.ok) {
+      clack.log.success(`Upstream reachable (${probe.modelCount} models)`);
+    } else {
+      clack.log.warn(
+        `Upstream unreachable: ${probe.reason} — config will still be saved.`,
+      );
+    }
   }
 
   const host = await askHost(currentHost);
