@@ -364,7 +364,11 @@ proxitor config show           # print the resolved config (merged)
 proxitor config show --json    # same, machine-readable
 proxitor config browse         # explore models with pricing info
 proxitor config wizard         # interactive setup wizard
-proxitor config validate       # validate config file
+proxitor config validate       # validate config file (exit 0 ok, 1 invalid)
+proxitor config validate --json  # structured JSON result
+proxitor doctor                # diagnose environment + network + port + version
+proxitor doctor --json         # machine-readable diagnostic report
+proxitor doctor --offline      # skip network checks
 ```
 
 ### Add override walkthrough
@@ -429,6 +433,58 @@ The interface uses live data from the OpenRouter API — model search with type-
 
 ---
 
+## Diagnostics
+
+When something doesn't work, `proxitor doctor` runs a battery of checks and prints a report. Sections cover:
+
+- **Environment** — Node version, platform, TTY
+- **Config** — discovery path, validity, override count
+- **API key** — resolution (env vs. file; never prints the key)
+- **Network** — upstream reachability (with configurable timeout)
+- **Port** — availability of the configured port
+- **Version** — installed version
+
+Statuses: `✓ ok` / `⚠ warn` / `✗ fail` / `ⓘ skip`. Exit code is `0` when no `fail`, `1` otherwise — scriptable from CI.
+
+```sh
+$ proxitor doctor
+
+▲ Proxitor Doctor
+│
+◇ Environment
+│  ✓ node-version — v22.4.1
+│  ✓ platform — darwin arm64
+│  ✓ tty — true
+│
+◇ Config
+│  ✓ config-found — /Users/u/proj/proxitor.config.yaml
+│  ✓ config-valid — 12 keys, 3 override(s)
+│
+◇ API key
+│  ✓ api-key — set (env: set, file: set)
+│
+◇ Network
+│  ✓ upstream — https://openrouter.ai/api — 200, 342 models
+│
+◇ Port
+│  ✓ port-8828 — 127.0.0.1:8828
+│
+◇ Version
+│  ✓ version — 0.9.0-beta.1
+
+└ Done. All checks passed.
+```
+
+Useful flags:
+
+```sh
+proxitor doctor --json         # structured JSON for CI / scripts
+proxitor doctor --offline      # skip network checks (no upstream, no npm)
+proxitor doctor --timeout 5000 # custom per-check network timeout (ms)
+```
+
+---
+
 ## CLI Options
 
 ```sh
@@ -442,7 +498,10 @@ proxitor config show            # print the resolved config
 proxitor config show --json     # machine-readable config
 proxitor config list --json     # overrides as JSON
 proxitor config wizard          # interactive setup
-proxitor config validate        # check the current config
+proxitor config validate        # check the current config (exit 0/1)
+proxitor config validate --json # structured JSON result
+proxitor doctor                 # diagnose environment, network, port, version
+proxitor doctor --offline       # skip network checks
 proxitor --help                 # full help
 proxitor --version              # print version
 ```
