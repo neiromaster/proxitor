@@ -359,6 +359,9 @@ proxitor config add            # add a model override
 proxitor config edit           # edit existing override
 proxitor config remove         # remove override(s)
 proxitor config list           # show current overrides
+proxitor config list --json    # overrides as JSON
+proxitor config show           # print the resolved config (merged)
+proxitor config show --json    # same, machine-readable
 proxitor config browse         # explore models with pricing info
 proxitor config wizard         # interactive setup wizard
 proxitor config validate       # validate config file
@@ -428,16 +431,34 @@ The interface uses live data from the OpenRouter API — model search with type-
 
 ## CLI Options
 
+```sh
+proxitor                        # start the proxy (default command)
+proxitor start                  # same as above
+proxitor up                     # alias for start
+proxitor run                    # alias for start
+proxitor --port 9000            # override port
+proxitor ./team.yaml            # use an explicit config
+proxitor config show            # print the resolved config
+proxitor config show --json     # machine-readable config
+proxitor config list --json     # overrides as JSON
+proxitor config wizard          # interactive setup
+proxitor config validate        # check the current config
+proxitor --help                 # full help
+proxitor --version              # print version
+```
+
 | Flag | Default | Description |
 |---|---|---|
-| `-p, --port <port>` | `8828` | Server port |
+| `-p, --port <port>` | `8828` | Server port (validated: 1-65535) |
 | `-h, --host <host>` | `0.0.0.0` | Server host |
-| `-c, --config <path>` | auto-discovered | Path to config file |
-| `--openrouter-key <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
+| `-c, --config <path>` | auto-discovered | Path to config file (positional `[config-path]` also accepted) |
+| `--openrouter-key <key>` / `-k <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
 | `--verbose` | `false` | Enable verbose logging |
 | `--no-config` | | Skip config file discovery |
 | `-v, --version` | | Print version |
 | `--help` | | Print help |
+
+Subcommands live under `proxitor config <subcommand>`. Run `proxitor config --help` for the full list, or see [Interactive Config Manager](#interactive-config-manager) for the walkthroughs.
 
 ---
 

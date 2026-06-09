@@ -20,14 +20,30 @@ function formatOverrideSummary(override: ModelOverride): string {
   return parts.join(', ') || '(empty)';
 }
 
+type ListArgs = { json?: boolean | undefined };
+
 /** Display all current model overrides. */
-export async function listOverridesCommand(): Promise<void> {
+export async function listOverridesCommand(args: ListArgs = {}): Promise<void> {
   const configPath = requireConfigPath();
   const overrides = getModelOverrides(configPath);
   const keys = Object.keys(overrides);
 
   if (keys.length === 0) {
+    if (args.json) {
+      process.stdout.write('[]\n');
+      return;
+    }
     clack.log.info('No model overrides configured.');
+    return;
+  }
+
+  if (args.json) {
+    const payload = {
+      configPath,
+      count: keys.length,
+      overrides: keys.map(k => ({ model: k, ...overrides[k] })),
+    };
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return;
   }
 

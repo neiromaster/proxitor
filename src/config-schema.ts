@@ -120,3 +120,21 @@ export class ConfigValidationError extends Error {
     this.name = 'ConfigValidationError';
   }
 }
+
+/**
+ * Thrown when no config file is found via discovery and no explicit path was given.
+ * Callers can `instanceof` this to surface a "create one?" prompt.
+ */
+export class MissingConfigError extends Error {
+  readonly searchedPaths: readonly string[];
+
+  constructor(searchedPaths: readonly string[]) {
+    super(
+      `No proxitor config file found.\n` +
+        `Searched:\n${searchedPaths.map(p => `  - ${p}`).join('\n')}\n\n` +
+        `Run \`proxitor config wizard\` to create one, or pass a config path explicitly.`,
+    );
+    this.name = 'MissingConfigError';
+    this.searchedPaths = searchedPaths;
+  }
+}

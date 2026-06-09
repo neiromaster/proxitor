@@ -7,9 +7,9 @@ import { parseDocument, stringify } from 'yaml';
 import {
   type AuthType,
   DEFAULTS,
-  findConfigFile,
   getXdgConfigDir,
   readConfigFile,
+  tryFindConfigFile,
 } from '../../config.js';
 
 type SaveLocation = 'local' | 'user' | 'xdg';
@@ -229,10 +229,10 @@ function loadExistingConfig(path: string): ExistingConfigState {
   }
 }
 
-export async function runWizard(): Promise<void> {
+export async function runWizard(opts: { configPath?: string } = {}): Promise<void> {
   clack.intro('Proxitor Setup Wizard');
 
-  const existingPath = findConfigFile();
+  const existingPath = tryFindConfigFile(opts.configPath);
   let existingRaw: string | undefined;
   let currentPort = DEFAULTS.port;
   let currentHost = DEFAULTS.host;
@@ -291,7 +291,7 @@ export async function runWizard(): Promise<void> {
     return;
   }
 
-  const location = await askSaveLocation(existingPath ?? undefined);
+  const location = await askSaveLocation(existingPath ?? opts.configPath);
   if (location === null) {
     clack.outro('Cancelled');
     return;

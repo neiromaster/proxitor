@@ -1,18 +1,16 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { YAMLMap } from 'yaml';
 import { parseDocument } from 'yaml';
-import { findConfigFile } from '../../config.js';
+import { findConfigFile, tryFindConfigFile } from '../../config.js';
 import type { ModelOverride } from '../../config-schema.js';
 import { logger } from '../../logger.js';
 
+/**
+ * Throws {@link MissingConfigError} via `findConfigFile` if no config is found.
+ * Kept as a named helper for symmetry with `getModelOverrides` / `setModelOverride`.
+ */
 export function requireConfigPath(): string {
-  const path = findConfigFile();
-  if (!path) {
-    throw new Error(
-      'No config file found. Create proxitor.config.yaml first, or pass -c <path>.',
-    );
-  }
-  return path;
+  return findConfigFile();
 }
 
 export function readConfigRaw(path: string): string {
@@ -74,3 +72,5 @@ export function getModelOverrides(configPath: string): Record<string, ModelOverr
   }
   return overrides as unknown as Record<string, ModelOverride>;
 }
+
+export { tryFindConfigFile };

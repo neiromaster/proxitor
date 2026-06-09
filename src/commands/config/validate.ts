@@ -1,14 +1,14 @@
 import * as clack from '@clack/prompts';
-import { findConfigFile, readConfigFile } from '../../config.js';
+import { readConfigFile, tryFindConfigFile } from '../../config.js';
 
 /** Run config validation and display results. */
 export async function validateConfigCommand(): Promise<void> {
   clack.intro('Validate Config');
 
-  const configPath = findConfigFile();
+  const configPath = tryFindConfigFile();
   if (!configPath) {
-    clack.log.error('No config file found.');
-    clack.outro('');
+    clack.log.warn('No config file found — nothing to validate.');
+    clack.outro('Run `proxitor config wizard` to create one.');
     return;
   }
 
