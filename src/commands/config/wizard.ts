@@ -243,15 +243,67 @@ function loadExistingConfig(path: string): ExistingConfigState {
       authType: fileConfig.authType ?? DEFAULTS.authType,
     };
   } catch {
-    return {
-      raw: undefined,
-      port: DEFAULTS.port,
-      host: DEFAULTS.host,
-      apiKey: DEFAULTS.openrouterKey,
-      baseUrl: DEFAULTS.openrouterBaseUrl,
-      authType: DEFAULTS.authType,
-    };
+    return loadDefaultState();
   }
+}
+
+function loadDefaultState(): ExistingConfigState {
+  return {
+    raw: undefined,
+    port: DEFAULTS.port,
+    host: DEFAULTS.host,
+    apiKey: DEFAULTS.openrouterKey,
+    baseUrl: DEFAULTS.openrouterBaseUrl,
+    authType: DEFAULTS.authType,
+  };
+}
+
+class WizardCancelled extends Error {}
+
+/** Throw on cancel so the step chain stays flat. */
+function expectValue<T>(value: T | null, label = 'Cancelled'): T {
+  if (value === null) throw new WizardCancelled(label);
+  return value;
+}
+
+const TOTAL_STEPS = 6;
+
+async function collectAnswers(current: ExistingConfigState): Promise<{
+  apiKey: string;
+  port: number;
+  host: string;
+  baseUrl: string;
+  authType: string;
+}> {
+  clack.log.step(`Step 1/${TOTAL_STEPS}: API key`);
+  const apiKey = expectValue(await askApiKey(current.apiKey));
+
+  clack.log.step(`Step 2/${TOTAL_STEPS}: Proxy port`);
+  const port = expectValue(await askPort(current.port));
+
+  clack.log.step(`Step 3/${TOTAL_STEPS}: Listen address`);
+  const host = expectValue(await askHost(current.host));
+
+  clack.log.step(`Step 4/${TOTAL_STEPS}: Base URL`);
+  const baseUrl = expectValue(await askBaseUrl(current.baseUrl));
+
+  clack.log.step(`Step 5/${TOTAL_STEPS}: Authentication type`);
+  const authType = expectValue(await askAuthType(current.authType));
+
+  // Best-effort upstream probe — non-blocking
+  if (apiKey) {
+    clack.log.step('Testing upstream connection…');
+    const probe = await probeUpstream(baseUrl, apiKey, authType as AuthType);
+    if (probe.ok) {
+      clack.log.success(`Upstream reachable (${probe.modelCount} models)`);
+    } else {
+      clack.log.warn(
+        `Upstream unreachable: ${probe.reason} — config will still be saved.`,
+      );
+    }
+  }
+
+  return { apiKey, port, host, baseUrl, authType };
 }
 
 export async function runWizard(opts: { configPath?: string } = {}): Promise<void> {
@@ -259,11 +311,7 @@ export async function runWizard(opts: { configPath?: string } = {}): Promise<voi
 
   const existingPath = tryFindConfigFile(opts.configPath);
   let existingRaw: string | undefined;
-  let currentPort = DEFAULTS.port;
-  let currentHost = DEFAULTS.host;
-  let currentKey = DEFAULTS.openrouterKey;
-  let currentBaseUrl = DEFAULTS.openrouterBaseUrl;
-  let currentAuthType = DEFAULTS.authType;
+  let current = loadDefaultState();
 
   if (existingPath) {
     clack.note(existingPath, 'Existing config found');
@@ -279,80 +327,47 @@ export async function runWizard(opts: { configPath?: string } = {}): Promise<voi
 
     const existing = loadExistingConfig(existingPath);
     existingRaw = existing.raw;
-    currentPort = existing.port;
-    currentHost = existing.host;
-    currentKey = existing.apiKey;
-    currentBaseUrl = existing.baseUrl;
-    currentAuthType = existing.authType;
+    current = existing;
   }
 
-  const apiKey = await askApiKey(currentKey);
-  if (apiKey === null) {
-    clack.outro('Cancelled');
-    return;
-  }
+  try {
+    const answers = await collectAnswers(current);
 
-  const port = await askPort(currentPort);
-  if (port === null) {
-    clack.outro('Cancelled');
-    return;
-  }
+    clack.log.step(`Step ${TOTAL_STEPS}/${TOTAL_STEPS}: Save location`);
+    const location = expectValue(await askSaveLocation(existingPath ?? opts.configPath));
 
-  const baseUrl = await askBaseUrl(currentBaseUrl);
-  if (baseUrl === null) {
-    clack.outro('Cancelled');
-    return;
-  }
+    const yaml = buildYaml(
+      answers.apiKey,
+      answers.port,
+      answers.host,
+      answers.baseUrl,
+      answers.authType,
+      existingRaw,
+    );
+    clack.note(yaml, 'Preview');
 
-  const authType = await askAuthType(currentAuthType);
-  if (authType === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  // Best-effort upstream probe — non-blocking
-  if (apiKey) {
-    clack.log.step('Testing upstream connection…');
-    const probe = await probeUpstream(baseUrl, apiKey, authType as AuthType);
-    if (probe.ok) {
-      clack.log.success(`Upstream reachable (${probe.modelCount} models)`);
-    } else {
-      clack.log.warn(
-        `Upstream unreachable: ${probe.reason} — config will still be saved.`,
-      );
+    const save = await clack.confirm({
+      message: 'Save this configuration?',
+      initialValue: true,
+    });
+    if (isCancel(save) || !save) {
+      clack.outro('Cancelled — no files written');
+      return;
     }
+
+    const savePath = resolveSavePath(location);
+    const dir = dirname(savePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(savePath, yaml, 'utf-8');
+
+    clack.outro(`Config saved to ${savePath}`);
+  } catch (e) {
+    if (e instanceof WizardCancelled) {
+      clack.outro('Cancelled');
+      return;
+    }
+    throw e;
   }
-
-  const host = await askHost(currentHost);
-  if (host === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const location = await askSaveLocation(existingPath ?? opts.configPath);
-  if (location === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const yaml = buildYaml(apiKey, port, host, baseUrl, authType, existingRaw);
-  clack.note(yaml, 'Preview');
-
-  const save = await clack.confirm({
-    message: 'Save this configuration?',
-    initialValue: true,
-  });
-  if (isCancel(save) || !save) {
-    clack.outro('Cancelled — no files written');
-    return;
-  }
-
-  const savePath = resolveSavePath(location);
-  const dir = dirname(savePath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(savePath, yaml, 'utf-8');
-
-  clack.outro(`Config saved to ${savePath}`);
 }
