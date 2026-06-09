@@ -16,6 +16,7 @@ import { showConfigCommand } from './commands/config/show.js';
 import { validateConfigCommand } from './commands/config/validate.js';
 import { runWizard } from './commands/config/wizard.js';
 import { runConfigMenu } from './commands/config.js';
+import { doctorCommand } from './commands/doctor.js';
 import { DEFAULTS, loadConfig } from './config.js';
 import { logger } from './logger.js';
 import { OpenRouterDataClient } from './openrouter/data-client.js';
@@ -190,10 +191,11 @@ export const configCli = subcommands({
     }),
     validate: command({
       name: 'validate',
-      description: 'Validate the current config',
-      args: { ...configArgs },
-      handler: async () => {
-        await validateConfigCommand();
+      description: 'Validate the current config (exit 0 ok, 1 invalid)',
+      args: { ...configArgs, ...jsonFlag },
+      handler: async args => {
+        const code = await validateConfigCommand({ json: args.json });
+        if (code !== 0) process.exit(code);
       },
     }),
     show: command({
@@ -231,6 +233,34 @@ export const configCli = subcommands({
 
 // --- root ---
 
+export const doctorCli = command({
+  name: 'doctor',
+  description: 'Diagnose environment and configuration',
+  examples: [
+    { description: 'Run all checks', command: 'proxitor doctor' },
+    { description: 'Skip network checks', command: 'proxitor doctor --offline' },
+    { description: 'Output as JSON', command: 'proxitor doctor --json' },
+  ],
+  args: {
+    json: flag({ long: 'json', description: 'Output as JSON instead of formatted text' }),
+    offline: flag({
+      long: 'offline',
+      description: 'Skip network checks (upstream, npm)',
+    }),
+    timeout: option({
+      long: 'timeout',
+      short: 't',
+      type: string,
+      description: 'Network check timeout in milliseconds',
+    }),
+  },
+  handler: async ({ json, offline, timeout }) => {
+    const timeoutMs = timeout ? Number.parseInt(timeout, 10) : undefined;
+    const code = await doctorCommand({ json, offline, timeoutMs });
+    if (code !== 0) process.exit(code);
+  },
+});
+
 export const rootCli = subcommands({
   name: 'proxitor',
   version,
@@ -239,5 +269,6 @@ export const rootCli = subcommands({
   cmds: {
     start: startCommand,
     config: configCli,
+    doctor: doctorCli,
   },
 });
