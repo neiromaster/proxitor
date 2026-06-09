@@ -2,13 +2,7 @@ import { existsSync } from 'node:fs';
 import * as clack from '@clack/prompts';
 import { DEFAULTS, loadConfig, tryFindConfigFile } from '../../config.js';
 import type { ProxyConfig } from '../../config-schema.js';
-
-/** Mask an API key for display. */
-function maskKey(key: string): string {
-  if (!key) return '(none)';
-  if (key.length < 16) return `${key.slice(0, 4)}...${key.slice(-2)}`;
-  return `${key.slice(0, 7)}...${key.slice(-4)}`;
-}
+import { maskKey } from './wizard.js';
 
 type ShowArgs = {
   configPath?: string | undefined;
@@ -66,10 +60,14 @@ export async function showConfigCommand(args: ShowArgs): Promise<void> {
     clack.log.warn(
       'No config file and no --openrouter-key — cannot show a complete resolved view.',
     );
-    if (!args.json) {
-      clack.outro('Run `proxitor config wizard` to create one.');
+    if (args.json) {
+      process.stdout.write(
+        `${JSON.stringify({ ok: false, error: 'No config available' })}\n`,
+      );
       return;
     }
+    clack.outro('Run `proxitor config wizard` to create one.');
+    return;
   }
 
   const cfg = await loadConfig({

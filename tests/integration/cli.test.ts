@@ -136,6 +136,7 @@ describe('config command (no config file)', () => {
 });
 
 describe('config command (with a config file)', () => {
+  const cwd = process.cwd();
   let tmp: string;
 
   beforeEach(() => {
@@ -148,6 +149,7 @@ describe('config command (with a config file)', () => {
   });
 
   afterEach(() => {
+    process.chdir(cwd);
     rmSync(tmp, { recursive: true, force: true });
   });
 

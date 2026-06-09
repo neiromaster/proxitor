@@ -20,11 +20,11 @@ function formatOverrideSummary(override: ModelOverride): string {
   return parts.join(', ') || '(empty)';
 }
 
-type ListArgs = { json?: boolean | undefined };
+type ListArgs = { json?: boolean | undefined; configPath?: string | undefined };
 
 /** Display all current model overrides. */
 export async function listOverridesCommand(args: ListArgs = {}): Promise<void> {
-  const configPath = requireConfigPath();
+  const configPath = requireConfigPath(args.configPath);
   const overrides = getModelOverrides(configPath);
   const keys = Object.keys(overrides);
 

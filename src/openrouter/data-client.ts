@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { AuthType } from '../config-schema.js';
 import { OPENROUTER_API_URL } from '../config-schema.js';
 import { OpenRouterClient } from './client.js';
@@ -74,8 +75,10 @@ export class OpenRouterDataClient {
     this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType);
     this.fallbackClient = new OpenRouterClient(OPENROUTER_FALLBACK_URL);
     this.onFallback = config.onFallback;
-    // Key the cache by upstream + authType so different configs don't collide.
-    this.cacheKey = `${primaryUrl}|${config.authType}`;
+    // Key the cache by upstream + authType + API key hash so different
+    // credentials on the same URL don't share cached model data.
+    const keyHash = createHash('sha256').update(config.apiKey).digest('hex').slice(0, 8);
+    this.cacheKey = `${primaryUrl}|${config.authType}|${keyHash}`;
   }
 
   async fetchProviders(): Promise<OpenRouterProvider[]> {
@@ -193,9 +196,11 @@ export async function probeUpstream(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    if (!apiKey) {
+      return { ok: false, reason: 'No API key provided' };
+    }
     const headers: Record<string, string> = {};
-    if (apiKey)
-      headers.Authorization = `${authType === 'oauth' ? 'OAuth' : 'Bearer'} ${apiKey}`;
+    headers.Authorization = `${authType === 'oauth' ? 'OAuth' : 'Bearer'} ${apiKey}`;
     const res = await fetch(url, { signal: controller.signal, headers });
     if (res.status === 401 || res.status === 403) {
       return { ok: false, reason: `Key rejected (${res.status})` };

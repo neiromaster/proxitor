@@ -7,10 +7,10 @@ import { logger } from '../../logger.js';
 
 /**
  * Throws {@link MissingConfigError} via `findConfigFile` if no config is found.
- * Kept as a named helper for symmetry with `getModelOverrides` / `setModelOverride`.
+ * Pass an explicit path to skip discovery and use that file directly.
  */
-export function requireConfigPath(): string {
-  return findConfigFile();
+export function requireConfigPath(explicitPath?: string): string {
+  return findConfigFile(explicitPath);
 }
 
 export function readConfigRaw(path: string): string {

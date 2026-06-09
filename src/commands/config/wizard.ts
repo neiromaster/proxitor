@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { parseDocument, stringify } from 'yaml';
@@ -50,12 +50,12 @@ function getSaveLocationOptions(_existingPath?: string) {
 }
 
 function detectLocation(path: string): SaveLocation | undefined {
-  const cwd = resolve('.');
+  const cwd = resolve('.') + sep;
   if (path.startsWith(cwd)) return 'local';
-  const userDir = join(homedir(), '.config', 'proxitor');
+  const userDir = join(homedir(), '.config', 'proxitor') + sep;
   if (path.startsWith(userDir)) {
     const xdgDir = process.env.XDG_CONFIG_HOME
-      ? join(process.env.XDG_CONFIG_HOME, 'proxitor')
+      ? join(process.env.XDG_CONFIG_HOME, 'proxitor') + sep
       : null;
     if (xdgDir && path.startsWith(xdgDir)) return 'xdg';
     return 'user';

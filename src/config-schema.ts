@@ -111,6 +111,8 @@ export class ConfigParseError extends Error {
 }
 
 export class ConfigValidationError extends Error {
+  readonly zodError: z.ZodError;
+
   constructor(filePath: string, zodError: z.ZodError) {
     const lines = zodError.issues.map(issue => {
       const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
@@ -118,6 +120,7 @@ export class ConfigValidationError extends Error {
     });
     super(`Invalid config in ${filePath}:\n${lines.join('\n')}`);
     this.name = 'ConfigValidationError';
+    this.zodError = zodError;
   }
 }
 

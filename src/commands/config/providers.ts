@@ -159,11 +159,12 @@ async function selectOrderedProviders(
     message: 'Allow fallbacks to other providers?',
     initialValue: true,
   });
+  if (isCancel(allowFallbacks)) return null;
 
   return {
     provider: {
       order: order.length === 1 ? order[0] : order,
-      allowFallbacks: isCancel(allowFallbacks) ? true : (allowFallbacks as boolean),
+      allowFallbacks: allowFallbacks as boolean,
     },
   };
 }

@@ -1,7 +1,13 @@
 import { createServer } from 'node:net';
 import * as clack from '@clack/prompts';
-import { getConfigSearchPaths, readConfigFile, tryFindConfigFile } from '../config.js';
+import {
+  DEFAULTS,
+  getConfigSearchPaths,
+  readConfigFile,
+  tryFindConfigFile,
+} from '../config.js';
 import type { ProxyConfig } from '../config-schema.js';
+import { probeUpstream } from '../openrouter/data-client.js';
 import { version } from '../version.js';
 
 type Status = 'ok' | 'warn' | 'fail' | 'skip';
@@ -118,51 +124,25 @@ async function checkUpstream(
   if (offline) {
     return { name: 'upstream', status: 'skip', reason: 'offline mode' };
   }
-  if (!cfg) {
+  if (!cfg?.openrouterBaseUrl) {
     return { name: 'upstream', status: 'skip', reason: 'no config to read URL from' };
   }
-  const url = `${cfg.openrouterBaseUrl.replace(/\/$/, '')}/v1/models`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (res.status === 401 || res.status === 403) {
-      return {
-        name: 'upstream',
-        status: 'fail',
-        url,
-        httpStatus: res.status,
-        message: 'API key rejected by upstream',
-      };
-    }
-    if (!res.ok) {
-      return {
-        name: 'upstream',
-        status: 'fail',
-        url,
-        httpStatus: res.status,
-        message: `Upstream returned ${res.status}`,
-      };
-    }
-    const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
-    const count = Array.isArray(body?.data) ? body.data.length : 0;
-    return {
-      name: 'upstream',
-      status: 'ok',
-      url,
-      httpStatus: res.status,
-      modelCount: count,
-    };
-  } catch (error) {
-    return {
-      name: 'upstream',
-      status: 'fail',
-      url,
-      message: error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    clearTimeout(timer);
+  const apiKey = process.env.OPENROUTER_API_KEY || cfg.openrouterKey || '';
+  if (!apiKey) {
+    return { name: 'upstream', status: 'skip', reason: 'no API key to test with' };
   }
+
+  const url = `${cfg.openrouterBaseUrl.replace(/\/$/, '')}/v1/models`;
+  const probe = await probeUpstream(
+    cfg.openrouterBaseUrl,
+    apiKey,
+    cfg.authType,
+    timeoutMs,
+  );
+  if (probe.ok) {
+    return { name: 'upstream', status: 'ok', url, modelCount: probe.modelCount };
+  }
+  return { name: 'upstream', status: 'fail', url, message: probe.reason };
 }
 
 async function checkPort(host: string, port: number): Promise<Check> {
@@ -242,7 +222,7 @@ export async function doctorCommand(opts: DoctorOptions = {}): Promise<number> {
   let cfg: ProxyConfig | null = null;
   if (configPath) {
     try {
-      cfg = readConfigFile(configPath) as ProxyConfig;
+      cfg = { ...DEFAULTS, ...readConfigFile(configPath) } as ProxyConfig;
     } catch {
       cfg = null;
     }

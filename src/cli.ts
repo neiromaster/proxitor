@@ -6,7 +6,14 @@ import { runWizard } from './commands/config/wizard.js';
 import { MissingConfigError } from './config-schema.js';
 import { logger } from './logger.js';
 
-loadDotenv({ quiet: true });
+// Skip .env loading for info-only invocations (--help, --version).
+const userArgs = process.argv.slice(2);
+const isInfo =
+  userArgs.includes('--help') ||
+  userArgs.includes('-h') ||
+  userArgs.includes('--version') ||
+  userArgs.includes('-v');
+if (!isInfo) loadDotenv({ quiet: true });
 
 async function handleStartupError(err: Error): Promise<void> {
   if (err instanceof MissingConfigError && process.stdin.isTTY) {
@@ -31,7 +38,6 @@ async function handleStartupError(err: Error): Promise<void> {
 // cmd-ts has no built-in default subcommand, so we prepend "start" when
 // the user gave us only flags (or nothing) so `proxitor --port 9000`
 // behaves like `proxitor start --port 9000`.
-const userArgs = process.argv.slice(2);
 const finalArgv =
   userArgs.length === 0 || userArgs[0]?.startsWith('-')
     ? ['node', 'proxitor', 'start', ...userArgs]

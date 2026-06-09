@@ -5,7 +5,7 @@ import {
   tryFindConfigFile,
 } from '../../config.js';
 
-type ValidateArgs = { json?: boolean | undefined };
+type ValidateArgs = { json?: boolean | undefined; configPath?: string | undefined };
 
 type ValidateResult =
   | { ok: true; configPath: string; keyCount: number; overrideCount: number }
@@ -31,17 +31,10 @@ function validate(configPath: string | null): ValidateResult {
     };
   } catch (error) {
     if (error instanceof ConfigValidationError) {
-      const issues = error.message
-        .split('\n')
-        .filter(line => line.startsWith('  '))
-        .map(line => {
-          const colonIdx = line.indexOf(':');
-          if (colonIdx === -1) return { path: '(unknown)', message: line.trim() };
-          return {
-            path: line.slice(0, colonIdx).trim(),
-            message: line.slice(colonIdx + 1).trim(),
-          };
-        });
+      const issues = error.zodError.issues.map(issue => ({
+        path: issue.path.length > 0 ? issue.path.join('.') : '(root)',
+        message: issue.message,
+      }));
       return { ok: false, configPath, error: error.message, issues };
     }
     return {
@@ -54,7 +47,7 @@ function validate(configPath: string | null): ValidateResult {
 
 /** Run config validation and display results. */
 export async function validateConfigCommand(args: ValidateArgs = {}): Promise<number> {
-  const configPath = tryFindConfigFile();
+  const configPath = tryFindConfigFile(args.configPath);
   const result = validate(configPath);
 
   if (args.json) {

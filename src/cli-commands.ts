@@ -167,9 +167,8 @@ export const configCli = subcommands({
       name: 'remove',
       description: 'Remove one or more model overrides (interactive)',
       args: { ...configArgs },
-      handler: async () => {
-        // override selection happens inside the command
-        await removeOverrideCommand();
+      handler: async args => {
+        await removeOverrideCommand({ configPath: args.configPath });
       },
     }),
     list: command({
@@ -177,7 +176,7 @@ export const configCli = subcommands({
       description: 'List all model overrides',
       args: { ...configArgs, ...jsonFlag },
       handler: async args => {
-        await listOverridesCommand({ json: args.json });
+        await listOverridesCommand({ json: args.json, configPath: args.configPath });
       },
     }),
     browse: command({
@@ -194,7 +193,10 @@ export const configCli = subcommands({
       description: 'Validate the current config (exit 0 ok, 1 invalid)',
       args: { ...configArgs, ...jsonFlag },
       handler: async args => {
-        const code = await validateConfigCommand({ json: args.json });
+        const code = await validateConfigCommand({
+          json: args.json,
+          configPath: args.configPath,
+        });
         if (code !== 0) process.exit(code);
       },
     }),
@@ -255,7 +257,8 @@ export const doctorCli = command({
     }),
   },
   handler: async ({ json, offline, timeout }) => {
-    const timeoutMs = timeout ? Number.parseInt(timeout, 10) : undefined;
+    const parsed = timeout ? Number.parseInt(timeout, 10) : undefined;
+    const timeoutMs = parsed && Number.isFinite(parsed) ? parsed : undefined;
     const code = await doctorCommand({ json, offline, timeoutMs });
     if (code !== 0) process.exit(code);
   },

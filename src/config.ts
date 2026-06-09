@@ -190,8 +190,8 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
   const merged = {
     ...DEFAULTS,
     ...fileConfig,
-    ...(options.host ? { host: options.host } : {}),
-    ...(options.port ? { port: options.port } : {}),
+    ...(options.host !== undefined ? { host: options.host } : {}),
+    ...(options.port !== undefined ? { port: options.port } : {}),
     ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
     ...(options.openrouterKey ? { openrouterKey: options.openrouterKey } : {}),
   };

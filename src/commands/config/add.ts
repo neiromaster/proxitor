@@ -198,60 +198,62 @@ async function confirmAndSave(
   configPath: string,
   modelKey: string,
   override: ModelOverride,
-  client: OpenRouterDataClient,
+  _client: OpenRouterDataClient,
 ): Promise<boolean> {
-  clack.log.info(
-    `Proposed override:\n  ${modelKey}:\n    ${formatOverrideYaml(override)}`,
-  );
-
-  // Dry-run: resolve the override against the model id and show what would
-  // happen. Useful for catching typos in `only` / `order` before persisting.
-  const action = await clack.select({
-    message: 'What next?',
-    options: [
-      { value: 'save', label: 'Save to config' },
-      { value: 'test', label: 'Test (dry-run against this model)' },
-      { value: 'cancel', label: 'Cancel' },
-    ],
-    initialValue: 'save',
-  });
-  if (isCancel(action) || action === 'cancel') {
-    clack.outro('Cancelled');
-    return false;
-  }
-
-  if (action === 'test') {
-    const resolved = resolveModelConfig(
-      // Best-effort: pass a minimal stub config with just the override.
-      // Without the full file, we can't apply global defaults, but for a
-      // dry-run it's enough to show what the override itself produces.
-      {
-        host: '0.0.0.0',
-        port: 0,
-        openrouterKey: '',
-        openrouterBaseUrl: 'https://openrouter.ai/api',
-        authType: 'bearer',
-        verbose: false,
-        bodyLimit: '50mb',
-        attributionReferer: '',
-        attributionTitle: '',
-        cacheControl: 'auto',
-        sessionId: 'auto',
-        modelOverrides: { [modelKey]: override },
-      } as Parameters<typeof resolveModelConfig>[0],
-      modelKey,
+  while (true) {
+    clack.log.info(
+      `Proposed override:\n  ${modelKey}:\n    ${formatOverrideYaml(override)}`,
     );
-    clack.note(
-      `provider: ${JSON.stringify(resolved.provider ?? null)}\n` +
-        `headers: ${JSON.stringify(resolved.headers ?? {})}`,
-      `Dry-run resolve for "${modelKey}"`,
-    );
-    // Re-prompt after the test.
-    return confirmAndSave(configPath, modelKey, override, client);
-  }
 
-  setModelOverride(configPath, modelKey, override);
-  return true;
+    // Dry-run: resolve the override against the model id and show what would
+    // happen. Useful for catching typos in `only` / `order` before persisting.
+    const action = await clack.select({
+      message: 'What next?',
+      options: [
+        { value: 'save', label: 'Save to config' },
+        { value: 'test', label: 'Test (dry-run against this model)' },
+        { value: 'cancel', label: 'Cancel' },
+      ],
+      initialValue: 'save',
+    });
+    if (isCancel(action) || action === 'cancel') {
+      clack.outro('Cancelled');
+      return false;
+    }
+
+    if (action === 'test') {
+      const resolved = resolveModelConfig(
+        // Best-effort: pass a minimal stub config with just the override.
+        // Without the full file, we can't apply global defaults, but for a
+        // dry-run it's enough to show what the override itself produces.
+        {
+          host: '0.0.0.0',
+          port: 0,
+          openrouterKey: '',
+          openrouterBaseUrl: 'https://openrouter.ai/api',
+          authType: 'bearer',
+          verbose: false,
+          bodyLimit: '50mb',
+          attributionReferer: '',
+          attributionTitle: '',
+          cacheControl: 'auto',
+          sessionId: 'auto',
+          modelOverrides: { [modelKey]: override },
+        } as Parameters<typeof resolveModelConfig>[0],
+        modelKey,
+      );
+      clack.note(
+        `provider: ${JSON.stringify(resolved.provider ?? null)}\n` +
+          `headers: ${JSON.stringify(resolved.headers ?? {})}`,
+        `Dry-run resolve for "${modelKey}"`,
+      );
+      // Re-prompt after the test.
+      continue;
+    }
+
+    setModelOverride(configPath, modelKey, override);
+    return true;
+  }
 }
 
 function displayModelInfo(model: OpenRouterModel): void {
