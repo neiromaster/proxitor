@@ -19,3 +19,13 @@ Refactor CLI around `cmd-ts` features and add a `config show` command
 - New `vitest.config.ts` `define` for `__PROXITOR_VERSION__` (required by cmd-ts `--version` circuit breaker).
 - 26 new unit tests + 13 new integration tests covering CLI dispatch, validation, `config show`, `config list --json`, and end-to-end proxy health.
 - `src/cli.ts` is no longer excluded from coverage.
+
+### Wizard UX (Sprint 3)
+
+- **Custom listen address** — the host prompt now offers a "Custom address…" option accepting arbitrary IPs, hostnames, and `unix:/path` sockets.
+- **Upstream probe** — after collecting key, base URL, and auth type, the wizard performs a best-effort `GET /v1/models` (3 s timeout) against the configured upstream. Shows success (model count) or warning (unreachable / key rejected); never blocks the save.
+- **Progress markers** — each step shows `Step N/6` via `clack.log.step` for visual progress.
+- **Pre-filled reconfiguration** — when re-running the wizard with an existing config, all prompts are pre-filled with current values. Press Enter to keep, or type a new value.
+- **`maskKey` export** — now returns `(none)` for empty keys; exported for reuse in other commands.
+- **Reduced complexity** — extracted `collectAnswers` + `expectValue` (cancel-on-null sentinel) to bring `runWizard` cognitive complexity under the lint threshold.
+- 5 unit tests for `maskKey` + 4 integration tests covering happy path, custom host, cancel, and reconfigure scenarios.

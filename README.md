@@ -345,13 +345,14 @@ The wizard asks for:
 
 - **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
 - **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
+- **Listen address** — all interfaces (`0.0.0.0`), localhost only (`127.0.0.1`), or a custom address (IP, hostname, or `unix:/path`)
 - **API base URL** — default `https://openrouter.ai/api`; change for self-hosted or custom endpoints
-- **Data URL** — separate URL for provider/model data fetching; falls back to OpenRouter automatically if the custom API doesn't support these endpoints
 - **Authentication type** — `bearer` (default) or `oauth`; use `oauth` for custom proxy providers that pass tokens in the `Authorization: OAuth ...` header
-- **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)
 - **Save location** — project directory, `~/.config/proxitor/`, or `$XDG_CONFIG_HOME/proxitor/`
 
-If a config already exists, the wizard shows its location and asks whether to reconfigure. Existing `modelOverrides`, `provider`, and other fields are preserved — only the wizard fields are updated.
+After collecting the key, base URL, and auth type, the wizard performs a **best-effort upstream probe** (3 s timeout) to verify connectivity. If the upstream is unreachable or the key is rejected, a warning is shown but the config is still saved — this is informational only.
+
+If a config already exists, the wizard shows its location and asks whether to reconfigure. All fields are **pre-filled** with current values — press Enter to keep, or type a new value. Existing `modelOverrides`, `provider`, and other fields are preserved — only the wizard fields are updated.
 
 ```sh
 proxitor config menu           # interactive menu
