@@ -142,11 +142,16 @@ describe('flags-before-subcommand routing (bugfix #1)', () => {
   });
 
   it('still prepends start when no args are given', async () => {
-    const result = await runCli([]);
     // No config → will fail, but should be a start-command error, not routing.
-    if (result._tag === 'error') {
-      const msg = errorMessage(result.error);
-      expect(msg).not.toContain('Unknown argument');
+    // runSafely may not catch handler errors in all environments (e.g. CI
+    // without OPENROUTER_API_KEY), so handle both caught and thrown cases.
+    try {
+      const result = await runCli([]);
+      if (result._tag === 'error') {
+        expect(errorMessage(result.error)).not.toContain('Unknown argument');
+      }
+    } catch (e: any) {
+      expect(String(e.message ?? e)).not.toContain('Unknown argument');
     }
   });
 });
