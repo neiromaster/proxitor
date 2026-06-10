@@ -76,11 +76,14 @@ async function updateProviderRouting(
 }
 
 /** Run the interactive "Edit model override" flow. */
-export async function editOverrideCommand(client: OpenRouterDataClient): Promise<void> {
+export async function editOverrideCommand(
+  client: OpenRouterDataClient,
+  configPath?: string,
+): Promise<void> {
   clack.intro('Edit Model Override');
 
-  const configPath = requireConfigPath();
-  const overrides = getModelOverrides(configPath);
+  const resolvedConfigPath = requireConfigPath(configPath);
+  const overrides = getModelOverrides(resolvedConfigPath);
   const keys = Object.keys(overrides);
 
   if (keys.length === 0) {
@@ -104,16 +107,7 @@ export async function editOverrideCommand(client: OpenRouterDataClient): Promise
 
   showCurrentConfig(modelKey, current);
 
-  const target = await clack.select({
-    message: 'What to change?',
-    options: [
-      { value: 'provider', label: 'Provider routing' },
-      { value: 'replace', label: 'Replace entirely' },
-    ],
-  });
-  if (isCancel(target)) return;
-
-  if (target === 'provider' || target === 'replace') {
-    await updateProviderRouting(configPath, modelKey, current, client);
-  }
+  // Currently we only support editing provider routing. Future: cacheControl,
+  // sessionId, headers, and "delete this override entirely".
+  await updateProviderRouting(resolvedConfigPath, modelKey, current, client);
 }

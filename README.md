@@ -345,13 +345,14 @@ The wizard asks for:
 
 - **OpenRouter API key** — stored in config or set as `OPENROUTER_API_KEY` env var
 - **Port** — default `8828` (avoids conflicts with common dev servers on 8080)
+- **Listen address** — all interfaces (`0.0.0.0`), localhost only (`127.0.0.1`), or a custom address (IP, hostname, or `unix:/path`)
 - **API base URL** — default `https://openrouter.ai/api`; change for self-hosted or custom endpoints
-- **Data URL** — separate URL for provider/model data fetching; falls back to OpenRouter automatically if the custom API doesn't support these endpoints
 - **Authentication type** — `bearer` (default) or `oauth`; use `oauth` for custom proxy providers that pass tokens in the `Authorization: OAuth ...` header
-- **Host** — all interfaces (`0.0.0.0`) or localhost only (`127.0.0.1`)
 - **Save location** — project directory, `~/.config/proxitor/`, or `$XDG_CONFIG_HOME/proxitor/`
 
-If a config already exists, the wizard shows its location and asks whether to reconfigure. Existing `modelOverrides`, `provider`, and other fields are preserved — only the wizard fields are updated.
+After collecting the key, base URL, and auth type, the wizard performs a **best-effort upstream probe** (3 s timeout) to verify connectivity. If the upstream is unreachable or the key is rejected, a warning is shown but the config is still saved — this is informational only.
+
+If a config already exists, the wizard shows its location and asks whether to reconfigure. All fields are **pre-filled** with current values — press Enter to keep, or type a new value. Existing `modelOverrides`, `provider`, and other fields are preserved — only the wizard fields are updated.
 
 ```sh
 proxitor config menu           # interactive menu
@@ -359,9 +360,16 @@ proxitor config add            # add a model override
 proxitor config edit           # edit existing override
 proxitor config remove         # remove override(s)
 proxitor config list           # show current overrides
+proxitor config list --json    # overrides as JSON
+proxitor config show           # print the resolved config (merged)
+proxitor config show --json    # same, machine-readable
 proxitor config browse         # explore models with pricing info
 proxitor config wizard         # interactive setup wizard
-proxitor config validate       # validate config file
+proxitor config validate       # validate config file (exit 0 ok, 1 invalid)
+proxitor config validate --json  # structured JSON result
+proxitor doctor                # diagnose environment + network + port + version
+proxitor doctor --json         # machine-readable diagnostic report
+proxitor doctor --offline      # skip network checks
 ```
 
 ### Add override walkthrough
@@ -426,18 +434,91 @@ The interface uses live data from the OpenRouter API — model search with type-
 
 ---
 
+## Diagnostics
+
+When something doesn't work, `proxitor doctor` runs a battery of checks and prints a report. Sections cover:
+
+- **Environment** — Node version, platform, TTY
+- **Config** — discovery path, validity, override count
+- **API key** — resolution (env vs. file; never prints the key)
+- **Network** — upstream reachability (with configurable timeout)
+- **Port** — availability of the configured port
+- **Version** — installed version
+
+Statuses: `✓ ok` / `⚠ warn` / `✗ fail` / `ⓘ skip`. Exit code is `0` when no `fail`, `1` otherwise — scriptable from CI.
+
+```sh
+$ proxitor doctor
+
+▲ Proxitor Doctor
+│
+◇ Environment
+│  ✓ node-version — v22.4.1
+│  ✓ platform — darwin arm64
+│  ✓ tty — true
+│
+◇ Config
+│  ✓ config-found — /Users/u/proj/proxitor.config.yaml
+│  ✓ config-valid — 12 keys, 3 override(s)
+│
+◇ API key
+│  ✓ api-key — set (env: set, file: set)
+│
+◇ Network
+│  ✓ upstream — https://openrouter.ai/api — 200, 342 models
+│
+◇ Port
+│  ✓ port-8828 — 127.0.0.1:8828
+│
+◇ Version
+│  ✓ version — 0.9.0-beta.1
+
+└ Done. All checks passed.
+```
+
+Useful flags:
+
+```sh
+proxitor doctor --json         # structured JSON for CI / scripts
+proxitor doctor --offline      # skip network checks (no upstream, no npm)
+proxitor doctor --timeout 5000 # custom per-check network timeout (ms)
+```
+
+---
+
 ## CLI Options
+
+```sh
+proxitor                        # start the proxy (default command)
+proxitor start                  # same as above
+proxitor up                     # alias for start
+proxitor run                    # alias for start
+proxitor --port 9000            # override port
+proxitor ./team.yaml            # use an explicit config
+proxitor config show            # print the resolved config
+proxitor config show --json     # machine-readable config
+proxitor config list --json     # overrides as JSON
+proxitor config wizard          # interactive setup
+proxitor config validate        # check the current config (exit 0/1)
+proxitor config validate --json # structured JSON result
+proxitor doctor                 # diagnose environment, network, port, version
+proxitor doctor --offline       # skip network checks
+proxitor --help                 # full help
+proxitor --version              # print version
+```
 
 | Flag | Default | Description |
 |---|---|---|
-| `-p, --port <port>` | `8828` | Server port |
+| `-p, --port <port>` | `8828` | Server port (validated: 1-65535) |
 | `-h, --host <host>` | `0.0.0.0` | Server host |
-| `-c, --config <path>` | auto-discovered | Path to config file |
-| `--openrouter-key <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
+| `-c, --config <path>` | auto-discovered | Path to config file (positional `[config-path]` also accepted) |
+| `--openrouter-key <key>` / `-k <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
 | `--verbose` | `false` | Enable verbose logging |
 | `--no-config` | | Skip config file discovery |
 | `-v, --version` | | Print version |
 | `--help` | | Print help |
+
+Subcommands live under `proxitor config <subcommand>`. Run `proxitor config --help` for the full list, or see [Interactive Config Manager](#interactive-config-manager) for the walkthroughs.
 
 ---
 

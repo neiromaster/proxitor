@@ -1,4 +1,5 @@
 import * as clack from '@clack/prompts';
+import { isCancel } from '@clack/prompts';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js';
 import { parseModelAuthor, parseModelSlug } from '../../openrouter/models.js';
@@ -66,8 +67,6 @@ export async function fetchProvidersForModel(
   return fetchEndpointsForModel(client, modelKey);
 }
 
-const DONE_OPTION = '__done__';
-
 export async function selectRoutingMode(message: string): Promise<string | symbol> {
   return clack.select({
     message,
@@ -111,35 +110,64 @@ async function selectOnlyProviders(
 async function selectOrderedProviders(
   providerOptions: Array<{ value: string; label: string; hint?: string }>,
 ): Promise<Record<string, unknown> | null> {
-  const order: string[] = [];
+  // Step 1: pick the set of providers that may serve this model.
+  const picked = await clack.multiselect({
+    message: 'Select providers to try (in any order)',
+    options: providerOptions,
+    required: true,
+  });
+  if (clack.isCancel(picked)) return null;
+  const candidates = picked as string[];
 
-  for (let i = 1; ; i++) {
-    const remaining = providerOptions.filter(p => !order.includes(p.value));
-    if (remaining.length === 0) break;
-
-    const pick = await clack.select({
-      message: `Select provider #${i} (or cancel to finish)`,
-      options: [...remaining, { value: DONE_OPTION, label: '✓ Done' }],
+  // Step 2: assign a priority to each. Lower number = tried first.
+  // We use plain text input so the user can re-run and adjust any time,
+  // instead of being locked into the order they added items in step 1.
+  const priorityByValue = new Map<string, number>();
+  for (let i = 0; i < candidates.length; i++) {
+    const value = candidates[i];
+    const opt = providerOptions.find(p => p.value === value);
+    const label = opt?.label ?? value;
+    const initial = String(i + 1);
+    const ans = await clack.text({
+      message: `Priority for "${label}" (1 = first, 2 = second, ...)`,
+      placeholder: initial,
+      initialValue: initial,
+      validate: v => {
+        if (!v?.trim()) return 'Priority is required';
+        const n = Number.parseInt(v, 10);
+        if (Number.isNaN(n) || n < 1) return 'Must be a positive integer';
+        return undefined;
+      },
     });
-
-    if (clack.isCancel(pick) || pick === DONE_OPTION) break;
-    order.push(pick as string);
+    if (isCancel(ans)) return null;
+    const ansStr = ans ?? '';
+    // candidates[i] is string|undefined under noUncheckedIndexedAccess; narrow here.
+    if (value === undefined) continue;
+    priorityByValue.set(value, Number.parseInt(ansStr, 10));
   }
 
-  if (order.length === 0) {
-    clack.log.warn('No providers selected');
-    return null;
-  }
+  // Sort by priority, then by the original selection order to break ties
+  // (so the first pick with priority=1 wins over the second with priority=1).
+  const order = [...candidates].sort((a, b) => {
+    const pa = priorityByValue.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const pb = priorityByValue.get(b) ?? Number.MAX_SAFE_INTEGER;
+    if (pa !== pb) return pa - pb;
+    return candidates.indexOf(a) - candidates.indexOf(b);
+  });
 
   const allowFallbacks = await clack.confirm({
     message: 'Allow fallbacks to other providers?',
     initialValue: true,
   });
+  // Accept the default on cancel — the user already chose providers and
+  // this confirm has an explicit default intent (true). Canceling a confirm
+  // with initialValue ≠ canceling a text/select with no sensible default.
+  const fallbacksEnabled = isCancel(allowFallbacks) ? true : (allowFallbacks as boolean);
 
   return {
     provider: {
       order: order.length === 1 ? order[0] : order,
-      allowFallbacks: clack.isCancel(allowFallbacks) ? true : (allowFallbacks as boolean),
+      allowFallbacks: fallbacksEnabled,
     },
   };
 }

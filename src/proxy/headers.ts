@@ -15,8 +15,6 @@ export const STRIP_REQUEST = new Set([
   'x-api-key',
   'host',
   'content-length',
-  'x-claude-code-session-id',
-  'x-session-id',
 ]);
 
 /** Headers to strip from upstream response before forwarding */

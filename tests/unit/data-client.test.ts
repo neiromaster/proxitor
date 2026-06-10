@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { OpenRouterDataClient } from '../../src/openrouter/data-client.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  clearModelsCache,
+  OpenRouterDataClient,
+} from '../../src/openrouter/data-client.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,6 +91,12 @@ const { OpenRouterClientError } = await import('../../src/openrouter/client.js')
 // ---------------------------------------------------------------------------
 
 describe('OpenRouterDataClient', () => {
+  beforeEach(() => {
+    // Each test should hit the network. The TTL cache would otherwise
+    // return stale data when the same URL appears across tests.
+    clearModelsCache();
+  });
+
   describe('constructor', () => {
     it('uses openrouterBaseUrl as primary when openrouterDataUrl is not set', () => {
       const client = new OpenRouterDataClient(makeConfig());
@@ -158,6 +167,79 @@ describe('OpenRouterDataClient', () => {
       expect(endpoints).toEqual([
         { model_name: 'gpt-4o', name: 'OpenAI', tag: 'openai' },
       ]);
+    });
+  });
+
+  describe('fetchModels cache', () => {
+    it('caches the result and does not call the network on the second call', async () => {
+      const fetchSpy = vi.fn();
+      setMockClients(
+        async () => {
+          fetchSpy();
+          return validModelsResponse();
+        },
+        async () => validModelsResponse(),
+      );
+      const client = new OpenRouterDataClient(makeConfig());
+      await client.fetchModels();
+      await client.fetchModels();
+      await client.fetchModels();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('cache key includes the upstream URL', async () => {
+      const primarySpy = vi.fn();
+      setMockClients(
+        async () => {
+          primarySpy();
+          return validModelsResponse();
+        },
+        async () => validModelsResponse(),
+      );
+      const a = new OpenRouterDataClient({
+        ...makeConfig(),
+        openrouterBaseUrl: 'https://primary-a.example/api',
+      });
+      const b = new OpenRouterDataClient({
+        ...makeConfig(),
+        openrouterBaseUrl: 'https://primary-b.example/api',
+      });
+      await a.fetchModels();
+      await b.fetchModels();
+      expect(primarySpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts expired entries on read (bugfix #10)', async () => {
+      // Verify that expired cache entries are removed from the Map when detected.
+      // This prevents unbounded memory growth in long-running contexts.
+      const { clearModelsCache } = await import('../../src/openrouter/data-client.js');
+      clearModelsCache();
+
+      // Use vi.useFakeTimers to control time progression
+      vi.useFakeTimers();
+
+      const fetchSpy = vi.fn();
+      setMockClients(
+        async () => {
+          fetchSpy();
+          return validModelsResponse();
+        },
+        async () => validModelsResponse(),
+      );
+      const client = new OpenRouterDataClient(makeConfig());
+
+      // First call populates the cache
+      await client.fetchModels();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      // Advance past TTL (5 minutes)
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+
+      // Second call should detect expiry, evict the stale entry, and refetch
+      await client.fetchModels();
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
     });
   });
 

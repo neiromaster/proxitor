@@ -1,5 +1,7 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
+import { matchesPattern, resolveModelConfig } from '../../config.js';
+import { DEFAULTS, type ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { fetchModels, formatPrice } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
@@ -16,46 +18,65 @@ import {
   selectRoutingMode,
 } from './providers.js';
 
-const CUSTOM_PATTERN = '__custom_pattern__';
+// Sentinel value for the "enter custom pattern" option in autocomplete. Uses
+// a string because @clack/prompts' autocomplete `value` field is typed `string`.
+// Picked to be unguessable as a real model id (real ids use `/` separators).
+const CUSTOM_PATTERN_VALUE = '__proxitor_custom_pattern__';
+
+type AddOptions = {
+  client: OpenRouterDataClient;
+  configPath?: string | undefined;
+  presetModelId?: string | undefined;
+};
 
 /** Run the interactive "Add model override" flow. */
-export async function addOverrideCommand(client: OpenRouterDataClient): Promise<void> {
+export async function addOverrideCommand(opts: AddOptions): Promise<void> {
   clack.intro('Add Model Override');
+  const { client, presetModelId } = opts;
 
-  const configPath = requireConfigPath();
+  const configPath = requireConfigPath(opts.configPath);
+  const existing = getModelOverrides(configPath);
 
   const models = await loadModelsWithSpinner(client);
   if (!models) return;
 
-  const modelId = await searchModel(models);
-  if (!modelId) return;
-
-  if (typeof modelId !== 'string') return;
-
-  if (modelId === CUSTOM_PATTERN) {
-    const pattern = await enterPattern(models);
-    if (!pattern) return;
-
-    const existing = getModelOverrides(configPath);
-    if (existing[pattern]) {
-      clack.log.warn(`Override for "${pattern}" already exists. Use Edit instead.`);
-      return;
+  // If a preset was passed in (e.g. from `browse`), skip search.
+  let modelId: string | null = presetModelId ?? null;
+  if (modelId === null) {
+    const picked = await searchModel(models);
+    if (!picked) return;
+    if (picked === CUSTOM_PATTERN_VALUE) {
+      const pattern = await enterPattern(models);
+      if (!pattern) return;
+      modelId = pattern;
+    } else {
+      modelId = picked;
     }
-
-    await configureProviderAndSave(configPath, client, pattern, true);
-    return;
   }
 
-  const selected = models.find(m => m.id === modelId);
-  if (selected) displayModelInfo(selected);
-
-  const existing = getModelOverrides(configPath);
+  // Pre-check duplicate — done BEFORE asking about routing so the user
+  // doesn't waste time configuring providers for a key that's already set.
   if (existing[modelId]) {
-    clack.log.warn(`Override for "${modelId}" already exists. Use Edit instead.`);
+    clack.log.warn(
+      `Override for "${modelId}" already exists. Use \`proxitor config edit\` to change it.`,
+    );
+    clack.outro('No changes written.');
     return;
   }
 
-  await configureProviderAndSave(configPath, client, modelId, false);
+  // If the user typed a free-form model id (not from the list), show what
+  // we know about it from the loaded data; otherwise show the picked model.
+  if (presetModelId === undefined) {
+    const selected = models.find(m => m.id === modelId);
+    if (selected) displayModelInfo(selected);
+  }
+
+  await configureProviderAndSave(
+    configPath,
+    client,
+    modelId,
+    /* isPattern */ modelId.includes('*'),
+  );
 }
 
 async function loadModelsWithSpinner(
@@ -74,7 +95,7 @@ async function loadModelsWithSpinner(
   }
 }
 
-async function searchModel(models: OpenRouterModel[]): Promise<string | symbol | null> {
+async function searchModel(models: OpenRouterModel[]): Promise<string | null> {
   const result = await clack.autocomplete({
     message: 'Search for a model',
     placeholder: 'Type to search (e.g. "claude", "gpt-4o", "qwen")',
@@ -85,7 +106,7 @@ async function searchModel(models: OpenRouterModel[]): Promise<string | symbol |
       if (!query) {
         return [
           {
-            value: CUSTOM_PATTERN,
+            value: CUSTOM_PATTERN_VALUE,
             label: '✏️  Enter custom pattern (e.g. "claude-*")',
           },
         ];
@@ -105,10 +126,13 @@ async function searchModel(models: OpenRouterModel[]): Promise<string | symbol |
 
       return [
         ...filtered,
-        { value: CUSTOM_PATTERN, label: '✏️  Enter custom pattern (e.g. "claude-*")' },
+        {
+          value: CUSTOM_PATTERN_VALUE,
+          label: '✏️  Enter custom pattern (e.g. "claude-*")',
+        },
       ];
     },
-    filter: (_search: string, _option: { value: string }) => true,
+    filter: () => true,
   });
 
   if (isCancel(result)) return null;
@@ -128,9 +152,9 @@ async function enterPattern(models: OpenRouterModel[]): Promise<string | null> {
   if (isCancel(pattern)) return null;
 
   const pat = (pattern as string).trim();
-  const matches = countPatternMatches(pat, models);
-  if (matches > 0) {
-    clack.log.info(`Pattern "${pat}" matches ${matches} model(s)`);
+  const matchCount = models.filter(m => matchesPattern(pat, m.id)).length;
+  if (matchCount > 0) {
+    clack.log.info(`Pattern "${pat}" matches ${matchCount} model(s)`);
   } else {
     clack.log.warn(
       `Pattern "${pat}" does not match any current models — it will still be saved`,
@@ -150,8 +174,9 @@ async function configureProviderAndSave(
   if (isCancel(mode)) return;
 
   if (mode === 'skip') {
-    setModelOverride(configPath, modelKey, {});
-    clack.outro('Done — override saved without provider routing');
+    const empty: ModelOverride = {};
+    if (!(await confirmAndSave(configPath, modelKey, empty, client))) return;
+    clack.outro('✓ Override saved (no provider routing)');
     return;
   }
 
@@ -161,18 +186,61 @@ async function configureProviderAndSave(
   const override = await selectProvidersByMode(mode as string, providerOptions);
   if (!override) return;
 
-  clack.log.info(
-    `Proposed override:\n  ${modelKey}:\n    ${formatOverrideYaml(override)}`,
-  );
-
-  const save = await clack.confirm({ message: 'Save to config?' });
-  if (isCancel(save) || !save) {
-    clack.outro('Cancelled');
+  if (!(await confirmAndSave(configPath, modelKey, override as ModelOverride, client)))
     return;
-  }
-
-  setModelOverride(configPath, modelKey, override);
   clack.outro('✓ Model override saved');
+}
+
+/**
+ * Show the proposed override and let the user Save / Test (dry-run) / Cancel.
+ * Returns true if the override was saved.
+ */
+async function confirmAndSave(
+  configPath: string,
+  modelKey: string,
+  override: ModelOverride,
+  _client: OpenRouterDataClient,
+): Promise<boolean> {
+  while (true) {
+    clack.log.info(
+      `Proposed override:\n  ${modelKey}:\n    ${formatOverrideYaml(override)}`,
+    );
+
+    // Dry-run: resolve the override against the model id and show what would
+    // happen. Useful for catching typos in `only` / `order` before persisting.
+    const action = await clack.select({
+      message: 'What next?',
+      options: [
+        { value: 'save', label: 'Save to config' },
+        { value: 'test', label: 'Test (dry-run against this model)' },
+        { value: 'cancel', label: 'Cancel' },
+      ],
+      initialValue: 'save',
+    });
+    if (isCancel(action) || action === 'cancel') {
+      clack.outro('Cancelled');
+      return false;
+    }
+
+    if (action === 'test') {
+      const resolved = resolveModelConfig(
+        // Spread DEFAULTS so the stub stays in sync with the schema — no
+        // hand-typed fields that drift when new required keys are added.
+        { ...DEFAULTS, modelOverrides: { [modelKey]: override } },
+        modelKey,
+      );
+      clack.note(
+        `provider: ${JSON.stringify(resolved.provider ?? null)}\n` +
+          `headers: ${JSON.stringify(resolved.headers ?? {})}`,
+        `Dry-run resolve for "${modelKey}"`,
+      );
+      // Re-prompt after the test.
+      continue;
+    }
+
+    setModelOverride(configPath, modelKey, override);
+    return true;
+  }
 }
 
 function displayModelInfo(model: OpenRouterModel): void {
@@ -195,14 +263,6 @@ function displayModelInfo(model: OpenRouterModel): void {
   if (model.architecture?.modality) {
     clack.log.info(`  Modality: ${model.architecture.modality}`);
   }
-}
-
-function countPatternMatches(pattern: string, models: OpenRouterModel[]): number {
-  if (pattern.endsWith('*')) {
-    const prefix = pattern.slice(0, -1);
-    return models.filter(m => m.id.startsWith(prefix)).length;
-  }
-  return models.filter(m => m.id === pattern).length;
 }
 
 function formatOverrideYaml(override: Record<string, unknown>): string {

@@ -111,6 +111,8 @@ export class ConfigParseError extends Error {
 }
 
 export class ConfigValidationError extends Error {
+  readonly zodError: z.ZodError;
+
   constructor(filePath: string, zodError: z.ZodError) {
     const lines = zodError.issues.map(issue => {
       const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
@@ -118,5 +120,24 @@ export class ConfigValidationError extends Error {
     });
     super(`Invalid config in ${filePath}:\n${lines.join('\n')}`);
     this.name = 'ConfigValidationError';
+    this.zodError = zodError;
+  }
+}
+
+/**
+ * Thrown when no config file is found via discovery and no explicit path was given.
+ * Callers can `instanceof` this to surface a "create one?" prompt.
+ */
+export class MissingConfigError extends Error {
+  readonly searchedPaths: readonly string[];
+
+  constructor(searchedPaths: readonly string[]) {
+    super(
+      `No proxitor config file found.\n` +
+        `Searched:\n${searchedPaths.map(p => `  - ${p}`).join('\n')}\n\n` +
+        `Run \`proxitor config wizard\` to create one, or pass a config path explicitly.`,
+    );
+    this.name = 'MissingConfigError';
+    this.searchedPaths = searchedPaths;
   }
 }

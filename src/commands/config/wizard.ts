@@ -1,22 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { parseDocument, stringify } from 'yaml';
 import {
   type AuthType,
   DEFAULTS,
-  findConfigFile,
   getXdgConfigDir,
   readConfigFile,
+  tryFindConfigFile,
 } from '../../config.js';
+import { probeUpstream } from '../../openrouter/data-client.js';
 
 type SaveLocation = 'local' | 'user' | 'xdg';
 
-function maskKey(key: string): string {
+export function maskKey(key: string): string {
+  if (!key) return '(none)';
   if (key.length <= 11) return '****';
-  return `${key.slice(0, 7)}...${key.slice(-4)}`;
+  return `${key.slice(0, 7)}…${key.slice(-4)}`;
 }
 
 function resolveSavePath(location: SaveLocation): string {
@@ -48,12 +50,12 @@ function getSaveLocationOptions(_existingPath?: string) {
 }
 
 function detectLocation(path: string): SaveLocation | undefined {
-  const cwd = resolve('.');
+  const cwd = resolve('.') + sep;
   if (path.startsWith(cwd)) return 'local';
-  const userDir = join(homedir(), '.config', 'proxitor');
+  const userDir = join(homedir(), '.config', 'proxitor') + sep;
   if (path.startsWith(userDir)) {
     const xdgDir = process.env.XDG_CONFIG_HOME
-      ? join(process.env.XDG_CONFIG_HOME, 'proxitor')
+      ? join(process.env.XDG_CONFIG_HOME, 'proxitor') + sep
       : null;
     if (xdgDir && path.startsWith(xdgDir)) return 'xdg';
     return 'user';
@@ -103,10 +105,9 @@ async function askApiKey(currentKey: string): Promise<string | null> {
   }
   const apiKey = await clack.text({
     message: 'OpenRouter API key',
-    placeholder: 'sk-or-v1-...',
-    initialValue: currentKey,
+    placeholder: currentKey ? 'Press Enter to keep current key' : 'sk-or-v1-...',
     validate: v => {
-      if (!v?.trim()) return 'API key is required';
+      if (!v?.trim() && !currentKey) return 'API key is required';
       return undefined;
     },
   });
@@ -116,7 +117,9 @@ async function askApiKey(currentKey: string): Promise<string | null> {
     'You can also set the OPENROUTER_API_KEY environment variable\nto avoid storing the key in the config file.',
     'Tip',
   );
-  return apiKey as string;
+
+  const value = (apiKey as string).trim();
+  return value || currentKey;
 }
 
 async function askPort(current: number): Promise<number | null> {
@@ -170,15 +173,38 @@ async function askAuthType(current: string): Promise<string | null> {
 }
 
 async function askHost(current: string): Promise<string | null> {
+  const isPreset = (v: string) => v === '0.0.0.0' || v === '127.0.0.1';
   const host = await clack.select({
     message: 'Listen address',
-    initialValue: current as '0.0.0.0' | '127.0.0.1',
+    initialValue: isPreset(current) ? (current as '0.0.0.0' | '127.0.0.1') : '__custom__',
     options: [
       { value: '0.0.0.0', label: 'All interfaces (0.0.0.0)', hint: 'Default' },
       { value: '127.0.0.1', label: 'Localhost only (127.0.0.1)', hint: 'More secure' },
+      {
+        value: '__custom__',
+        label: 'Custom address…',
+        hint: 'Specific IP, hostname, or unix:/path',
+      },
     ],
   });
   if (isCancel(host)) return null;
+  if (host === '__custom__') {
+    const custom = await clack.text({
+      message: 'Custom listen address',
+      placeholder: '192.168.1.1',
+      initialValue: isPreset(current) ? '' : current,
+      validate: v => {
+        const t = v?.trim();
+        if (!t) return 'Address is required';
+        if (t.startsWith('unix:')) return undefined;
+        if (!/^[\w.\-:]+$/.test(t))
+          return 'Invalid host (allowed: IP, hostname, or unix:…)';
+        return undefined;
+      },
+    });
+    if (isCancel(custom)) return null;
+    return (custom as string).trim();
+  }
   return host as string;
 }
 
@@ -218,27 +244,74 @@ function loadExistingConfig(path: string): ExistingConfigState {
       authType: fileConfig.authType ?? DEFAULTS.authType,
     };
   } catch {
-    return {
-      raw: undefined,
-      port: DEFAULTS.port,
-      host: DEFAULTS.host,
-      apiKey: DEFAULTS.openrouterKey,
-      baseUrl: DEFAULTS.openrouterBaseUrl,
-      authType: DEFAULTS.authType,
-    };
+    return loadDefaultState();
   }
 }
 
-export async function runWizard(): Promise<void> {
+function loadDefaultState(): ExistingConfigState {
+  return {
+    raw: undefined,
+    port: DEFAULTS.port,
+    host: DEFAULTS.host,
+    apiKey: DEFAULTS.openrouterKey,
+    baseUrl: DEFAULTS.openrouterBaseUrl,
+    authType: DEFAULTS.authType,
+  };
+}
+
+class WizardCancelled extends Error {}
+
+function expectValue<T>(value: T | null, label = 'Cancelled'): T {
+  if (value === null) throw new WizardCancelled(label);
+  return value;
+}
+
+const TOTAL_STEPS = 6;
+
+async function collectAnswers(current: ExistingConfigState): Promise<{
+  apiKey: string;
+  port: number;
+  host: string;
+  baseUrl: string;
+  authType: string;
+}> {
+  clack.log.step(`Step 1/${TOTAL_STEPS}: API key`);
+  const apiKey = expectValue(await askApiKey(current.apiKey));
+
+  clack.log.step(`Step 2/${TOTAL_STEPS}: Proxy port`);
+  const port = expectValue(await askPort(current.port));
+
+  clack.log.step(`Step 3/${TOTAL_STEPS}: Listen address`);
+  const host = expectValue(await askHost(current.host));
+
+  clack.log.step(`Step 4/${TOTAL_STEPS}: Base URL`);
+  const baseUrl = expectValue(await askBaseUrl(current.baseUrl));
+
+  clack.log.step(`Step 5/${TOTAL_STEPS}: Authentication type`);
+  const authType = expectValue(await askAuthType(current.authType));
+
+  // Best-effort upstream probe — non-blocking
+  if (apiKey) {
+    clack.log.step('Testing upstream connection…');
+    const probe = await probeUpstream(baseUrl, apiKey, authType as AuthType);
+    if (probe.ok) {
+      clack.log.success(`Upstream reachable (${probe.modelCount} models)`);
+    } else {
+      clack.log.warn(
+        `Upstream unreachable: ${probe.reason} — config will still be saved.`,
+      );
+    }
+  }
+
+  return { apiKey, port, host, baseUrl, authType };
+}
+
+export async function runWizard(opts: { configPath?: string } = {}): Promise<void> {
   clack.intro('Proxitor Setup Wizard');
 
-  const existingPath = findConfigFile();
+  const existingPath = tryFindConfigFile(opts.configPath);
   let existingRaw: string | undefined;
-  let currentPort = DEFAULTS.port;
-  let currentHost = DEFAULTS.host;
-  let currentKey = DEFAULTS.openrouterKey;
-  let currentBaseUrl = DEFAULTS.openrouterBaseUrl;
-  let currentAuthType = DEFAULTS.authType;
+  let current = loadDefaultState();
 
   if (existingPath) {
     clack.note(existingPath, 'Existing config found');
@@ -254,67 +327,47 @@ export async function runWizard(): Promise<void> {
 
     const existing = loadExistingConfig(existingPath);
     existingRaw = existing.raw;
-    currentPort = existing.port;
-    currentHost = existing.host;
-    currentKey = existing.apiKey;
-    currentBaseUrl = existing.baseUrl;
-    currentAuthType = existing.authType;
+    current = existing;
   }
 
-  const apiKey = await askApiKey(currentKey);
-  if (apiKey === null) {
-    clack.outro('Cancelled');
-    return;
+  try {
+    const answers = await collectAnswers(current);
+
+    clack.log.step(`Step ${TOTAL_STEPS}/${TOTAL_STEPS}: Save location`);
+    const location = expectValue(await askSaveLocation(existingPath ?? opts.configPath));
+
+    const yaml = buildYaml(
+      answers.apiKey,
+      answers.port,
+      answers.host,
+      answers.baseUrl,
+      answers.authType,
+      existingRaw,
+    );
+    clack.note(yaml, 'Preview');
+
+    const save = await clack.confirm({
+      message: 'Save this configuration?',
+      initialValue: true,
+    });
+    if (isCancel(save) || !save) {
+      clack.outro('Cancelled — no files written');
+      return;
+    }
+
+    const savePath = resolveSavePath(location);
+    const dir = dirname(savePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(savePath, yaml, 'utf-8');
+
+    clack.outro(`Config saved to ${savePath}`);
+  } catch (e) {
+    if (e instanceof WizardCancelled) {
+      clack.outro('Cancelled');
+      return;
+    }
+    throw e;
   }
-
-  const port = await askPort(currentPort);
-  if (port === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const baseUrl = await askBaseUrl(currentBaseUrl);
-  if (baseUrl === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const authType = await askAuthType(currentAuthType);
-  if (authType === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const host = await askHost(currentHost);
-  if (host === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const location = await askSaveLocation(existingPath ?? undefined);
-  if (location === null) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  const yaml = buildYaml(apiKey, port, host, baseUrl, authType, existingRaw);
-  clack.note(yaml, 'Preview');
-
-  const save = await clack.confirm({
-    message: 'Save this configuration?',
-    initialValue: true,
-  });
-  if (isCancel(save) || !save) {
-    clack.outro('Cancelled — no files written');
-    return;
-  }
-
-  const savePath = resolveSavePath(location);
-  const dir = dirname(savePath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(savePath, yaml, 'utf-8');
-
-  clack.outro(`Config saved to ${savePath}`);
 }

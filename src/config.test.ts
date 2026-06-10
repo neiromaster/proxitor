@@ -1,21 +1,26 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildProviderRouting,
   ConfigParseError,
   ConfigValidationError,
+  findConfigFile,
+  getConfigSearchPaths,
   loadConfig,
+  MissingConfigError,
   matchScore,
   type ProxyConfig,
   resolveModelConfig,
+  tryFindConfigFile,
 } from './config.js';
 import { proxyConfigFileSchema } from './config-schema.js';
 
 describe('loadConfig', () => {
   it('should use defaults when no config provided', async () => {
     const config = await loadConfig({
+      noConfig: true,
       openrouterKey: 'test-key',
     });
     expect(config.host).toBe('0.0.0.0');
@@ -41,6 +46,121 @@ describe('loadConfig', () => {
     await expect(loadConfig({ noConfig: true })).rejects.toThrow(
       'OpenRouter API key is required',
     );
+  });
+
+  it('should use defaults when no config file exists and openrouterKey is provided (bugfix #2)', async () => {
+    // loadConfig uses tryFindConfigFile now (not findConfigFile), so it returns
+    // defaults when no config file is found — instead of throwing MissingConfigError.
+    // This allows config-less commands like `browse --openrouter-key sk-xxx` to work.
+    delete process.env.OPENROUTER_API_KEY;
+    const savedCwd = process.cwd();
+    const tmpDir = mkdtempSync(join(tmpdir(), 'proxitor-noconfig-'));
+    process.chdir(tmpDir);
+    try {
+      const config = await loadConfig({ openrouterKey: 'test-key-from-flag' });
+      expect(config.openrouterKey).toBe('test-key-from-flag');
+      expect(config.port).toBe(8828);
+      expect(config.host).toBe('0.0.0.0');
+    } finally {
+      process.chdir(savedCwd);
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('config file discovery', () => {
+  const envBackup = { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
+  const cwd = process.cwd();
+
+  beforeEach(() => {
+    // Hide the real repo config from discovery
+    process.chdir(tmpdir());
+  });
+
+  afterEach(() => {
+    process.chdir(cwd);
+    if (envBackup.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = envBackup.XDG_CONFIG_HOME;
+    }
+  });
+
+  describe('tryFindConfigFile', () => {
+    it('returns null when no config exists and no explicit path', () => {
+      expect(tryFindConfigFile()).toBeNull();
+    });
+
+    it('returns the explicit path when it exists', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+      const configPath = join(dir, 'my-config.yaml');
+      writeFileSync(configPath, 'port: 9090');
+      try {
+        expect(tryFindConfigFile(configPath)).toBe(configPath);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('throws a clear error when explicit path is missing', () => {
+      expect(() => tryFindConfigFile('/nonexistent/config.yaml')).toThrow(
+        'Config file not found',
+      );
+    });
+
+    it('finds a local config file in cwd', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+      const configPath = join(dir, 'proxitor.config.yaml');
+      writeFileSync(configPath, 'port: 9090');
+      // On macOS, /tmp and /var/folders/... resolve through /private. Use realpath
+      // so the assertion survives the symlink resolution that process.cwd applies.
+      process.chdir(dir);
+      try {
+        const found = tryFindConfigFile();
+        expect(found).toBe(realpathSync(configPath));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('findConfigFile', () => {
+    it('throws MissingConfigError when discovery fails', () => {
+      try {
+        findConfigFile();
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MissingConfigError);
+        expect((err as MissingConfigError).searchedPaths.length).toBeGreaterThan(0);
+        expect((err as Error).message).toContain('No proxitor config file found');
+      }
+    });
+
+    it('delegates to tryFindConfigFile when explicit path is given', () => {
+      expect(() => findConfigFile('/nonexistent/config.yaml')).toThrow(
+        'Config file not found',
+      );
+    });
+  });
+
+  describe('getConfigSearchPaths', () => {
+    it('returns an absolute path for every candidate', () => {
+      const paths = getConfigSearchPaths();
+      expect(paths.length).toBeGreaterThan(0);
+      for (const p of paths) {
+        expect(p.startsWith('/')).toBe(true);
+      }
+    });
+  });
+
+  describe('MissingConfigError', () => {
+    it('includes every searched path in the message', () => {
+      const err = new MissingConfigError(['/a', '/b']);
+      expect(err.name).toBe('MissingConfigError');
+      expect(err.message).toContain('/a');
+      expect(err.message).toContain('/b');
+      expect(err.message).toContain('proxitor config wizard');
+    });
   });
 });
 

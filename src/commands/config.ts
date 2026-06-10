@@ -32,7 +32,7 @@ export async function runConfigMenu(client: OpenRouterDataClient): Promise<void>
 
   switch (action) {
     case 'add':
-      await addOverrideCommand(client);
+      await addOverrideCommand({ client });
       break;
     case 'edit':
       await editOverrideCommand(client);

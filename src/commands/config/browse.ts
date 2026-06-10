@@ -79,7 +79,6 @@ async function displayProviders(
   }
 }
 
-/** Run the interactive "Browse models" flow. */
 export async function browseModelsCommand(client: OpenRouterDataClient): Promise<void> {
   clack.intro('Browse Models');
 
@@ -128,5 +127,5 @@ export async function browseModelsCommand(client: OpenRouterDataClient): Promise
     return;
   }
 
-  await addOverrideCommand(client);
+  await addOverrideCommand({ client, presetModelId: model.id });
 }

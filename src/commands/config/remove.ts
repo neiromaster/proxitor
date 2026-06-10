@@ -2,11 +2,12 @@ import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { getModelOverrides, removeModelOverride, requireConfigPath } from './config.js';
 
-/** Run the interactive "Remove model override" flow. */
-export async function removeOverrideCommand(): Promise<void> {
+type RemoveArgs = { configPath?: string | undefined };
+
+export async function removeOverrideCommand(args: RemoveArgs = {}): Promise<void> {
   clack.intro('Remove Model Override');
 
-  const configPath = requireConfigPath();
+  const configPath = requireConfigPath(args.configPath);
   const overrides = getModelOverrides(configPath);
   const keys = Object.keys(overrides);
 

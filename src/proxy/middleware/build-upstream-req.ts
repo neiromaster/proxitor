@@ -81,6 +81,8 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
   applyExtraHeaders(headers, c.var.resolvedConfig.headers);
 
   if (c.var.effectiveSessionId !== undefined) {
+    delete headers['x-claude-code-session-id'];
+    delete headers['x-session-id'];
     headers['x-session-id'] = c.var.effectiveSessionId;
   }
 

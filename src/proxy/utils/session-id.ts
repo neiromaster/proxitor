@@ -65,14 +65,6 @@ export function extractConversationFingerprint(
   return hash.digest('hex');
 }
 
-/**
- * Derive session ID for sticky routing from multiple sources:
- *
- * 1. `x-claude-code-session-id` header — Claude Code
- * 2. `session_id` from parsed body — Codex CLI (Responses API)
- * 3. hash(model + system + user) — content-based, per-conversation
- * 4. crypto.randomUUID() — fallback when no content available
- */
 export function deriveSessionId(
   incomingHeaders: Headers,
   parsedBody: ParsedRequestBody | undefined,
@@ -81,15 +73,17 @@ export function deriveSessionId(
 ): string | undefined {
   if (mode === 'never') return undefined;
 
-  const fromHeader = incomingHeaders.get('x-claude-code-session-id');
-  if (fromHeader) return fromHeader.slice(0, 256);
+  if (mode === 'auto') {
+    const fromHeader = incomingHeaders.get('x-claude-code-session-id');
+    if (fromHeader) return fromHeader.slice(0, 256);
 
-  if (
-    parsedBody &&
-    typeof parsedBody.session_id === 'string' &&
-    parsedBody.session_id.length > 0
-  ) {
-    return parsedBody.session_id;
+    if (
+      parsedBody &&
+      typeof parsedBody.session_id === 'string' &&
+      parsedBody.session_id.length > 0
+    ) {
+      return parsedBody.session_id;
+    }
   }
 
   if (parsedBody) {

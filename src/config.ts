@@ -6,6 +6,7 @@ import {
   ConfigParseError,
   ConfigValidationError,
   DEFAULTS,
+  MissingConfigError,
   type ModelOverride,
   type ProviderConfig,
   type ProxyConfig,
@@ -23,7 +24,12 @@ export type {
   ProviderSort,
   ProxyConfig,
 } from './config-schema.js';
-export { ConfigParseError, ConfigValidationError, DEFAULTS } from './config-schema.js';
+export {
+  ConfigParseError,
+  ConfigValidationError,
+  DEFAULTS,
+  MissingConfigError,
+} from './config-schema.js';
 
 export type ResolvedModelConfig = {
   provider?: ProviderConfig;
@@ -86,6 +92,10 @@ export function matchScore(pattern: string, modelName: string): number {
   }
 
   return -1;
+}
+
+export function matchesPattern(pattern: string, modelName: string): boolean {
+  return matchScore(pattern, modelName) >= 0;
 }
 
 export function resolveModelConfig(
@@ -166,17 +176,21 @@ type LoadConfigOptions = {
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
   let fileConfig: Partial<ProxyConfig> = {};
   if (!options.noConfig) {
-    const configPath = findConfigFile(options.configPath);
+    // Use tryFindConfigFile so config-less invocations (browse, menu, add
+    // with --openrouter-key and no config file) proceed with defaults instead
+    // of crashing with MissingConfigError.
+    const configPath = tryFindConfigFile(options.configPath);
     if (configPath) {
       fileConfig = readConfigFile(configPath);
     }
+    // else: no config file found — proceed with defaults
   }
 
   const merged = {
     ...DEFAULTS,
     ...fileConfig,
-    ...(options.host ? { host: options.host } : {}),
-    ...(options.port ? { port: options.port } : {}),
+    ...(options.host !== undefined ? { host: options.host } : {}),
+    ...(options.port !== undefined ? { port: options.port } : {}),
     ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
     ...(options.openrouterKey ? { openrouterKey: options.openrouterKey } : {}),
   };
@@ -209,7 +223,29 @@ export function getXdgConfigDir(): string {
   return xdgHome ? resolve(xdgHome, 'proxitor') : join(homedir(), '.config', 'proxitor');
 }
 
-export function findConfigFile(explicitPath?: string): string | null {
+const LOCAL_CONFIG_CANDIDATES = [
+  'proxitor.config.yaml',
+  'proxitor.config.yml',
+  'proxitor.config.json',
+  '.proxitor.yaml',
+  '.proxitor.yml',
+  '.proxitor.json',
+] as const;
+
+const XDG_CONFIG_CANDIDATES = ['config.yaml', 'config.yml', 'config.json'] as const;
+
+export function getConfigSearchPaths(): string[] {
+  return [
+    ...LOCAL_CONFIG_CANDIDATES.map(c => resolve(c)),
+    ...XDG_CONFIG_CANDIDATES.map(c => join(getXdgConfigDir(), c)),
+  ];
+}
+
+/**
+ * Return the path of the first existing config file, or `null` if none was found.
+ * Use this when "no config" is a valid outcome (e.g. wizard, doctor, validate).
+ */
+export function tryFindConfigFile(explicitPath?: string): string | null {
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
       throw new Error(`Config file not found: ${explicitPath}`);
@@ -217,33 +253,28 @@ export function findConfigFile(explicitPath?: string): string | null {
     return resolve(explicitPath);
   }
 
-  const localCandidates = [
-    'proxitor.config.yaml',
-    'proxitor.config.yml',
-    'proxitor.config.json',
-    '.proxitor.yaml',
-    '.proxitor.yml',
-    '.proxitor.json',
-  ];
-
-  for (const candidate of localCandidates) {
+  for (const candidate of LOCAL_CONFIG_CANDIDATES) {
     const fullPath = resolve(candidate);
-    if (existsSync(fullPath)) {
-      return fullPath;
-    }
+    if (existsSync(fullPath)) return fullPath;
   }
 
   const xdgDir = getXdgConfigDir();
-  const xdgCandidates = ['config.yaml', 'config.yml', 'config.json'];
-
-  for (const candidate of xdgCandidates) {
+  for (const candidate of XDG_CONFIG_CANDIDATES) {
     const fullPath = join(xdgDir, candidate);
-    if (existsSync(fullPath)) {
-      return fullPath;
-    }
+    if (existsSync(fullPath)) return fullPath;
   }
 
   return null;
+}
+
+/**
+ * Resolve a config file path, throwing {@link MissingConfigError} if discovery
+ * (with no explicit path) fails. Use this when the config is required.
+ */
+export function findConfigFile(explicitPath?: string): string {
+  const found = tryFindConfigFile(explicitPath);
+  if (found) return found;
+  throw new MissingConfigError(getConfigSearchPaths());
 }
 
 export function readConfigFile(filePath: string): Partial<ProxyConfig> {

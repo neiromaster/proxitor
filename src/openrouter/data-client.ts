@@ -1,9 +1,15 @@
+import { createHash } from 'node:crypto';
 import type { AuthType } from '../config-schema.js';
 import { OPENROUTER_API_URL } from '../config-schema.js';
+import { formatAuthHeader } from '../utils.js';
 import { OpenRouterClient } from './client.js';
 import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js';
 
 const OPENROUTER_FALLBACK_URL = OPENROUTER_API_URL;
+
+const MODELS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+type CacheEntry = { at: number; models: OpenRouterModel[] };
+const modelsCache = new Map<string, CacheEntry>();
 
 export type DataClientConfig = {
   openrouterBaseUrl: string;
@@ -62,6 +68,7 @@ export class OpenRouterDataClient {
   private fallbackClient: OpenRouterClient;
   private skipFallback: boolean;
   private onFallback?: (path: string) => void;
+  private cacheKey: string;
 
   constructor(config: DataClientConfig) {
     const primaryUrl = config.openrouterDataUrl ?? config.openrouterBaseUrl;
@@ -69,6 +76,10 @@ export class OpenRouterDataClient {
     this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType);
     this.fallbackClient = new OpenRouterClient(OPENROUTER_FALLBACK_URL);
     this.onFallback = config.onFallback;
+    // Key the cache by upstream + authType + API key hash so different
+    // credentials on the same URL don't share cached model data.
+    const keyHash = createHash('sha256').update(config.apiKey).digest('hex').slice(0, 8);
+    this.cacheKey = `${primaryUrl}|${config.authType}|${keyHash}`;
   }
 
   async fetchProviders(): Promise<OpenRouterProvider[]> {
@@ -81,12 +92,20 @@ export class OpenRouterDataClient {
   }
 
   async fetchModels(): Promise<OpenRouterModel[]> {
+    const cached = modelsCache.get(this.cacheKey);
+    if (cached && Date.now() - cached.at < MODELS_CACHE_TTL_MS) {
+      return cached.models;
+    }
+    // Evict expired entry so stale data doesn't accumulate in long-running contexts.
+    if (cached) modelsCache.delete(this.cacheKey);
     const result = await this.withFallback(
       '/v1/models',
       () => this.primaryClient.get<unknown>('/v1/models'),
       isValidModelsResponse,
     );
-    return result.data.data;
+    const models = result.data.data;
+    modelsCache.set(this.cacheKey, { at: Date.now(), models });
+    return models;
   }
 
   async fetchModelEndpoints(author: string, slug: string): Promise<ModelEndpoint[]> {
@@ -159,4 +178,44 @@ function isNetworkError(error: Error): boolean {
     message.includes('aborted') ||
     error.name === 'TypeError'
   );
+}
+
+/** Drop the in-memory model cache. Useful in tests; rarely needed at runtime. */
+export function clearModelsCache(): void {
+  modelsCache.clear();
+}
+
+/**
+ * Best-effort probe of the upstream API. Non-blocking — used by the wizard
+ * to give early feedback on key validity without preventing save.
+ */
+export async function probeUpstream(
+  baseUrl: string,
+  apiKey: string,
+  authType: AuthType,
+  timeoutMs = 3_000,
+): Promise<{ ok: true; modelCount: number } | { ok: false; reason: string }> {
+  const url = `${baseUrl.replace(/\/$/, '')}/v1/models`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    if (!apiKey) {
+      return { ok: false, reason: 'No API key provided' };
+    }
+    const headers: Record<string, string> = {};
+    headers.Authorization = formatAuthHeader(apiKey, authType);
+    const res = await fetch(url, { signal: controller.signal, headers });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, reason: `Key rejected (${res.status})` };
+    }
+    if (!res.ok) {
+      return { ok: false, reason: `HTTP ${res.status}` };
+    }
+    const body = (await res.json().catch(() => null)) as { data?: unknown[] } | null;
+    return { ok: true, modelCount: Array.isArray(body?.data) ? body.data.length : 0 };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
 }
