@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.9.0-beta.2
+
+### Minor Changes
+
+- 4dd5e55: Refactor CLI around `cmd-ts` features and add a `config show` command
+
+  - Replaced manual `argv` parsing (`isInfo`, `hasSubcommand`, `process.argv.slice(2)`) with `binary()` and a 4-line default-command prefix, so `proxitor --port 9000` behaves like `proxitor start --port 9000` and `--help` / `--version` are handled by the parser.
+  - Extracted the command tree to `src/cli-commands.ts` so tests can import `rootCli`, `startCommand`, and `configCli` without triggering the top-level `run()` invocation in `cli.ts`.
+  - Added `src/cli-types.ts` with custom cmd-ts `Type`s: `ConfigPath`, `OpenRouterKey`, `Port`, `NonEmptyString`, `AuthTypeCli` — all validated at parse time.
+  - Replaced the 20-line `resolveApiKey` / 4-source priority chain with `option({ env: 'OPENROUTER_API_KEY', type: OpenRouterKey })`. CLI flag → env var → `undefined` is now native cmd-ts precedence.
+  - Replaced the magic-string `err.message.includes('No config file found')` check with `instanceof MissingConfigError`. Added `tryFindConfigFile()` and `getConfigSearchPaths()` for proper discovery / error reporting.
+  - `start` now has aliases (`up`, `run`), `examples` (visible in `--help`), and validates port range / integer-ness at parse time.
+  - Replaced all 4 copies of `--config` / `--openrouter-key` declarations with one `configArgs` object spread across subcommands.
+  - Removed lazy `await import(...)` from every command handler in favor of static imports.
+  - `loadConfig` is now called exactly once per `start` invocation (was previously called twice via `resolveApiKey` + `withClient`).
+  - **`config show`**: new subcommand. Prints the resolved configuration (defaults + file + env + flags merged). Supports `--json` for machine-readable output. Masks `openrouterKey`.
+  - **`config list --json`**: now emits structured JSON `{ configPath, count, overrides: [...] }`.
+  - `wizard` now accepts `--config <path>` and forwards it to `askSaveLocation` so reconfiguration lands at the right file.
+  - New `vitest.config.ts` `define` for `__PROXITOR_VERSION__` (required by cmd-ts `--version` circuit breaker).
+  - 26 new unit tests + 13 new integration tests covering CLI dispatch, validation, `config show`, `config list --json`, and end-to-end proxy health.
+  - `src/cli.ts` is no longer excluded from coverage.
+
+  ### Wizard UX (Sprint 3)
+
+  - **Custom listen address** — the host prompt now offers a "Custom address…" option accepting arbitrary IPs, hostnames, and `unix:/path` sockets.
+  - **Upstream probe** — after collecting key, base URL, and auth type, the wizard performs a best-effort `GET /v1/models` (3 s timeout) against the configured upstream. Shows success (model count) or warning (unreachable / key rejected); never blocks the save.
+  - **Progress markers** — each step shows `Step N/6` via `clack.log.step` for visual progress.
+  - **Pre-filled reconfiguration** — when re-running the wizard with an existing config, all prompts are pre-filled with current values. Press Enter to keep, or type a new value.
+  - **`maskKey` export** — now returns `(none)` for empty keys; exported for reuse in other commands.
+  - **Reduced complexity** — extracted `collectAnswers` + `expectValue` (cancel-on-null sentinel) to bring `runWizard` cognitive complexity under the lint threshold.
+  - 5 unit tests for `maskKey` + 4 integration tests covering happy path, custom host, cancel, and reconfigure scenarios.
+
+- 4dd5e55: Add `proxitor doctor` diagnostic command and improve `config validate` output
+
+  - **New `proxitor doctor` command** — runs a battery of checks and prints a report, intended as a first-aid tool for "why doesn't this work?". Sections: Environment (Node version, platform, TTY), Config discovery + validity, API key resolution, Network (upstream reachability, configurable timeout), Port availability, Version. Statuses: `ok` / `warn` / `fail` / `skip`. Exit code is `0` when no `fail`, `1` otherwise, so the command is scriptable from CI.
+    - `--json` — emit machine-readable JSON instead of formatted text
+    - `--offline` — skip network checks (upstream, npm)
+    - `--timeout` — per-check network timeout in ms (default `3000`)
+  - **`config validate` now returns exit code** — `0` on success, `1` on invalid config or no file. CI can use it as a gate.
+  - **`config validate --json`** — structured `{ ok, configPath, keyCount | error, issues? }` output.
+  - **`config validate` actionable advice** — on failure, lists each issue (path + message) and prints tips: open in `$EDITOR`, run `wizard`, or run `doctor`.
+  - **`config edit` cleanup** — removed the dead "Replace entirely" option that pointed at the same handler as "Provider routing". Only provider routing is supported for now; the option was misleading.
+
+  8 new tests in `tests/integration/doctor.test.ts` cover the no-config, valid-config, invalid-config, and offline paths, plus the JSON shape and exit code.
+
 ## 0.9.0-beta.1
 
 ### Minor Changes
