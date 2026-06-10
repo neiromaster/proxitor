@@ -4,7 +4,6 @@ import { getModelOverrides, removeModelOverride, requireConfigPath } from './con
 
 type RemoveArgs = { configPath?: string | undefined };
 
-/** Run the interactive "Remove model override" flow. */
 export async function removeOverrideCommand(args: RemoveArgs = {}): Promise<void> {
   clack.intro('Remove Model Override');
 

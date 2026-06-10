@@ -11,8 +11,6 @@ type ShowArgs = {
   json?: boolean | undefined;
 };
 
-// Keys that get special formatting or are shown separately below.
-// KEEP IN SYNC with ProxyConfig schema — new keys appear automatically.
 const SENSITIVE_KEYS = new Set(['openrouterKey']);
 const SEPARATE_KEYS = new Set([
   ...SENSITIVE_KEYS,
@@ -59,7 +57,6 @@ function logResolved(cfg: ProxyConfig, source: string | null): void {
   clack.outro(`Defaults loaded from schema: ${Object.keys(DEFAULTS).length} keys`);
 }
 
-/** Show the resolved configuration (defaults + file + env + flags merged). */
 export async function showConfigCommand(args: ShowArgs): Promise<void> {
   // When an explicit path is given, check existence ourselves —
   // tryFindConfigFile throws on missing explicit paths, but the guard below

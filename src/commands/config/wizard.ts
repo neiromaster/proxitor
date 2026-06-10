@@ -105,10 +105,9 @@ async function askApiKey(currentKey: string): Promise<string | null> {
   }
   const apiKey = await clack.text({
     message: 'OpenRouter API key',
-    placeholder: 'sk-or-v1-...',
-    initialValue: currentKey,
+    placeholder: currentKey ? 'Press Enter to keep current key' : 'sk-or-v1-...',
     validate: v => {
-      if (!v?.trim()) return 'API key is required';
+      if (!v?.trim() && !currentKey) return 'API key is required';
       return undefined;
     },
   });
@@ -118,7 +117,9 @@ async function askApiKey(currentKey: string): Promise<string | null> {
     'You can also set the OPENROUTER_API_KEY environment variable\nto avoid storing the key in the config file.',
     'Tip',
   );
-  return apiKey as string;
+
+  const value = (apiKey as string).trim();
+  return value || currentKey;
 }
 
 async function askPort(current: number): Promise<number | null> {
@@ -260,7 +261,6 @@ function loadDefaultState(): ExistingConfigState {
 
 class WizardCancelled extends Error {}
 
-/** Throw on cancel so the step chain stays flat. */
 function expectValue<T>(value: T | null, label = 'Cancelled'): T {
   if (value === null) throw new WizardCancelled(label);
   return value;

@@ -43,13 +43,46 @@ async function handleStartupError(err: Error): Promise<void> {
 // against the known subcommand list — flag values like `9000` or `3.5`
 // won't match, so they correctly trigger the default `start` prepend.
 const KNOWN_SUBCOMMANDS = new Set(['start', 'up', 'run', 'config', 'doctor']);
+const KNOWN_CONFIG_SUBS = new Set([
+  'add',
+  'edit',
+  'remove',
+  'list',
+  'browse',
+  'validate',
+  'show',
+  'wizard',
+  'menu',
+]);
 
 const firstNonFlag = userArgs.find(a => !a.startsWith('-'));
 const needsDefault =
   userArgs.length === 0 || !firstNonFlag || !KNOWN_SUBCOMMANDS.has(firstNonFlag);
 
-const finalArgv = needsDefault
-  ? ['node', 'proxitor', 'start', ...userArgs]
-  : process.argv;
+// When the user only passes info flags (--help, --version) without a
+// subcommand, we want root-level help that lists all subcommands — not
+// the `start` command's help.  Only prepend `start` for real invocations.
+const finalArgv =
+  needsDefault && !isInfo
+    ? ['node', 'proxitor', 'start', ...userArgs]
+    : [...process.argv];
+
+// cmd-ts has no default sub-subcommand, so `proxitor config` without a
+// sub-subcommand shows help instead of the interactive menu.  Detect this
+// case and inject `menu` after `config`.  Skip when help/version flags are
+// present so `proxitor config -h` shows the full config subcommand list.
+const configArgs =
+  !needsDefault && firstNonFlag === 'config'
+    ? userArgs.slice(userArgs.indexOf('config') + 1)
+    : [];
+const configSub = configArgs.find(a => !a.startsWith('-'));
+const configHasInfo = configArgs.some(a =>
+  ['--help', '-h', '--version', '-v'].includes(a),
+);
+if (!needsDefault && firstNonFlag === 'config' && !configHasInfo) {
+  if (!configSub || !KNOWN_CONFIG_SUBS.has(configSub)) {
+    finalArgv.splice(finalArgv.lastIndexOf('config') + 1, 0, 'menu');
+  }
+}
 
 void run(binary(rootCli), finalArgv).catch(err => void handleStartupError(err));

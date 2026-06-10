@@ -72,8 +72,6 @@ export async function makeClient(args: {
   });
 }
 
-// --- start ---
-
 export const startCommand = command({
   name: 'start',
   aliases: ['up', 'run'],
@@ -132,8 +130,6 @@ export const startCommand = command({
     }
   },
 });
-
-// --- config subcommands ---
 
 export const configCli = subcommands({
   name: 'config',
@@ -232,8 +228,6 @@ export const configCli = subcommands({
     }),
   },
 });
-
-// --- root ---
 
 export const doctorCli = command({
   name: 'doctor',

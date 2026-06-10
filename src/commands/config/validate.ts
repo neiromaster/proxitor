@@ -16,7 +16,6 @@ type ValidateResult =
       issues?: Array<{ path: string; message: string }>;
     };
 
-/** Validate a config file and return a structured result. */
 function validate(configPath: string | null): ValidateResult {
   if (!configPath) {
     return { ok: false, configPath: null, error: 'No config file found' };
@@ -45,7 +44,6 @@ function validate(configPath: string | null): ValidateResult {
   }
 }
 
-/** Run config validation and display results. */
 export async function validateConfigCommand(args: ValidateArgs = {}): Promise<number> {
   const configPath = tryFindConfigFile(args.configPath);
   const result = validate(configPath);

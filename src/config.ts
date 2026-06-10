@@ -94,11 +94,6 @@ export function matchScore(pattern: string, modelName: string): number {
   return -1;
 }
 
-/**
- * Boolean wrapper around {@link matchScore} — true when a model name matches
- * a pattern. Use this in user-facing code (e.g. wizard, `add`) instead of
- * re-implementing the `*` wildcard rule.
- */
 export function matchesPattern(pattern: string, modelName: string): boolean {
   return matchScore(pattern, modelName) >= 0;
 }
@@ -239,7 +234,6 @@ const LOCAL_CONFIG_CANDIDATES = [
 
 const XDG_CONFIG_CANDIDATES = ['config.yaml', 'config.yml', 'config.json'] as const;
 
-/** Build the list of absolute paths that would be searched, for error messages. */
 export function getConfigSearchPaths(): string[] {
   return [
     ...LOCAL_CONFIG_CANDIDATES.map(c => resolve(c)),

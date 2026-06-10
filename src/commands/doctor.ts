@@ -29,8 +29,6 @@ type DoctorOptions = {
 const DEFAULT_TIMEOUT_MS = 3_000;
 const REQUIRED_NODE_MAJOR = 22;
 
-// --- individual check helpers ---
-
 function checkNodeVersion(): Check {
   const v = process.versions.node;
   const major = Number.parseInt(v.split('.')[0] ?? '0', 10);
@@ -195,8 +193,6 @@ function checkVersion(): Check {
   };
 }
 
-// --- output formatting ---
-
 const STATUS_GLYPHS: Record<Status, string> = {
   ok: '✓',
   warn: '⚠',
@@ -217,8 +213,6 @@ function printTextSection(title: string, checks: Check[]): void {
     clack.log.info(formatTextCheck(c));
   }
 }
-
-// --- public entry ---
 
 export async function doctorCommand(opts: DoctorOptions = {}): Promise<number> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;

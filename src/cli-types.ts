@@ -2,18 +2,8 @@ import { extendType, number, oneOf, optional, string, type Type } from 'cmd-ts';
 import { tryFindConfigFile } from './config.js';
 import type { AuthType } from './config-schema.js';
 
-/**
- * Positional config-path argument. Resolves to the user-supplied path or
- * the result of {@link tryFindConfigFile}. `undefined` when neither yields a file.
- *
- * Use this anywhere a command accepts a config file (or none).
- */
 export const ConfigPath: Type<string, string | undefined> = optional(string);
 
-/**
- * Required: port 1-65535. Rejects out-of-range values with a clear message
- * before the handler runs.
- */
 export const Port = extendType(number, {
   from: async n => {
     if (!Number.isInteger(n) || n < 1 || n > 65535) {
@@ -23,9 +13,6 @@ export const Port = extendType(number, {
   },
 });
 
-/**
- * Required: non-empty string.
- */
 export const NonEmptyString = extendType(string, {
   from: async s => {
     if (!s.trim()) throw new Error('Value must not be empty');
@@ -33,9 +20,6 @@ export const NonEmptyString = extendType(string, {
   },
 });
 
-/**
- * `bearer` | `oauth`. Rejects anything else at parse time.
- */
 export const AuthTypeCli: Type<string, AuthType> = oneOf(['bearer', 'oauth'] as const);
 
 /**
@@ -51,11 +35,4 @@ export const AuthTypeCli: Type<string, AuthType> = oneOf(['bearer', 'oauth'] as 
  */
 export const OpenRouterKey: Type<string, string | undefined> = optional(string);
 
-/**
- * Search for a proxitor config file under conventional locations and return its
- * absolute path. Throws if the user passed `--config <path>` and it does not
- * exist; returns `null` if no file is found.
- *
- * Use this in handlers to resolve a config path consistently.
- */
 export { tryFindConfigFile };
