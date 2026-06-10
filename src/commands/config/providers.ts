@@ -159,12 +159,15 @@ async function selectOrderedProviders(
     message: 'Allow fallbacks to other providers?',
     initialValue: true,
   });
-  if (isCancel(allowFallbacks)) return null;
+  // Accept the default on cancel — the user already chose providers and
+  // this confirm has an explicit default intent (true). Canceling a confirm
+  // with initialValue ≠ canceling a text/select with no sensible default.
+  const fallbacksEnabled = isCancel(allowFallbacks) ? true : (allowFallbacks as boolean);
 
   return {
     provider: {
       order: order.length === 1 ? order[0] : order,
-      allowFallbacks: allowFallbacks as boolean,
+      allowFallbacks: fallbacksEnabled,
     },
   };
 }

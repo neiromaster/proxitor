@@ -38,9 +38,18 @@ async function handleStartupError(err: Error): Promise<void> {
 // cmd-ts has no built-in default subcommand, so we prepend "start" when
 // the user gave us only flags (or nothing) so `proxitor --port 9000`
 // behaves like `proxitor start --port 9000`.
-const finalArgv =
-  userArgs.length === 0 || userArgs[0]?.startsWith('-')
-    ? ['node', 'proxitor', 'start', ...userArgs]
-    : process.argv;
+// We must NOT prepend `start` when a known subcommand appears after flags
+// (e.g. `proxitor --offline doctor`). We check the first non-flag argument
+// against the known subcommand list — flag values like `9000` or `3.5`
+// won't match, so they correctly trigger the default `start` prepend.
+const KNOWN_SUBCOMMANDS = new Set(['start', 'up', 'run', 'config', 'doctor']);
+
+const firstNonFlag = userArgs.find(a => !a.startsWith('-'));
+const needsDefault =
+  userArgs.length === 0 || !firstNonFlag || !KNOWN_SUBCOMMANDS.has(firstNonFlag);
+
+const finalArgv = needsDefault
+  ? ['node', 'proxitor', 'start', ...userArgs]
+  : process.argv;
 
 void run(binary(rootCli), finalArgv).catch(err => void handleStartupError(err));

@@ -77,26 +77,39 @@ function checkConfigDiscovery(): Check {
   };
 }
 
-function checkConfigValidity(path: string | null): Check {
+function checkConfigValidity(path: string | null): {
+  check: Check;
+  config: ProxyConfig | null;
+} {
   if (!path) {
-    return { name: 'config-valid', status: 'skip', reason: 'no config file' };
+    return {
+      check: { name: 'config-valid', status: 'skip', reason: 'no config file' },
+      config: null,
+    };
   }
   try {
     const cfg = readConfigFile(path);
+    const fullCfg = { ...DEFAULTS, ...cfg } as ProxyConfig;
     const overrideCount = cfg.modelOverrides ? Object.keys(cfg.modelOverrides).length : 0;
     return {
-      name: 'config-valid',
-      status: 'ok',
-      path,
-      keyCount: Object.keys(cfg).length,
-      overrideCount,
+      check: {
+        name: 'config-valid',
+        status: 'ok',
+        path,
+        keyCount: Object.keys(cfg).length,
+        overrideCount,
+      },
+      config: fullCfg,
     };
   } catch (error) {
     return {
-      name: 'config-valid',
-      status: 'fail',
-      path,
-      message: error instanceof Error ? error.message : String(error),
+      check: {
+        name: 'config-valid',
+        status: 'fail',
+        path,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      config: null,
     };
   }
 }
@@ -214,19 +227,10 @@ export async function doctorCommand(opts: DoctorOptions = {}): Promise<number> {
   // 1. Environment — synchronous, fast
   const envChecks: Check[] = [checkNodeVersion(), checkPlatform(), checkTty()];
 
-  // 2. Config — sync
+  // 2. Config — sync (checkConfigValidity returns the parsed config too)
   const configPath = tryFindConfigFile();
-  const configChecks: Check[] = [checkConfigDiscovery(), checkConfigValidity(configPath)];
-
-  // 3. Best-effort parse of config (we already validated it)
-  let cfg: ProxyConfig | null = null;
-  if (configPath) {
-    try {
-      cfg = { ...DEFAULTS, ...readConfigFile(configPath) } as ProxyConfig;
-    } catch {
-      cfg = null;
-    }
-  }
+  const { check: validityCheck, config: cfg } = checkConfigValidity(configPath);
+  const configChecks: Check[] = [checkConfigDiscovery(), validityCheck];
 
   // 4. API key
   const apiKeyCheck = checkApiKey(cfg);

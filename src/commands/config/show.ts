@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as clack from '@clack/prompts';
 import { DEFAULTS, loadConfig, tryFindConfigFile } from '../../config.js';
 import type { ProxyConfig } from '../../config-schema.js';
@@ -10,6 +11,16 @@ type ShowArgs = {
   json?: boolean | undefined;
 };
 
+// Keys that get special formatting or are shown separately below.
+// KEEP IN SYNC with ProxyConfig schema — new keys appear automatically.
+const SENSITIVE_KEYS = new Set(['openrouterKey']);
+const SEPARATE_KEYS = new Set([
+  ...SENSITIVE_KEYS,
+  'modelOverrides',
+  'provider',
+  'headers',
+]);
+
 function logResolved(cfg: ProxyConfig, source: string | null): void {
   clack.intro('Resolved configuration');
   if (source) {
@@ -17,44 +28,52 @@ function logResolved(cfg: ProxyConfig, source: string | null): void {
   } else {
     clack.log.info('Source: defaults only');
   }
-  clack.log.info(`  host:                ${cfg.host}`);
-  clack.log.info(`  port:                ${cfg.port}`);
-  clack.log.info(`  openrouterBaseUrl:   ${cfg.openrouterBaseUrl}`);
-  if (cfg.openrouterDataUrl) {
-    clack.log.info(`  openrouterDataUrl:   ${cfg.openrouterDataUrl}`);
+
+  // Print all scalar config keys automatically — new fields appear without
+  // having to add individual clack.log.info lines.
+  for (const [key, value] of Object.entries(cfg)) {
+    if (SEPARATE_KEYS.has(key)) continue;
+    const label = key.padEnd(20);
+    if (value !== undefined && value !== '') {
+      clack.log.info(`  ${label} ${value}`);
+    }
   }
-  clack.log.info(`  openrouterKey:       ${maskKey(cfg.openrouterKey)}`);
-  clack.log.info(`  authType:            ${cfg.authType}`);
-  clack.log.info(`  verbose:             ${cfg.verbose}`);
-  clack.log.info(`  bodyLimit:           ${cfg.bodyLimit}`);
-  clack.log.info(`  cacheControl:        ${cfg.cacheControl}`);
-  if (cfg.cacheControlTtl) {
-    clack.log.info(`  cacheControlTtl:     ${cfg.cacheControlTtl}`);
-  }
-  clack.log.info(`  sessionId:           ${cfg.sessionId}`);
-  clack.log.info(`  attributionReferer:  ${cfg.attributionReferer}`);
-  clack.log.info(`  attributionTitle:    ${cfg.attributionTitle}`);
+
+  // Sensitive / compound fields get special formatting
+  clack.log.info(`  ${'openrouterKey'.padEnd(20)} ${maskKey(cfg.openrouterKey)}`);
 
   if (cfg.provider) {
-    clack.log.info(`  provider:            ${JSON.stringify(cfg.provider)}`);
+    clack.log.info(`  ${'provider'.padEnd(20)} ${JSON.stringify(cfg.provider)}`);
   }
   if (cfg.headers && Object.keys(cfg.headers).length > 0) {
-    clack.log.info(`  headers:             ${JSON.stringify(cfg.headers)}`);
+    clack.log.info(`  ${'headers'.padEnd(20)} ${JSON.stringify(cfg.headers)}`);
   }
   if (cfg.modelOverrides && Object.keys(cfg.modelOverrides).length > 0) {
     const count = Object.keys(cfg.modelOverrides).length;
-    clack.log.info(`  modelOverrides:      ${count} model(s)`);
+    clack.log.info(`  ${'modelOverrides'.padEnd(20)} ${count} model(s)`);
     for (const key of Object.keys(cfg.modelOverrides)) {
       clack.log.info(`    ${key}`);
     }
   }
+
   clack.outro(`Defaults loaded from schema: ${Object.keys(DEFAULTS).length} keys`);
 }
 
 /** Show the resolved configuration (defaults + file + env + flags merged). */
 export async function showConfigCommand(args: ShowArgs): Promise<void> {
-  const discoveredPath = tryFindConfigFile(args.configPath);
-  const configExists = discoveredPath !== null && existsSync(discoveredPath);
+  // When an explicit path is given, check existence ourselves —
+  // tryFindConfigFile throws on missing explicit paths, but the guard below
+  // was designed for a null return.
+  let discoveredPath: string | null = null;
+  if (args.configPath) {
+    if (existsSync(args.configPath)) {
+      discoveredPath = resolve(args.configPath);
+    }
+    // else: explicit path missing, fall through to the guard
+  } else {
+    discoveredPath = tryFindConfigFile();
+  }
+  const configExists = discoveredPath !== null;
 
   if (!configExists && !args.openrouterKey) {
     clack.log.warn(

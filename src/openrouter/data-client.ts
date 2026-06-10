@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AuthType } from '../config-schema.js';
 import { OPENROUTER_API_URL } from '../config-schema.js';
+import { formatAuthHeader } from '../utils.js';
 import { OpenRouterClient } from './client.js';
 import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js';
 
@@ -95,6 +96,8 @@ export class OpenRouterDataClient {
     if (cached && Date.now() - cached.at < MODELS_CACHE_TTL_MS) {
       return cached.models;
     }
+    // Evict expired entry so stale data doesn't accumulate in long-running contexts.
+    if (cached) modelsCache.delete(this.cacheKey);
     const result = await this.withFallback(
       '/v1/models',
       () => this.primaryClient.get<unknown>('/v1/models'),
@@ -200,7 +203,7 @@ export async function probeUpstream(
       return { ok: false, reason: 'No API key provided' };
     }
     const headers: Record<string, string> = {};
-    headers.Authorization = `${authType === 'oauth' ? 'OAuth' : 'Bearer'} ${apiKey}`;
+    headers.Authorization = formatAuthHeader(apiKey, authType);
     const res = await fetch(url, { signal: controller.signal, headers });
     if (res.status === 401 || res.status === 403) {
       return { ok: false, reason: `Key rejected (${res.status})` };

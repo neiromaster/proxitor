@@ -181,10 +181,14 @@ type LoadConfigOptions = {
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
   let fileConfig: Partial<ProxyConfig> = {};
   if (!options.noConfig) {
-    // findConfigFile throws MissingConfigError if discovery fails with no explicit path.
-    // An explicit but missing path throws "Config file not found".
-    const configPath = findConfigFile(options.configPath);
-    fileConfig = readConfigFile(configPath);
+    // Use tryFindConfigFile so config-less invocations (browse, menu, add
+    // with --openrouter-key and no config file) proceed with defaults instead
+    // of crashing with MissingConfigError.
+    const configPath = tryFindConfigFile(options.configPath);
+    if (configPath) {
+      fileConfig = readConfigFile(configPath);
+    }
+    // else: no config file found — proceed with defaults
   }
 
   const merged = {

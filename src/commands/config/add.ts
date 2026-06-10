@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { matchesPattern, resolveModelConfig } from '../../config.js';
-import type { ModelOverride } from '../../config-schema.js';
+import { DEFAULTS, type ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { fetchModels, formatPrice } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
@@ -25,6 +25,7 @@ const CUSTOM_PATTERN_VALUE = '__proxitor_custom_pattern__';
 
 type AddOptions = {
   client: OpenRouterDataClient;
+  configPath?: string | undefined;
   presetModelId?: string | undefined;
 };
 
@@ -33,7 +34,7 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
   clack.intro('Add Model Override');
   const { client, presetModelId } = opts;
 
-  const configPath = requireConfigPath();
+  const configPath = requireConfigPath(opts.configPath);
   const existing = getModelOverrides(configPath);
 
   const models = await loadModelsWithSpinner(client);
@@ -223,23 +224,9 @@ async function confirmAndSave(
 
     if (action === 'test') {
       const resolved = resolveModelConfig(
-        // Best-effort: pass a minimal stub config with just the override.
-        // Without the full file, we can't apply global defaults, but for a
-        // dry-run it's enough to show what the override itself produces.
-        {
-          host: '0.0.0.0',
-          port: 0,
-          openrouterKey: '',
-          openrouterBaseUrl: 'https://openrouter.ai/api',
-          authType: 'bearer',
-          verbose: false,
-          bodyLimit: '50mb',
-          attributionReferer: '',
-          attributionTitle: '',
-          cacheControl: 'auto',
-          sessionId: 'auto',
-          modelOverrides: { [modelKey]: override },
-        } as Parameters<typeof resolveModelConfig>[0],
+        // Spread DEFAULTS so the stub stays in sync with the schema — no
+        // hand-typed fields that drift when new required keys are added.
+        { ...DEFAULTS, modelOverrides: { [modelKey]: override } },
         modelKey,
       );
       clack.note(
