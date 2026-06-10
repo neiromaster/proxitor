@@ -13,11 +13,17 @@ function errorMessage(err: { config?: { message?: string }; message?: string }):
 
 // Replicate cli.ts's argv-prefix trick: prepend `start` when user gave only
 // flags (or nothing), so `proxitor --help` shows start's help.
+// Must match the heuristic in src/cli.ts: check the first non-flag argument
+// against known subcommands — flag values like `9000` won't match.
+const KNOWN_SUBCOMMANDS = new Set(['start', 'up', 'run', 'config', 'doctor']);
+
 async function runCli(userArgs: string[]) {
-  const finalArgv =
-    userArgs.length === 0 || userArgs[0]?.startsWith('-')
-      ? ['node', 'proxitor', 'start', ...userArgs]
-      : ['node', 'proxitor', ...userArgs];
+  const firstNonFlag = userArgs.find(a => !a.startsWith('-'));
+  const needsDefault =
+    userArgs.length === 0 || !firstNonFlag || !KNOWN_SUBCOMMANDS.has(firstNonFlag);
+  const finalArgv = needsDefault
+    ? ['node', 'proxitor', 'start', ...userArgs]
+    : ['node', 'proxitor', ...userArgs];
   return runSafely(binary(rootCli), finalArgv);
 }
 
@@ -95,6 +101,52 @@ describe('start command validation', () => {
   });
 });
 
+describe('flags-before-subcommand routing (bugfix #1)', () => {
+  it('routes correctly when global flags precede a subcommand (--offline doctor)', async () => {
+    // `proxitor --offline doctor` should route to the doctor command, NOT
+    // prepend `start`. The old heuristic checked userArgs[0]?.startsWith('-')
+    // which incorrectly prepended `start` when flags came before the subcommand.
+    const result = await runSafely(binary(rootCli), [
+      'node',
+      'proxitor',
+      '--offline',
+      'doctor',
+    ]);
+    // doctor exits 1 when there's no config and no API key, but it should be
+    // a doctor exit — not a cmd-ts "unknown flag" parse error.
+    if (result._tag === 'error') {
+      const msg = errorMessage(result.error);
+      // Should NOT contain cmd-ts parse errors about unknown flags on start.
+      expect(msg).not.toContain('Unknown argument');
+      expect(msg).not.toContain('unexpected');
+    }
+  });
+
+  it('still prepends start when only flags are given (--port 9000)', async () => {
+    const result = await runCli([
+      '--port',
+      '18828',
+      '--no-config',
+      '--openrouter-key',
+      'sk-test',
+    ]);
+    // Parsing succeeds; may fail later (no upstream), but not a routing error.
+    if (result._tag === 'error') {
+      const msg = errorMessage(result.error);
+      expect(msg).not.toContain('Unknown argument');
+    }
+  });
+
+  it('still prepends start when no args are given', async () => {
+    const result = await runCli([]);
+    // No config → will fail, but should be a start-command error, not routing.
+    if (result._tag === 'error') {
+      const msg = errorMessage(result.error);
+      expect(msg).not.toContain('Unknown argument');
+    }
+  });
+});
+
 describe('config command (no config file)', () => {
   // These tests run from a tmpdir to ensure no proxitor.config.yaml is present.
   const cwd = process.cwd();
@@ -132,6 +184,15 @@ describe('config command (no config file)', () => {
     // without throwing (no file to read means nothing meaningful to show).
     const { showConfigCommand } = await import('../../src/commands/config/show.js');
     await expect(showConfigCommand({})).resolves.toBeUndefined();
+  });
+
+  it('config show degrades gracefully when explicit config path is missing (bugfix #4)', async () => {
+    // tryFindConfigFile throws on nonexistent explicit paths, but showConfigCommand
+    // should handle this gracefully instead of crashing with a raw stack trace.
+    const { showConfigCommand } = await import('../../src/commands/config/show.js');
+    await expect(
+      showConfigCommand({ configPath: '/tmp/proxitor-nonexistent-test-config.yaml' }),
+    ).resolves.toBeUndefined();
   });
 });
 

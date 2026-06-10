@@ -208,6 +208,39 @@ describe('OpenRouterDataClient', () => {
       await b.fetchModels();
       expect(primarySpy).toHaveBeenCalledTimes(2);
     });
+
+    it('evicts expired entries on read (bugfix #10)', async () => {
+      // Verify that expired cache entries are removed from the Map when detected.
+      // This prevents unbounded memory growth in long-running contexts.
+      const { clearModelsCache } = await import('../../src/openrouter/data-client.js');
+      clearModelsCache();
+
+      // Use vi.useFakeTimers to control time progression
+      vi.useFakeTimers();
+
+      const fetchSpy = vi.fn();
+      setMockClients(
+        async () => {
+          fetchSpy();
+          return validModelsResponse();
+        },
+        async () => validModelsResponse(),
+      );
+      const client = new OpenRouterDataClient(makeConfig());
+
+      // First call populates the cache
+      await client.fetchModels();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      // Advance past TTL (5 minutes)
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+
+      // Second call should detect expiry, evict the stale entry, and refetch
+      await client.fetchModels();
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+    });
   });
 
   describe('withFallback — fallback on HTTP errors', () => {

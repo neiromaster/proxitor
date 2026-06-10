@@ -47,6 +47,25 @@ describe('loadConfig', () => {
       'OpenRouter API key is required',
     );
   });
+
+  it('should use defaults when no config file exists and openrouterKey is provided (bugfix #2)', async () => {
+    // loadConfig uses tryFindConfigFile now (not findConfigFile), so it returns
+    // defaults when no config file is found — instead of throwing MissingConfigError.
+    // This allows config-less commands like `browse --openrouter-key sk-xxx` to work.
+    delete process.env.OPENROUTER_API_KEY;
+    const savedCwd = process.cwd();
+    const tmpDir = mkdtempSync(join(tmpdir(), 'proxitor-noconfig-'));
+    process.chdir(tmpDir);
+    try {
+      const config = await loadConfig({ openrouterKey: 'test-key-from-flag' });
+      expect(config.openrouterKey).toBe('test-key-from-flag');
+      expect(config.port).toBe(8828);
+      expect(config.host).toBe('0.0.0.0');
+    } finally {
+      process.chdir(savedCwd);
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('config file discovery', () => {
