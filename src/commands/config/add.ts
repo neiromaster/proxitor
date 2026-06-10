@@ -192,38 +192,46 @@ async function configureProviderAndSave(
 }
 
 async function collectSessionAndCache(override: ModelOverride): Promise<ModelOverride> {
-  const addSession = await clack.confirm({
+  override = await collectSession(override);
+  override = await collectCache(override);
+  return override;
+}
+
+async function collectSession(override: ModelOverride): Promise<ModelOverride> {
+  const want = await clack.confirm({
     message: 'Configure session routing for this model?',
     initialValue: false,
   });
-  if (!isCancel(addSession) && addSession) {
-    const sid = await askTriState('Session ID mode', 'auto' as TriState, {
-      auto: 'Passthrough client ID, generate if missing',
-      always: 'Always generate proxy session ID',
-      never: "Don't manage session headers",
-    });
-    if (sid) override.sessionId = sid;
-  }
+  if (isCancel(want) || !want) return override;
 
-  const addCache = await clack.confirm({
+  const sid = await askTriState('Session ID mode', 'auto' as TriState, {
+    auto: 'Passthrough client ID, generate if missing',
+    always: 'Always generate proxy session ID',
+    never: "Don't manage session headers",
+  });
+  if (sid) override.sessionId = sid;
+  return override;
+}
+
+async function collectCache(override: ModelOverride): Promise<ModelOverride> {
+  const want = await clack.confirm({
     message: 'Configure cache control for this model?',
     initialValue: false,
   });
-  if (!isCancel(addCache) && addCache) {
-    const cc = await askTriState('Cache control mode', 'auto' as TriState, {
-      auto: 'Anthropic models only',
-      always: 'All models',
-      never: 'Off',
-    });
-    if (cc) {
-      override.cacheControl = cc;
-      if (cc !== 'never') {
-        const ttl = await askCacheControlTtl(undefined);
-        if (ttl && ttl !== 'reset') override.cacheControlTtl = ttl;
-      }
+  if (isCancel(want) || !want) return override;
+
+  const cc = await askTriState('Cache control mode', 'auto' as TriState, {
+    auto: 'Anthropic models only',
+    always: 'All models',
+    never: 'Off',
+  });
+  if (cc) {
+    override.cacheControl = cc;
+    if (cc !== 'never') {
+      const ttl = await askCacheControlTtl(undefined);
+      if (ttl && ttl !== 'reset') override.cacheControlTtl = ttl;
     }
   }
-
   return override;
 }
 
