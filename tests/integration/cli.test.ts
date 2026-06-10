@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { binary, runSafely } from 'cmd-ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { rootCli } from '../../src/cli-commands.js';
-import { createTestEnv, type TestEnv } from '../helpers.js';
+import { createTestEnv, getFreePort, type TestEnv } from '../helpers.js';
 
 /** Read a useful message out of cmd-ts `Err(Exit)`. */
 function errorMessage(err: { config?: { message?: string }; message?: string }): string {
@@ -88,12 +88,14 @@ describe('start command validation', () => {
     // In a test environment without a real port to bind, the proxy may fail
     // later, but that's not what this test exercises.
     // We just verify the error (if any) is NOT a port validation error.
+    // Use a random port to avoid EADDRINUSE when tests run in parallel.
+    const port = String(await getFreePort());
     const result = await runCli([
       '--no-config',
       '--openrouter-key',
       'sk-test',
       '--port',
-      '18828',
+      port,
     ]);
     if (result._tag === 'error') {
       expect(errorMessage(result.error)).not.toContain('1-65535');
@@ -123,9 +125,11 @@ describe('flags-before-subcommand routing (bugfix #1)', () => {
   });
 
   it('still prepends start when only flags are given (--port 9000)', async () => {
+    // Use a random port to avoid EADDRINUSE when tests run in parallel.
+    const port = String(await getFreePort());
     const result = await runCli([
       '--port',
-      '18828',
+      port,
       '--no-config',
       '--openrouter-key',
       'sk-test',
