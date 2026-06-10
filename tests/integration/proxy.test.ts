@@ -744,7 +744,7 @@ describe('Proxy Integration', () => {
     expect(capturedBody.session_id).toBeUndefined();
   });
 
-  it('strips x-session-id from incoming headers (prevents bypass)', async () => {
+  it('passes through x-session-id when sessionId is "never"', async () => {
     let capturedHeaders: Record<string, string> = {};
 
     env = await createTestEnv({ sessionId: 'never' }, upstream => {
@@ -758,13 +758,13 @@ describe('Proxy Integration', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-session-id': 'malicious-session-bypass',
+        'x-session-id': 'client-session-id',
       },
       body: JSON.stringify({ model: 'test', messages: [] }),
     });
 
-    // Client-sent x-session-id should be stripped, preventing bypass of sessionId: 'never'
-    expect(capturedHeaders['x-session-id']).toBeUndefined();
+    // "never" = proxy does not manage session headers at all
+    expect(capturedHeaders['x-session-id']).toBe('client-session-id');
   });
 
   it('sets x-session-id header from client X-Claude-Code-Session-Id', async () => {

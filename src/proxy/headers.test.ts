@@ -14,30 +14,30 @@ describe('filterHeaders', () => {
     expect(headers['x-forwarded-for']).toBe('1.2.3.4');
   });
 
-  it('should strip x-claude-code-session-id from incoming headers', () => {
+  it('passes through x-claude-code-session-id (stripped later by middleware)', () => {
     const incoming = new Headers({
       'x-claude-code-session-id': 'session-abc123',
     });
     const headers = filterHeaders(incoming, STRIP_REQUEST);
-    expect(headers['x-claude-code-session-id']).toBeUndefined();
+    expect(headers['x-claude-code-session-id']).toBe('session-abc123');
   });
 
-  it('should strip x-session-id from incoming headers', () => {
+  it('passes through x-session-id (stripped later by middleware)', () => {
     const incoming = new Headers({
       'x-session-id': 'client-session-456',
     });
     const headers = filterHeaders(incoming, STRIP_REQUEST);
-    expect(headers['x-session-id']).toBeUndefined();
+    expect(headers['x-session-id']).toBe('client-session-456');
   });
 
-  it('should strip both session headers simultaneously', () => {
+  it('passes through both session headers simultaneously', () => {
     const incoming = new Headers({
       'x-claude-code-session-id': 'session-abc',
       'x-session-id': 'session-xyz',
     });
     const headers = filterHeaders(incoming, STRIP_REQUEST);
-    expect(headers['x-claude-code-session-id']).toBeUndefined();
-    expect(headers['x-session-id']).toBeUndefined();
+    expect(headers['x-claude-code-session-id']).toBe('session-abc');
+    expect(headers['x-session-id']).toBe('session-xyz');
   });
 
   it('should strip hop-by-hop headers', () => {

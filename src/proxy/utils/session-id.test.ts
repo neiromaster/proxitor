@@ -159,7 +159,7 @@ describe('deriveSessionId', () => {
     ).toBeUndefined();
   });
 
-  it('prioritizes x-claude-code-session-id header', () => {
+  it('in "auto" mode, passes through x-claude-code-session-id header', () => {
     const headers = mockHeaders({ 'x-claude-code-session-id': 'abc123' });
     const result = deriveSessionId(
       headers,
@@ -170,7 +170,18 @@ describe('deriveSessionId', () => {
     expect(result).toBe('abc123');
   });
 
-  it('uses session_id from body when no header', () => {
+  it('in "always" mode, ignores x-claude-code-session-id header', () => {
+    const headers = mockHeaders({ 'x-claude-code-session-id': 'abc123' });
+    const body = {
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'Hello' }],
+    };
+    const result = deriveSessionId(headers, body, '/v1/chat/completions', 'always');
+    expect(result).not.toBe('abc123');
+    expect(result!.length).toBe(64);
+  });
+
+  it('in "auto" mode, uses session_id from body when no header', () => {
     const headers = mockHeaders();
     const result = deriveSessionId(
       headers,
@@ -179,6 +190,18 @@ describe('deriveSessionId', () => {
       'auto',
     );
     expect(result).toBe('from-body');
+  });
+
+  it('in "always" mode, ignores session_id from body', () => {
+    const headers = mockHeaders();
+    const body = {
+      model: 'claude-sonnet-4-6',
+      session_id: 'from-body',
+      messages: [{ role: 'user', content: 'Hello' }],
+    };
+    const result = deriveSessionId(headers, body, '/v1/chat/completions', 'always');
+    expect(result).not.toBe('from-body');
+    expect(result!.length).toBe(64);
   });
 
   it('ignores empty string session_id from body', () => {
@@ -228,5 +251,22 @@ describe('deriveSessionId', () => {
     const a = deriveSessionId(headers, body, '/v1/chat/completions', 'always');
     const b = deriveSessionId(headers, body, '/v1/chat/completions', 'always');
     expect(a).toBe(b);
+  });
+
+  it('"auto" without any client ID falls back to fingerprint', () => {
+    const body = {
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'Hi' }],
+    };
+    const result = deriveSessionId(mockHeaders(), body, '/v1/chat/completions', 'auto');
+    expect(result).toBeTypeOf('string');
+    expect(result!.length).toBe(64);
+  });
+
+  it('"always" without body falls back to proxy UUID', () => {
+    const headers = mockHeaders({ 'x-claude-code-session-id': 'should-be-ignored' });
+    const result = deriveSessionId(headers, undefined, '/v1/chat/completions', 'always');
+    expect(result).toBeTypeOf('string');
+    expect(result).not.toBe('should-be-ignored');
   });
 });
