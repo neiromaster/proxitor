@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import * as clack from '@clack/prompts';
 import { DEFAULTS, loadConfig, tryFindConfigFile } from '../../config.js';
 import type { ProxyConfig } from '../../config-schema.js';
-import { maskKey } from './wizard.js';
+import { maskKey } from './prompts.js';
 
 type ShowArgs = {
   configPath?: string | undefined;

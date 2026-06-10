@@ -21,6 +21,23 @@ export function writeConfigRaw(path: string, content: string): void {
   writeFileSync(path, content, 'utf-8');
 }
 
+export function setGlobalConfigField(
+  configPath: string,
+  field: string,
+  value: unknown,
+): void {
+  const raw = readConfigRaw(configPath);
+  const doc = parseDocument(raw);
+
+  if (value === undefined) {
+    doc.delete(field);
+  } else {
+    doc.set(field, value);
+  }
+
+  writeConfigRaw(configPath, doc.toString());
+}
+
 export function setModelOverride(
   configPath: string,
   modelKey: string,

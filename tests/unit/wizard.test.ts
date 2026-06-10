@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskKey } from '../../src/commands/config/wizard.js';
+import { maskKey } from '../../src/commands/config/prompts.js';
 
 describe('maskKey', () => {
   it('returns "(none)" for empty string', () => {

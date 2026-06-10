@@ -12,6 +12,7 @@ import {
   formatModelLabel,
   formatPricing,
 } from './format.js';
+import { askCacheControlTtl, askTriState, type TriState } from './prompts.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
@@ -173,22 +174,57 @@ async function configureProviderAndSave(
   const mode = await selectRoutingMode('Configure provider routing');
   if (isCancel(mode)) return;
 
-  if (mode === 'skip') {
-    const empty: ModelOverride = {};
-    if (!(await confirmAndSave(configPath, modelKey, empty, client))) return;
-    clack.outro('✓ Override saved (no provider routing)');
-    return;
+  let override: ModelOverride = {};
+
+  if (mode !== 'skip') {
+    const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern);
+    if (!providerOptions) return;
+
+    const providerResult = await selectProvidersByMode(mode as string, providerOptions);
+    if (!providerResult) return;
+    override = providerResult as ModelOverride;
   }
 
-  const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern);
-  if (!providerOptions) return;
+  override = await collectSessionAndCache(override);
 
-  const override = await selectProvidersByMode(mode as string, providerOptions);
-  if (!override) return;
-
-  if (!(await confirmAndSave(configPath, modelKey, override as ModelOverride, client)))
-    return;
+  if (!(await confirmAndSave(configPath, modelKey, override, client))) return;
   clack.outro('✓ Model override saved');
+}
+
+async function collectSessionAndCache(override: ModelOverride): Promise<ModelOverride> {
+  const addSession = await clack.confirm({
+    message: 'Configure session routing for this model?',
+    initialValue: false,
+  });
+  if (!isCancel(addSession) && addSession) {
+    const sid = await askTriState('Session ID mode', 'auto' as TriState, {
+      auto: 'Passthrough client ID, generate if missing',
+      always: 'Always generate proxy session ID',
+      never: "Don't manage session headers",
+    });
+    if (sid) override.sessionId = sid;
+  }
+
+  const addCache = await clack.confirm({
+    message: 'Configure cache control for this model?',
+    initialValue: false,
+  });
+  if (!isCancel(addCache) && addCache) {
+    const cc = await askTriState('Cache control mode', 'auto' as TriState, {
+      auto: 'Anthropic models only',
+      always: 'All models',
+      never: 'Off',
+    });
+    if (cc) {
+      override.cacheControl = cc;
+      if (cc !== 'never') {
+        const ttl = await askCacheControlTtl(undefined);
+        if (ttl && ttl !== 'reset') override.cacheControlTtl = ttl;
+      }
+    }
+  }
+
+  return override;
 }
 
 /**
@@ -273,5 +309,9 @@ function formatOverrideYaml(override: Record<string, unknown>): string {
       parts.push(`provider.${key}: ${JSON.stringify(value)}`);
     }
   }
+  if (override.sessionId) parts.push(`sessionId: ${override.sessionId}`);
+  if (override.cacheControl) parts.push(`cacheControl: ${override.cacheControl}`);
+  if (override.cacheControlTtl)
+    parts.push(`cacheControlTtl: ${override.cacheControlTtl}`);
   return parts.join('\n    ') || '(empty)';
 }
