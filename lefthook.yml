@@ -7,13 +7,13 @@ pre-commit:
       stage_fixed: true
     typecheck:
       glob: "*.{ts,tsx}"
-      run: pnpm exec tsc --noEmit
+      run: pnpm run typecheck:all
 
 pre-push:
   commands:
     typecheck:
-      run: pnpm exec tsc --noEmit
+      run: pnpm run typecheck:all
     tests:
-      run: pnpm exec vitest run
+      run: pnpm run test
     changesets:
       run: node scripts/validate-changesets.js

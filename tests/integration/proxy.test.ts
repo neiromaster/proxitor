@@ -4,7 +4,7 @@ import { createTestEnv, type TestEnv } from '../helpers.js';
 /** Register a catch-all handler on the upstream Hono app */
 function catchAll(
   upstream: Hono,
-  handler: (c: import('hono').Context) => Promise<Response>,
+  handler: (c: import('hono').Context) => Response | Promise<Response>,
 ) {
   upstream.all('/*', handler);
 }
@@ -43,7 +43,7 @@ describe('Proxy Integration', () => {
     expect(res.status).toBe(200);
     expect(capturedBody.provider).toEqual({ only: ['deepinfra'] });
     expect(capturedBody.model).toBe('claude-sonnet-4-20250514');
-    expect(capturedHeaders['authorization']).toBe('Bearer test-api-key');
+    expect(capturedHeaders.authorization).toBe('Bearer test-api-key');
     expect(capturedHeaders['http-referer']).toBe(
       'https://github.com/neiromaster/proxitor',
     );
@@ -210,7 +210,7 @@ describe('Proxy Integration', () => {
     expect(res.status).toBe(200);
     expect(capturedMethod).toBe('GET');
 
-    const data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
     expect(data.data).toEqual([]);
   });
 
@@ -235,8 +235,8 @@ describe('Proxy Integration', () => {
     });
 
     // Client auth should be stripped
-    expect(capturedHeaders['authorization']).not.toContain('sk-client-secret-key');
-    expect(capturedHeaders['authorization']).toBe('Bearer test-api-key');
+    expect(capturedHeaders.authorization).not.toContain('sk-client-secret-key');
+    expect(capturedHeaders.authorization).toBe('Bearer test-api-key');
     expect(capturedHeaders['x-api-key']).toBeUndefined();
   });
 
@@ -699,7 +699,7 @@ describe('Proxy Integration', () => {
 
     // Auto mode falls back to proxy UUID for sticky routing
     expect(typeof capturedHeaders['x-session-id']).toBe('string');
-    expect(capturedHeaders['x-session-id'].length).toBeGreaterThan(0);
+    expect(capturedHeaders['x-session-id']!.length).toBeGreaterThan(0);
   });
 
   it('injects generated session_id with always mode', async () => {
@@ -719,7 +719,7 @@ describe('Proxy Integration', () => {
     });
 
     expect(typeof capturedHeaders['x-session-id']).toBe('string');
-    expect(capturedHeaders['x-session-id'].length).toBeGreaterThan(0);
+    expect(capturedHeaders['x-session-id']!.length).toBeGreaterThan(0);
   });
 
   it('does not inject session_id when mode is never', async () => {

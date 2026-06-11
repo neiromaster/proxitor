@@ -28,10 +28,10 @@ describeE2e('E2E: OpenRouter', () => {
     });
 
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
     expect(data.id).toBeDefined();
     expect(data.choices).toBeDefined();
-    expect(data.choices.length).toBeGreaterThan(0);
+    expect((data.choices as unknown[]).length).toBeGreaterThan(0);
   });
 
   it('[e2e-stream] streams a chat completion from OpenRouter', async () => {
@@ -79,8 +79,8 @@ describeE2e('E2E: OpenRouter', () => {
     });
 
     expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.choices.length).toBeGreaterThan(0);
+    const data = (await res.json()) as Record<string, unknown>;
+    expect((data.choices as unknown[]).length).toBeGreaterThan(0);
     expect(data.provider).toBe('DeepInfra');
   });
 
@@ -102,8 +102,8 @@ describeE2e('E2E: OpenRouter', () => {
     });
 
     expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.choices.length).toBeGreaterThan(0);
+    const data = (await res.json()) as Record<string, unknown>;
+    expect((data.choices as unknown[]).length).toBeGreaterThan(0);
     expect(data.provider).toBe('Novita');
   });
 
@@ -115,7 +115,7 @@ describeE2e('E2E: OpenRouter', () => {
     });
 
     const res = await fetch(`${env.proxyUrl}/health`);
-    const data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
 
     expect(data.ok).toBe(true);
     expect(data.upstream).toBe('https://openrouter.ai/api');

@@ -20,24 +20,24 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   const cc = await askTriState('Cache control mode', currentCc as TriState, CACHE_HINTS);
   if (cc === null) return;
 
-  let ttl: '5m' | '1h' | null | undefined = currentTtl;
+  const fields: Record<string, unknown> = {
+    cacheControl: cc === DEFAULTS.cacheControl ? undefined : cc,
+  };
+
   if (cc !== 'never') {
     const ttlResult = await askCacheControlTtl(currentTtl as '5m' | '1h' | undefined);
-    if (ttlResult === null) {
-      ttl = undefined;
-    } else if (ttlResult === 'reset') {
-      ttl = null;
-    } else {
-      ttl = ttlResult;
+    if (ttlResult === 'reset') {
+      fields.cacheControlTtl = undefined; // remove TTL from config
+    } else if (ttlResult !== null) {
+      fields.cacheControlTtl = ttlResult;
     }
-  } else {
-    ttl = null;
+    // ttlResult === null → cancel: don't include cacheControlTtl, preserve existing
   }
+  // cc === 'never' → don't touch cacheControlTtl at all
+  // The application logic ignores TTL when cacheControl is 'never'
 
-  setGlobalConfigFields(configPath, {
-    cacheControl: cc === DEFAULTS.cacheControl ? undefined : cc,
-    cacheControlTtl: ttl === null || ttl === undefined ? undefined : ttl,
-  });
+  setGlobalConfigFields(configPath, fields);
 
-  clack.log.success(`cacheControl set to ${cc}${ttl ? `, TTL = ${ttl}` : ''}`);
+  const ttlPart = fields.cacheControlTtl ? `, TTL = ${fields.cacheControlTtl}` : '';
+  clack.log.success(`cacheControl set to ${cc}${ttlPart}`);
 }

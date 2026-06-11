@@ -8,18 +8,30 @@
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelOverride } from '../../src/config-schema.js';
 import { createTempDir, removeTempDir } from '../helpers.js';
 
 // ---------------------------------------------------------------------------
-// Mocks — shared across all test blocks
+// Mocks — ALL hoisted and mock calls at module top level (vitest requirement)
 // ---------------------------------------------------------------------------
 
 const { mockAskTriState, mockAskCacheControlTtl } = vi.hoisted(() => ({
   mockAskTriState: vi.fn(),
   mockAskCacheControlTtl: vi.fn(),
 }));
+
+const { mockSelectRoutingMode } = vi.hoisted(() => ({
+  mockSelectRoutingMode: vi.fn(),
+}));
+
+const { mockSetModelOverride, mockGetModelOverrides, mockRequireConfigPath } = vi.hoisted(
+  () => ({
+    mockSetModelOverride: vi.fn(),
+    mockGetModelOverrides: vi.fn(() => ({})),
+    mockRequireConfigPath: vi.fn((p?: string) => p ?? '/tmp/test-config.yaml'),
+  }),
+);
 
 vi.mock('../../src/commands/config/prompts.js', async importOriginal => {
   const actual =
@@ -42,8 +54,34 @@ vi.mock('@clack/prompts', () => ({
   text: vi.fn(),
 }));
 
+vi.mock('../../src/commands/config/providers.js', () => ({
+  selectRoutingMode: mockSelectRoutingMode,
+  fetchProvidersForModel: vi.fn(),
+  selectProvidersByMode: vi.fn(),
+}));
+
+vi.mock('../../src/commands/config/config.js', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('../../src/commands/config/config.js')>();
+  return {
+    ...actual,
+    setModelOverride: mockSetModelOverride,
+    getModelOverrides: mockGetModelOverrides,
+    requireConfigPath: mockRequireConfigPath,
+  };
+});
+
+vi.mock('../../src/openrouter/models.js', () => ({
+  fetchModels: vi.fn(),
+  formatPrice: vi.fn(),
+}));
+
 // Import AFTER mocks are set up
 const { editCacheControl } = await import('../../src/commands/config/edit.js');
+const { cacheControlCommand } = await import(
+  '../../src/commands/config/cache-control.js'
+);
+const { handleFieldChange } = await import('../../src/commands/config/connection.js');
 
 // Real (un-mocked) config utilities for file-level tests
 const { setGlobalConfigFields, readConfigRaw } = await import(
@@ -51,10 +89,10 @@ const { setGlobalConfigFields, readConfigRaw } = await import(
 );
 
 // ===========================================================================
-// Bug #1  (P0) — TTL silently lost on cancel in editCacheControl
+// Bug #1a (P0) — TTL silently lost on cancel in editCacheControl (per-model)
 // ===========================================================================
 
-describe('Bug #1: TTL loss on cancel in editCacheControl', () => {
+describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
   it('preserves existing TTL when user cancels TTL prompt', async () => {
     const current: ModelOverride = {
       cacheControl: 'always',
@@ -159,6 +197,103 @@ describe('Bug #1: TTL loss on cancel in editCacheControl', () => {
 });
 
 // ===========================================================================
+// Bug #1b (P0) — TTL silently lost on cancel in cacheControlCommand (global)
+// ===========================================================================
+
+describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'cacheControl: always\ncacheControlTtl: 1h\nport: 8828\n');
+    mockRequireConfigPath.mockReturnValue(configPath);
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('preserves existing TTL when user cancels TTL prompt', async () => {
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce(null); // ← cancel
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControl: always');
+    expect(raw).toContain('cacheControlTtl: 1h'); // ← MUST be preserved
+  });
+
+  it('preserves existing TTL=5m when user cancels TTL prompt', async () => {
+    writeFileSync(configPath, 'cacheControl: always\ncacheControlTtl: 5m\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControlTtl: 5m');
+  });
+
+  it('does not add TTL when user cancels and no TTL existed', async () => {
+    writeFileSync(configPath, 'cacheControl: always\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControl: always');
+    expect(raw).not.toContain('cacheControlTtl');
+  });
+
+  it('updates TTL when user picks a new one', async () => {
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce('5m');
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControlTtl: 5m');
+  });
+
+  it('preserves TTL when user picks never (app logic decides whether to use it)', async () => {
+    mockAskTriState.mockResolvedValueOnce('never');
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControl: never');
+    // TTL is NOT deleted — the application ignores it when cacheControl is 'never'
+    expect(raw).toContain('cacheControlTtl: 1h');
+  });
+
+  it('removes TTL when user explicitly picks reset', async () => {
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce('reset');
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControl: always');
+    expect(raw).not.toContain('cacheControlTtl');
+  });
+
+  it('returns without writing when user cancels tri-state', async () => {
+    mockAskTriState.mockResolvedValueOnce(null);
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('cacheControl: always'); // unchanged
+    expect(raw).toContain('cacheControlTtl: 1h'); // unchanged
+  });
+});
+
+// ===========================================================================
 // Bug #3  (P1) — Non-atomic double write in cache-control
 // ===========================================================================
 
@@ -223,8 +358,6 @@ describe('Bug #3: Batch write — setGlobalConfigFields', () => {
 
 describe('Bug #5: Defensive guard in FIELD_MAP', () => {
   it('handleFieldChange does not crash on unknown field', async () => {
-    const { handleFieldChange } = await import('../../src/commands/config/connection.js');
-
     // Should return silently without throwing
     await expect(handleFieldChange('unknown_field', '/dev/null', {})).resolves.toBeNull();
   });
@@ -235,38 +368,6 @@ describe('Bug #5: Defensive guard in FIELD_MAP', () => {
 // ===========================================================================
 
 describe('Bug #6: Skip short-circuit in add override', () => {
-  const { mockSelectRoutingMode } = vi.hoisted(() => ({
-    mockSelectRoutingMode: vi.fn(),
-  }));
-  const { mockSetModelOverride, mockGetModelOverrides, mockRequireConfigPath } =
-    vi.hoisted(() => ({
-      mockSetModelOverride: vi.fn(),
-      mockGetModelOverrides: vi.fn(() => ({})),
-      mockRequireConfigPath: vi.fn(() => '/tmp/test-config.yaml'),
-    }));
-
-  vi.mock('../../src/commands/config/providers.js', () => ({
-    selectRoutingMode: mockSelectRoutingMode,
-    fetchProvidersForModel: vi.fn(),
-    selectProvidersByMode: vi.fn(),
-  }));
-
-  vi.mock('../../src/commands/config/config.js', async importOriginal => {
-    const actual =
-      await importOriginal<typeof import('../../src/commands/config/config.js')>();
-    return {
-      ...actual,
-      setModelOverride: mockSetModelOverride,
-      getModelOverrides: mockGetModelOverrides,
-      requireConfigPath: mockRequireConfigPath,
-    };
-  });
-
-  vi.mock('../../src/openrouter/models.js', () => ({
-    fetchModels: vi.fn(),
-    formatPrice: vi.fn(),
-  }));
-
   it('skips session/cache prompts when routing mode is "skip"', async () => {
     const { configureProviderAndSave } = await import('../../src/commands/config/add.js');
 
@@ -293,7 +394,7 @@ describe('Bug #6: Skip short-circuit in add override', () => {
 
     // setModelOverride called with empty or minimal override (no sessionId/cacheControl)
     expect(mockSetModelOverride).toHaveBeenCalled();
-    const savedOverride = mockSetModelOverride.mock.calls[0][2];
+    const savedOverride = mockSetModelOverride.mock.calls[0]![2];
     expect(savedOverride.sessionId).toBeUndefined();
     expect(savedOverride.cacheControl).toBeUndefined();
   });
