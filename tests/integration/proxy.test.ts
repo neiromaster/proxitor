@@ -415,7 +415,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('injects cache_control with ttl:300 for Anthropic model when cacheControlTtl is 5m', async () => {
@@ -441,7 +441,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 300 });
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 
   it('injects cache_control without ttl for non-Anthropic model even when cacheControlTtl is set', async () => {
@@ -541,7 +541,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('adds ttl to existing cache_control without ttl for Anthropic model', async () => {
@@ -567,7 +567,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('overwrites existing ttl in cache_control when cacheControlTtl is configured', async () => {
@@ -593,7 +593,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 3600 });
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('does not inject ttl when model override has default', async () => {

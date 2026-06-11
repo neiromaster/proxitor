@@ -19,11 +19,6 @@ export function shouldInjectCacheControl(
   return isAnthropicEndpoint(modelName, path);
 }
 
-export const TTL_SECONDS: Readonly<Record<'5m' | '1h', number>> = {
-  '5m': 300,
-  '1h': 3600,
-};
-
 /**
  * Build cache_control value for injection.
  * Merges existing cache_control with configured TTL.
@@ -51,7 +46,7 @@ export function buildCacheControl(
   }
 
   if (ttl && isAnthropic) {
-    result.ttl = TTL_SECONDS[ttl];
+    result.ttl = ttl;
   }
 
   return result;
