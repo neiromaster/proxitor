@@ -7,6 +7,7 @@
   "changesets": [
     "cache-control-and-session",
     "cache-control-ttl",
+    "cache-hit-rate-and-responses-api",
     "cli-cmd-ts-refactor",
     "dead-code-and-url-cleanup",
     "doctor-and-validate",
