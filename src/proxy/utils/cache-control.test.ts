@@ -3,7 +3,6 @@ import {
   buildCacheControl,
   isAnthropicEndpoint,
   shouldInjectCacheControl,
-  TTL_SECONDS,
 } from './cache-control.js';
 
 // ---------------------------------------------------------------------------
@@ -83,9 +82,9 @@ describe('buildCacheControl', () => {
     expect(result).toEqual({ type: 'ephemeral' });
   });
 
-  it('adds ttl when TTL is set and endpoint is Anthropic', () => {
+  it('adds ttl string when TTL is set and endpoint is Anthropic', () => {
     const result = buildCacheControl(undefined, '5m', true);
-    expect(result).toEqual({ type: 'ephemeral', ttl: 300 });
+    expect(result).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 
   it('omits ttl when TTL is set but endpoint is non-Anthropic', () => {
@@ -95,15 +94,15 @@ describe('buildCacheControl', () => {
   });
 
   it('overrides ttl on existing cache_control for Anthropic endpoint', () => {
-    const existing = { type: 'ephemeral', ttl: 999 };
+    const existing = { type: 'ephemeral', ttl: '5m' };
     const result = buildCacheControl(existing, '1h', true);
-    expect(result).toEqual({ type: 'ephemeral', ttl: 3600 });
+    expect(result).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
   it('preserves other fields from existing cache_control', () => {
     const existing = { type: 'ephemeral', custom: 'value', count: 42 };
     const result = buildCacheControl(existing, '5m', true);
-    expect(result).toEqual({ type: 'ephemeral', custom: 'value', count: 42, ttl: 300 });
+    expect(result).toEqual({ type: 'ephemeral', custom: 'value', count: 42, ttl: '5m' });
   });
 
   it('does not mutate the original existing object', () => {
@@ -122,6 +121,11 @@ describe('buildCacheControl', () => {
     expect(result).toEqual({ type: 'ephemeral', custom: 'value' });
   });
 
+  it('uses 1h TTL string for Anthropic endpoint', () => {
+    const result = buildCacheControl(undefined, '1h', true);
+    expect(result).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+
   it('treats array existing as no existing — returns default ephemeral', () => {
     const result = buildCacheControl(['ephemeral', '1h'] as unknown, undefined, true);
     expect(result).toEqual({ type: 'ephemeral' });
@@ -131,20 +135,6 @@ describe('buildCacheControl', () => {
 
   it('treats array existing as no existing — still adds TTL when configured', () => {
     const result = buildCacheControl([] as unknown, '1h', true);
-    expect(result).toEqual({ type: 'ephemeral', ttl: 3600 });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TTL_SECONDS
-// ---------------------------------------------------------------------------
-
-describe('TTL_SECONDS', () => {
-  it('maps 5m to 300', () => {
-    expect(TTL_SECONDS['5m']).toBe(300);
-  });
-
-  it('maps 1h to 3600', () => {
-    expect(TTL_SECONDS['1h']).toBe(3600);
+    expect(result).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 });
