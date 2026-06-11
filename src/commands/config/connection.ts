@@ -12,7 +12,6 @@ import {
   maskKey,
 } from './prompts.js';
 
-/** Map field name → config key + prompt function. */
 const FIELD_MAP: Record<
   string,
   {

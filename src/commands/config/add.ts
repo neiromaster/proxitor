@@ -19,9 +19,6 @@ import {
 } from './providers.js';
 import { collectCacheTriState, collectSessionTriState } from './tri-state.js';
 
-// Sentinel value for the "enter custom pattern" option in autocomplete. Uses
-// a string because @clack/prompts' autocomplete `value` field is typed `string`.
-// Picked to be unguessable as a real model id (real ids use `/` separators).
 const CUSTOM_PATTERN_VALUE = '__proxitor_custom_pattern__';
 
 type AddOptions = {
@@ -41,7 +38,6 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
   const models = await loadModelsWithSpinner(client);
   if (!models) return;
 
-  // If a preset was passed in (e.g. from `browse`), skip search.
   let modelId: string | null = presetModelId ?? null;
   if (modelId === null) {
     const picked = await searchModel(models);
@@ -55,8 +51,6 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
     }
   }
 
-  // Pre-check duplicate — done BEFORE asking about routing so the user
-  // doesn't waste time configuring providers for a key that's already set.
   if (existing[modelId]) {
     clack.log.warn(
       `Override for "${modelId}" already exists. Use \`proxitor config edit\` to change it.`,
@@ -65,8 +59,6 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
     return;
   }
 
-  // If the user typed a free-form model id (not from the list), show what
-  // we know about it from the loaded data; otherwise show the picked model.
   if (presetModelId === undefined) {
     const selected = models.find(m => m.id === modelId);
     if (selected) displayModelInfo(selected);

@@ -5,10 +5,6 @@ import { findConfigFile, tryFindConfigFile } from '../../config.js';
 import type { ModelOverride, ProxyConfig } from '../../config-schema.js';
 import { logger } from '../../logger.js';
 
-/**
- * Throws {@link MissingConfigError} via `findConfigFile` if no config is found.
- * Pass an explicit path to skip discovery and use that file directly.
- */
 export function requireConfigPath(explicitPath?: string): string {
   return findConfigFile(explicitPath);
 }
