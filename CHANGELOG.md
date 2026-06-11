@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0-beta.3
+
+### Patch Changes
+
+- 733e966: Fix config menu stripping values that match defaults. Selected values are now always persisted to the config file, even when they equal the built-in defaults.
+
 ## 0.9.0-beta.2
 
 ### Minor Changes

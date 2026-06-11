@@ -11,6 +11,7 @@
     "dead-code-and-url-cleanup",
     "doctor-and-validate",
     "middleware-architecture",
+    "persist-explicit-config-values",
     "remove-upstream-timeout"
   ]
 }
