@@ -20,7 +20,6 @@ export async function sessionRoutingCommand(opts?: {
 
   if (result === null) return;
 
-  const value = result === DEFAULTS.sessionId ? undefined : result;
-  setGlobalConfigField(configPath, 'sessionId', value);
+  setGlobalConfigField(configPath, 'sessionId', result);
   clack.log.success(`sessionId set to ${result}`);
 }

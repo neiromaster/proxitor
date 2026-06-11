@@ -21,7 +21,7 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   if (cc === null) return;
 
   const fields: Record<string, unknown> = {
-    cacheControl: cc === DEFAULTS.cacheControl ? undefined : cc,
+    cacheControl: cc,
   };
 
   if (cc !== 'never') {
