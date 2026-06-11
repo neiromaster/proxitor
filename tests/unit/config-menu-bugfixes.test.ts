@@ -81,7 +81,7 @@ const { editCacheControl } = await import('../../src/commands/config/edit.js');
 const { cacheControlCommand } = await import(
   '../../src/commands/config/cache-control.js'
 );
-const { handleFieldChange } = await import('../../src/commands/config/connection.js');
+const { connectionMenuCommand } = await import('../../src/commands/config/connection.js');
 
 // Real (un-mocked) config utilities for file-level tests
 const { setGlobalConfigFields, readConfigRaw } = await import(
@@ -291,6 +291,19 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     expect(raw).toContain('cacheControl: always'); // unchanged
     expect(raw).toContain('cacheControlTtl: 1h'); // unchanged
   });
+
+  it('cancels entire operation when TTL cancelled — even if mode changed', async () => {
+    // User picks 'auto' (different from current 'always'), then cancels TTL
+    mockAskTriState.mockResolvedValueOnce('auto');
+    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    // Nothing should be written — config stays as-is
+    expect(raw).toContain('cacheControl: always');
+    expect(raw).toContain('cacheControlTtl: 1h');
+  });
 });
 
 // ===========================================================================
@@ -353,13 +366,48 @@ describe('Bug #3: Batch write — setGlobalConfigFields', () => {
 });
 
 // ===========================================================================
-// Bug #5  (P2) — Unchecked cast in FIELD_MAP
+// Connection menu — one-shot, ESC cancels without config changes
 // ===========================================================================
 
-describe('Bug #5: Defensive guard in FIELD_MAP', () => {
-  it('handleFieldChange does not crash on unknown field', async () => {
-    // Should return silently without throwing
-    await expect(handleFieldChange('unknown_field', '/dev/null', {})).resolves.toBeNull();
+describe('Connection menu: one-shot per visit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'port: 8828\nhost: 0.0.0.0\n');
+    mockRequireConfigPath.mockReturnValue(configPath);
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('returns without writing when user cancels field selection', async () => {
+    const { select: mockSelect } = await import('@clack/prompts');
+    (mockSelect as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      Symbol.for('clack:cancel'),
+    );
+
+    await connectionMenuCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('port: 8828'); // unchanged
+  });
+
+  it('returns without writing when user cancels value prompt', async () => {
+    const { select: mockSelect, text: mockText } = await import('@clack/prompts');
+    (mockSelect as ReturnType<typeof vi.fn>).mockResolvedValueOnce('port');
+    (mockText as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      Symbol.for('clack:cancel'),
+    );
+
+    await connectionMenuCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('port: 8828'); // unchanged
   });
 });
 

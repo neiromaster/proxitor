@@ -26,12 +26,12 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
 
   if (cc !== 'never') {
     const ttlResult = await askCacheControlTtl(currentTtl as '5m' | '1h' | undefined);
+    if (ttlResult === null) return; // Cancel entire operation — nothing written
     if (ttlResult === 'reset') {
       fields.cacheControlTtl = undefined; // remove TTL from config
-    } else if (ttlResult !== null) {
+    } else {
       fields.cacheControlTtl = ttlResult;
     }
-    // ttlResult === null → cancel: don't include cacheControlTtl, preserve existing
   }
   // cc === 'never' → don't touch cacheControlTtl at all
   // The application logic ignores TTL when cacheControl is 'never'
