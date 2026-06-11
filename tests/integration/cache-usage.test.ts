@@ -26,7 +26,7 @@ describe('Cache usage logging', () => {
     });
 
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as { usage: { cache_read_input_tokens: number } };
     expect(json.usage.cache_read_input_tokens).toBe(200_000);
 
     await cleanup();

@@ -17,6 +17,10 @@ function formatOverrideSummary(override: ModelOverride): string {
     }
   }
 
+  if (override.sessionId) parts.push(`session: ${override.sessionId}`);
+  if (override.cacheControl) parts.push(`cache: ${override.cacheControl}`);
+  if (override.cacheControlTtl) parts.push(`ttl: ${override.cacheControlTtl}`);
+
   return parts.join(', ') || '(empty)';
 }
 

@@ -102,8 +102,9 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 # cacheControlTtl: '1h'
 
 # Session sticky routing: inject session_id for provider stickiness from the first request.
-# "auto" = always active (uses X-Claude-Code-Session-Id header or generates proxy UUID),
-# "always" = same as auto, "never" = off
+# "auto" = passthrough client session ID, generate only if missing
+# "always" = always generate proxy session ID (ignores client-provided)
+# "never" = don't manage session headers at all
 # sessionId: auto
 
 # Enable verbose logging

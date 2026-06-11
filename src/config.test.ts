@@ -723,8 +723,15 @@ describe('cacheControl and sessionId config', () => {
     });
 
     it('defaults cacheControlTtl to undefined', async () => {
-      const config = await loadConfig({ openrouterKey: 'test-key' });
-      expect(config.cacheControlTtl).toBeUndefined();
+      const dir = mkdtempSync(join(tmpdir(), 'proxitor-test-'));
+      const configPath = join(dir, 'proxitor.config.yaml');
+      writeFileSync(configPath, 'openrouterKey: test-key');
+      try {
+        const config = await loadConfig({ configPath, openrouterKey: 'test-key' });
+        expect(config.cacheControlTtl).toBeUndefined();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     it('accepts cacheControlTtl: null in model override', () => {

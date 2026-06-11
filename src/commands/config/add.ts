@@ -17,10 +17,8 @@ import {
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
+import { collectCacheTriState, collectSessionTriState } from './tri-state.js';
 
-// Sentinel value for the "enter custom pattern" option in autocomplete. Uses
-// a string because @clack/prompts' autocomplete `value` field is typed `string`.
-// Picked to be unguessable as a real model id (real ids use `/` separators).
 const CUSTOM_PATTERN_VALUE = '__proxitor_custom_pattern__';
 
 type AddOptions = {
@@ -40,7 +38,6 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
   const models = await loadModelsWithSpinner(client);
   if (!models) return;
 
-  // If a preset was passed in (e.g. from `browse`), skip search.
   let modelId: string | null = presetModelId ?? null;
   if (modelId === null) {
     const picked = await searchModel(models);
@@ -54,8 +51,6 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
     }
   }
 
-  // Pre-check duplicate — done BEFORE asking about routing so the user
-  // doesn't waste time configuring providers for a key that's already set.
   if (existing[modelId]) {
     clack.log.warn(
       `Override for "${modelId}" already exists. Use \`proxitor config edit\` to change it.`,
@@ -64,8 +59,6 @@ export async function addOverrideCommand(opts: AddOptions): Promise<void> {
     return;
   }
 
-  // If the user typed a free-form model id (not from the list), show what
-  // we know about it from the loaded data; otherwise show the picked model.
   if (presetModelId === undefined) {
     const selected = models.find(m => m.id === modelId);
     if (selected) displayModelInfo(selected);
@@ -164,7 +157,7 @@ async function enterPattern(models: OpenRouterModel[]): Promise<string | null> {
   return pat;
 }
 
-async function configureProviderAndSave(
+export async function configureProviderAndSave(
   configPath: string,
   client: OpenRouterDataClient,
   modelKey: string,
@@ -173,22 +166,59 @@ async function configureProviderAndSave(
   const mode = await selectRoutingMode('Configure provider routing');
   if (isCancel(mode)) return;
 
+  let override: ModelOverride = {};
+
   if (mode === 'skip') {
-    const empty: ModelOverride = {};
-    if (!(await confirmAndSave(configPath, modelKey, empty, client))) return;
-    clack.outro('✓ Override saved (no provider routing)');
+    // Short-circuit: save a bare override without session/cache prompts
+    if (!(await confirmAndSave(configPath, modelKey, override, client))) return;
+    clack.outro('✓ Model override saved (no provider routing)');
     return;
   }
 
   const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern);
   if (!providerOptions) return;
 
-  const override = await selectProvidersByMode(mode as string, providerOptions);
-  if (!override) return;
+  const providerResult = await selectProvidersByMode(mode as string, providerOptions);
+  if (!providerResult) return;
+  override = providerResult as ModelOverride;
 
-  if (!(await confirmAndSave(configPath, modelKey, override as ModelOverride, client)))
-    return;
+  override = await collectSessionAndCache(override);
+
+  if (!(await confirmAndSave(configPath, modelKey, override, client))) return;
   clack.outro('✓ Model override saved');
+}
+
+async function collectSessionAndCache(override: ModelOverride): Promise<ModelOverride> {
+  override = await collectSession(override);
+  override = await collectCache(override);
+  return override;
+}
+
+async function collectSession(override: ModelOverride): Promise<ModelOverride> {
+  const want = await clack.confirm({
+    message: 'Configure session routing for this model?',
+    initialValue: false,
+  });
+  if (isCancel(want) || !want) return override;
+
+  const result = await collectSessionTriState();
+  if (result) override.sessionId = result.sessionId;
+  return override;
+}
+
+async function collectCache(override: ModelOverride): Promise<ModelOverride> {
+  const want = await clack.confirm({
+    message: 'Configure cache control for this model?',
+    initialValue: false,
+  });
+  if (isCancel(want) || !want) return override;
+
+  const result = await collectCacheTriState();
+  if (result) {
+    override.cacheControl = result.cacheControl;
+    if (result.cacheControlTtl) override.cacheControlTtl = result.cacheControlTtl;
+  }
+  return override;
 }
 
 /**
@@ -273,5 +303,9 @@ function formatOverrideYaml(override: Record<string, unknown>): string {
       parts.push(`provider.${key}: ${JSON.stringify(value)}`);
     }
   }
+  if (override.sessionId) parts.push(`sessionId: ${override.sessionId}`);
+  if (override.cacheControl) parts.push(`cacheControl: ${override.cacheControl}`);
+  if (override.cacheControlTtl)
+    parts.push(`cacheControlTtl: ${override.cacheControlTtl}`);
   return parts.join('\n    ') || '(empty)';
 }

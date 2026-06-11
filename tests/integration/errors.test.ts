@@ -20,7 +20,7 @@ describe('Error Handling', () => {
     });
 
     expect(res.status).toBe(502);
-    const data = await res.json();
+    const data = (await res.json()) as { error: { type: string } };
     expect(data.error.type).toBe('proxy_upstream_error');
   });
 
@@ -41,7 +41,7 @@ describe('Error Handling', () => {
     });
 
     expect(res.status).toBe(500);
-    const data = await res.json();
+    const data = (await res.json()) as { error: { type: string } };
     expect(data.error.type).toBe('server_error');
   });
 
@@ -89,7 +89,9 @@ describe('Error Handling', () => {
     });
 
     expect(res.status).toBe(400);
-    const data = await res.json();
+    const data = (await res.json()) as {
+      error: { code: number; message: string; metadata: Record<string, unknown> };
+    };
     expect(data.error.code).toBe(400);
     expect(data.error.message).toBe('Provider returned error');
     expect(data.error.metadata.provider_name).toBe('Anthropic');
@@ -119,7 +121,9 @@ describe('Error Handling', () => {
     });
 
     expect(res.status).toBe(403);
-    const data = await res.json();
+    const data = (await res.json()) as {
+      error: { code: number; message: string; metadata: Record<string, unknown> };
+    };
     expect(data.error.code).toBe(403);
     expect(data.error.metadata.patterns).toEqual(['ignore all previous instructions']);
   });

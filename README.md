@@ -266,9 +266,9 @@ Both `cacheControl` and `sessionId` support `auto` / `always` / `never` modes:
 
 | Mode | `cacheControl` | `sessionId` |
 | --- | --- | --- |
-| `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Use `X-Claude-Code-Session-Id` header if present; otherwise generate proxy UUID |
-| `always` | All models, all endpoints | Generate a proxy UUID for sticky routing |
-| `never` | Disabled | Disabled |
+| `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Passthrough client session ID if present; otherwise generate proxy UUID |
+| `always` | All models, all endpoints | Always generate proxy session ID, ignoring client-provided |
+| `never` | Disabled | Don't manage session headers — pass through as-is |
 
 `cacheControlTtl` values:
 
@@ -331,7 +331,7 @@ When both formats are present (e.g., OpenRouter relaying an Anthropic response),
 
 ## Interactive Config Manager
 
-Proxitor includes an interactive CLI for managing model overrides — search models, pick providers, and write to config without editing YAML by hand.
+Proxitor includes an interactive CLI for managing configuration — global settings, model overrides, and diagnostics — without editing YAML by hand.
 
 ### Setup wizard
 
@@ -354,6 +354,16 @@ After collecting the key, base URL, and auth type, the wizard performs a **best-
 
 If a config already exists, the wizard shows its location and asks whether to reconfigure. All fields are **pre-filled** with current values — press Enter to keep, or type a new value. Existing `modelOverrides`, `provider`, and other fields are preserved — only the wizard fields are updated.
 
+### Config menu
+
+`proxitor config` (or `proxitor config menu`) opens an interactive menu that loops until you exit. From there you can manage all settings:
+
+- **Show current config** — display the resolved configuration
+- **API key & connection** — change API key, port, listen address, base URL, auth type
+- **Session routing** — set global `sessionId` mode (`auto` / `always` / `never`)
+- **Cache control** — set global `cacheControl` mode and TTL
+- **Model overrides** — add, edit, remove, list, or browse models
+
 ```sh
 proxitor config menu           # interactive menu
 proxitor config add            # add a model override
@@ -371,6 +381,8 @@ proxitor doctor                # diagnose environment + network + port + version
 proxitor doctor --json         # machine-readable diagnostic report
 proxitor doctor --offline      # skip network checks
 ```
+
+When adding or editing a model override, you can also configure per-model `sessionId` and `cacheControl` — useful for models that need different caching or routing behavior than the global default.
 
 ### Add override walkthrough
 

@@ -19,7 +19,7 @@ describe('Health Endpoint', () => {
     const res = await fetch(`${env.proxyUrl}/health`);
     expect(res.status).toBe(200);
 
-    const data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
     expect(data.ok).toBe(true);
     expect(data.provider).toEqual({ only: ['anthropic'] });
     expect(data.modelOverrides).toEqual(['claude-*']);
@@ -30,7 +30,7 @@ describe('Health Endpoint', () => {
     env = await createTestEnv();
 
     const res = await fetch(`${env.proxyUrl}/health`);
-    const data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
 
     expect(data.ok).toBe(true);
     expect(data.provider).toBe('not configured');
