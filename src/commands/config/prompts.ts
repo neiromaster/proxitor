@@ -119,6 +119,20 @@ export async function askHost(current: string): Promise<string | null> {
 
 export type TriState = 'auto' | 'always' | 'never';
 
+/** Shared hint texts for session routing tri-state — used in add, edit, session-routing. */
+export const SESSION_HINTS: Record<TriState, string> = {
+  auto: 'Passthrough client ID, generate if missing',
+  always: 'Always generate proxy session ID',
+  never: "Don't manage session headers",
+};
+
+/** Shared hint texts for cache control tri-state — used in add, edit, cache-control. */
+export const CACHE_HINTS: Record<TriState, string> = {
+  auto: 'Anthropic models only',
+  always: 'All models',
+  never: 'Off',
+};
+
 export async function askTriState(
   message: string,
   current: TriState | undefined,

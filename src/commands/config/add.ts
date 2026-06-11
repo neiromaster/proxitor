@@ -12,12 +12,12 @@ import {
   formatModelLabel,
   formatPricing,
 } from './format.js';
-import { askCacheControlTtl, askTriState, type TriState } from './prompts.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
+import { collectCacheTriState, collectSessionTriState } from './tri-state.js';
 
 // Sentinel value for the "enter custom pattern" option in autocomplete. Uses
 // a string because @clack/prompts' autocomplete `value` field is typed `string`.
@@ -165,7 +165,7 @@ async function enterPattern(models: OpenRouterModel[]): Promise<string | null> {
   return pat;
 }
 
-async function configureProviderAndSave(
+export async function configureProviderAndSave(
   configPath: string,
   client: OpenRouterDataClient,
   modelKey: string,
@@ -176,14 +176,19 @@ async function configureProviderAndSave(
 
   let override: ModelOverride = {};
 
-  if (mode !== 'skip') {
-    const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern);
-    if (!providerOptions) return;
-
-    const providerResult = await selectProvidersByMode(mode as string, providerOptions);
-    if (!providerResult) return;
-    override = providerResult as ModelOverride;
+  if (mode === 'skip') {
+    // Short-circuit: save a bare override without session/cache prompts
+    if (!(await confirmAndSave(configPath, modelKey, override, client))) return;
+    clack.outro('✓ Model override saved (no provider routing)');
+    return;
   }
+
+  const providerOptions = await fetchProvidersForModel(client, modelKey, isPattern);
+  if (!providerOptions) return;
+
+  const providerResult = await selectProvidersByMode(mode as string, providerOptions);
+  if (!providerResult) return;
+  override = providerResult as ModelOverride;
 
   override = await collectSessionAndCache(override);
 
@@ -204,12 +209,8 @@ async function collectSession(override: ModelOverride): Promise<ModelOverride> {
   });
   if (isCancel(want) || !want) return override;
 
-  const sid = await askTriState('Session ID mode', 'auto' as TriState, {
-    auto: 'Passthrough client ID, generate if missing',
-    always: 'Always generate proxy session ID',
-    never: "Don't manage session headers",
-  });
-  if (sid) override.sessionId = sid;
+  const result = await collectSessionTriState();
+  if (result) override.sessionId = result.sessionId;
   return override;
 }
 
@@ -220,17 +221,10 @@ async function collectCache(override: ModelOverride): Promise<ModelOverride> {
   });
   if (isCancel(want) || !want) return override;
 
-  const cc = await askTriState('Cache control mode', 'auto' as TriState, {
-    auto: 'Anthropic models only',
-    always: 'All models',
-    never: 'Off',
-  });
-  if (cc) {
-    override.cacheControl = cc;
-    if (cc !== 'never') {
-      const ttl = await askCacheControlTtl(undefined);
-      if (ttl && ttl !== 'reset') override.cacheControlTtl = ttl;
-    }
+  const result = await collectCacheTriState();
+  if (result) {
+    override.cacheControl = result.cacheControl;
+    if (result.cacheControlTtl) override.cacheControlTtl = result.cacheControlTtl;
   }
   return override;
 }

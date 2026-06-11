@@ -3,12 +3,13 @@ import { isCancel } from '@clack/prompts';
 import type { ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
-import { askCacheControlTtl, askTriState, type TriState } from './prompts.js';
+import type { TriState } from './prompts.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
+import { collectCacheTriState, collectSessionTriState } from './tri-state.js';
 
 type EditField = 'provider' | 'sessionId' | 'cacheControl' | 'done';
 
@@ -68,44 +69,22 @@ async function editProvider(
 }
 
 async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
-  const sid = await askTriState(
-    'Session ID mode',
-    (current.sessionId ?? 'auto') as TriState,
-    {
-      auto: 'Passthrough client ID, generate if missing',
-      always: 'Always generate proxy session ID',
-      never: "Don't manage session headers",
-    },
-  );
-  if (sid === null) return current;
+  const result = await collectSessionTriState(current.sessionId as TriState | undefined);
+  if (result === null) return current;
 
   const { sessionId: _, ...rest } = current;
-  return { ...rest, sessionId: sid };
+  return { ...rest, sessionId: result.sessionId };
 }
 
-async function editCacheControl(current: ModelOverride): Promise<ModelOverride> {
-  const cc = await askTriState(
-    'Cache control mode',
-    (current.cacheControl ?? 'auto') as TriState,
-    {
-      auto: 'Anthropic models only',
-      always: 'All models',
-      never: 'Off',
-    },
+export async function editCacheControl(current: ModelOverride): Promise<ModelOverride> {
+  const result = await collectCacheTriState(
+    current.cacheControl as TriState | undefined,
+    current.cacheControlTtl as '5m' | '1h' | null | undefined,
   );
-  if (cc === null) return current;
+  if (result === null) return current;
 
   const { cacheControl: _cc, cacheControlTtl: _ttl, ...rest } = current;
-  const updated: ModelOverride = { ...rest, cacheControl: cc };
-
-  if (cc !== 'never') {
-    const ttl = await askCacheControlTtl(
-      (current.cacheControlTtl as '5m' | '1h') ?? undefined,
-    );
-    if (ttl && ttl !== 'reset') updated.cacheControlTtl = ttl;
-  }
-
-  return updated;
+  return { ...rest, ...result };
 }
 
 /** Run the interactive "Edit model override" flow. */

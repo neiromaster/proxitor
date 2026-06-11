@@ -1,6 +1,7 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { DEFAULTS, readConfigFile } from '../../config.js';
+import type { ProxyConfig } from '../../config-schema.js';
 import { requireConfigPath, setGlobalConfigField } from './config.js';
 import {
   askApiKey,
@@ -15,7 +16,10 @@ type Field = 'apiKey' | 'port' | 'host' | 'baseUrl' | 'authType' | 'back';
 
 const FIELD_MAP: Record<
   Exclude<Field, 'back'>,
-  { configKey: string; ask: (cfg: ReturnType<typeof readConfigFile>) => Promise<unknown> }
+  {
+    configKey: keyof ProxyConfig;
+    ask: (cfg: ReturnType<typeof readConfigFile>) => Promise<unknown>;
+  }
 > = {
   apiKey: {
     configKey: 'openrouterKey',
@@ -58,26 +62,28 @@ function fieldOptions(cfg: ReturnType<typeof readConfigFile>) {
   ];
 }
 
-async function handleFieldChange(
+export async function handleFieldChange(
   field: string,
   configPath: string,
   cfg: ReturnType<typeof readConfigFile>,
-): Promise<void> {
+): Promise<{ key: keyof typeof cfg; value: unknown } | null> {
   const entry = FIELD_MAP[field as Exclude<Field, 'back'>];
+  if (!entry) return null;
   const result = await entry.ask(cfg);
-  if (result === null) return;
+  if (result === null) return null;
 
   setGlobalConfigField(configPath, entry.configKey, result);
   clack.log.success(`${entry.configKey} updated`);
+  return { key: entry.configKey, value: result };
 }
 
 export async function connectionMenuCommand(opts?: {
   configPath?: string;
 }): Promise<void> {
   const configPath = requireConfigPath(opts?.configPath);
+  const cfg = readConfigFile(configPath);
 
   while (true) {
-    const cfg = readConfigFile(configPath);
     showCurrentValues(cfg);
 
     const field = await clack.select({
@@ -87,6 +93,10 @@ export async function connectionMenuCommand(opts?: {
 
     if (isCancel(field) || field === 'back') return;
 
-    await handleFieldChange(field, configPath, cfg);
+    const patch = await handleFieldChange(field, configPath, cfg);
+    if (patch) {
+      // Mirror the write in-memory instead of re-reading the file
+      (cfg as Record<string, unknown>)[patch.key] = patch.value;
+    }
   }
 }

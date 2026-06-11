@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { DEFAULTS, readConfigFile } from '../../config.js';
 import { requireConfigPath, setGlobalConfigField } from './config.js';
-import { askTriState, type TriState } from './prompts.js';
+import { askTriState, SESSION_HINTS, type TriState } from './prompts.js';
 
 export async function sessionRoutingCommand(opts?: {
   configPath?: string;
@@ -12,11 +12,11 @@ export async function sessionRoutingCommand(opts?: {
 
   clack.log.info(`Current: sessionId = ${current}`);
 
-  const result = await askTriState('Session routing mode', current as TriState, {
-    auto: 'Passthrough client ID, generate if missing',
-    always: 'Always generate proxy session ID',
-    never: "Don't manage session headers",
-  });
+  const result = await askTriState(
+    'Session routing mode',
+    current as TriState,
+    SESSION_HINTS,
+  );
 
   if (result === null) return;
 
