@@ -137,4 +137,30 @@ describe('buildCacheControl', () => {
     const result = buildCacheControl([] as unknown, '1h', true);
     expect(result).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
+
+  it('strips ttl when TTL is omit (Anthropic)', () => {
+    const existing = { type: 'ephemeral', ttl: '5m' };
+    const result = buildCacheControl(existing, 'omit', true);
+    expect(result).toEqual({ type: 'ephemeral' });
+    expect(result).not.toHaveProperty('ttl');
+  });
+
+  it('strips ttl when TTL is omit even on non-Anthropic endpoint', () => {
+    const existing = { type: 'ephemeral', ttl: '5m' };
+    const result = buildCacheControl(existing, 'omit', false);
+    expect(result).toEqual({ type: 'ephemeral' });
+    expect(result).not.toHaveProperty('ttl');
+  });
+
+  it('preserves client ttl when TTL is never (passthrough)', () => {
+    const existing = { type: 'ephemeral', ttl: '5m' };
+    const result = buildCacheControl(existing, 'never', true);
+    expect(result).toEqual({ type: 'ephemeral', ttl: '5m' });
+  });
+
+  it('never adds ttl when TTL is never and none existed', () => {
+    const result = buildCacheControl(undefined, 'never', true);
+    expect(result).toEqual({ type: 'ephemeral' });
+    expect(result).not.toHaveProperty('ttl');
+  });
 });

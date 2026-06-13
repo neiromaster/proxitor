@@ -625,7 +625,7 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
   });
 
-  it('does not strip existing ttl when model override has default', async () => {
+  it('strips existing client ttl when model override is omit', async () => {
     let capturedBody: Record<string, unknown> = {};
 
     env = await createTestEnv(
@@ -652,7 +652,8 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: 600 });
+    // 'omit' forces no ttl, even when the client sent one.
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
   });
 
   // --- session_id integration ---

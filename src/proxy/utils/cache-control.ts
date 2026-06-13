@@ -33,6 +33,11 @@ export function buildCacheControl(
   // Anthropic rejects cache_control without `type`.
   if (!('type' in base)) base.type = 'ephemeral';
 
-  if (ttl && isAnthropic) base.ttl = ttl;
+  if (ttl === 'omit') {
+    delete base.ttl; // strip — guarantee no ttl, even one sent by the client
+  } else if (ttl === '5m' || ttl === '1h') {
+    if (isAnthropic) base.ttl = ttl; // set value (Anthropic only)
+  }
+  // 'never' | undefined → passthrough: preserve client ttl, add nothing
   return base;
 }
