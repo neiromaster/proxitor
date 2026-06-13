@@ -35,6 +35,22 @@ export function filterHeaders(
   return headers;
 }
 
+/**
+ * Canonicalize a header record to lowercase keys.
+ *
+ * HTTP header names are case-insensitive (RFC 9110 §5.1), but a plain object
+ * treats `Content-Type` and `content-type` as distinct keys. Lowercasing folds
+ * case-variant keys into one so the merged record can never carry two headers
+ * that differ only by case. Returns a new object; does not mutate the input.
+ */
+export function lowercaseKeys(record: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record)) {
+    result[key.toLowerCase()] = value;
+  }
+  return result;
+}
+
 /** Filter response headers and add SSE-friendly defaults */
 export function buildResponseHeaders(from: Headers): Record<string, string> {
   const headers = filterHeaders(from, STRIP_RESPONSE);

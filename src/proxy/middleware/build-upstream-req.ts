@@ -2,92 +2,100 @@ import { createMiddleware } from 'hono/factory';
 import { logger, withReq } from '../../logger.js';
 import { formatAuthHeader } from '../../utils.js';
 import type { ProxyEnv } from '../context.js';
-import { filterHeaders, STRIP_REQUEST } from '../headers.js';
+import { filterHeaders, lowercaseKeys, STRIP_REQUEST } from '../headers.js';
+
+const encoder = new TextEncoder();
 
 const PROTO_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
-function resolveForwardBody(c: {
-  var: {
-    reqId: string;
-    bodyMutated: boolean;
-    parsedBody: unknown;
-    rawBody: ArrayBuffer | undefined;
-  };
+function resolveForwardBody(opts: {
+  reqId: string;
+  bodyMutated: boolean;
+  parsedBody: unknown;
+  rawBody: ArrayBuffer | undefined;
 }): ArrayBuffer | undefined {
-  if (c.var.bodyMutated && c.var.parsedBody) {
+  if (opts.bodyMutated && opts.parsedBody) {
     try {
-      return new TextEncoder().encode(JSON.stringify(c.var.parsedBody))
-        .buffer as ArrayBuffer;
+      return encoder.encode(JSON.stringify(opts.parsedBody)).buffer as ArrayBuffer;
     } catch (err) {
-      // Body mutation produced a non-serializable value (BigInt, circular
-      // reference, etc.). Fall back to forwarding the raw body unchanged so
-      // the request still reaches the upstream — the same behavior the old
-      // `resolveRequest` had for body-processing failures.
+      // Non-serializable mutated body; forward raw body as-is.
       logger.warn(
         withReq(
-          c.var.reqId,
+          opts.reqId,
           `Failed to re-serialize mutated body (${err instanceof Error ? err.message : 'unknown'}); forwarding raw body as-is`,
         ),
       );
-      return c.var.rawBody;
+      return opts.rawBody;
     }
   }
-  return c.var.rawBody;
+  return opts.rawBody;
 }
 
-function applyProxyHeaders(
-  headers: Record<string, string>,
-  config: {
-    openrouterKey: string;
-    authType: 'bearer' | 'oauth';
-    attributionReferer: string;
-    attributionTitle: string;
-  },
-): void {
-  headers.Authorization = formatAuthHeader(config.openrouterKey, config.authType);
-  headers['HTTP-Referer'] = config.attributionReferer;
-  headers['X-OpenRouter-Title'] = config.attributionTitle;
-  headers['Accept-Encoding'] = 'identity';
+function proxyHeaders(config: {
+  openrouterKey: string;
+  authType: 'bearer' | 'oauth';
+  attributionReferer: string;
+  attributionTitle: string;
+}): Record<string, string> {
+  return {
+    Authorization: formatAuthHeader(config.openrouterKey, config.authType),
+    'HTTP-Referer': config.attributionReferer,
+    'X-OpenRouter-Title': config.attributionTitle,
+    'Accept-Encoding': 'identity',
+  };
 }
 
-function applyExtraHeaders(
-  headers: Record<string, string>,
+function sanitizeExtraHeaders(
   extraHeaders: Record<string, string> | undefined,
-): void {
-  if (!extraHeaders) return;
-  // Iterate with Object.entries + skip dangerous keys to avoid
-  // prototype pollution: `Object.assign` would copy `__proto__`,
-  // `constructor`, and `prototype` from a user-controlled config
-  // (modelOverrides[pattern].headers comes from YAML) onto the
-  // request-headers object, poisoning its prototype chain.
+): Record<string, string> {
+  const safe: Record<string, string> = {};
+  if (!extraHeaders) return safe;
+  // Skip prototype-pollution keys from user-controlled YAML config.
   for (const [key, value] of Object.entries(extraHeaders)) {
     if (PROTO_POLLUTION_KEYS.has(key)) continue;
-    headers[key] = value;
+    safe[key] = value;
   }
+  return safe;
 }
 
-function forceJsonContentType(headers: Record<string, string>): void {
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === 'content-type') delete headers[key];
-  }
-  headers['Content-Type'] = 'application/json';
+function withSessionId(
+  headers: Record<string, string>,
+  sessionId: string,
+): Record<string, string> {
+  const { 'x-claude-code-session-id': _omit, ...rest } = headers;
+  return { ...rest, 'x-session-id': sessionId };
+}
+
+function withJsonContentType(headers: Record<string, string>): Record<string, string> {
+  return { ...headers, 'content-type': 'application/json' };
 }
 
 export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
-  c.set('forwardBody', resolveForwardBody(c));
+  c.set(
+    'forwardBody',
+    resolveForwardBody({
+      reqId: c.var.reqId,
+      bodyMutated: c.var.bodyMutated,
+      parsedBody: c.var.parsedBody,
+      rawBody: c.var.rawBody,
+    }),
+  );
 
-  const headers = filterHeaders(c.req.raw.headers, STRIP_REQUEST);
-  applyProxyHeaders(headers, c.var.config);
-  applyExtraHeaders(headers, c.var.resolvedConfig.headers);
+  // Canonicalize to lowercase keys so case-variant headers (e.g. a user-config
+  // "Content-Type") can never coexist with their lowercase form and corrupt the
+  // merged record. HTTP header names are case-insensitive (RFC 9110 §5.1).
+  let headers = lowercaseKeys({
+    ...filterHeaders(c.req.raw.headers, STRIP_REQUEST),
+    ...proxyHeaders(c.var.config),
+    ...sanitizeExtraHeaders(c.var.resolvedConfig.headers),
+  });
 
   if (c.var.effectiveSessionId !== undefined) {
-    delete headers['x-claude-code-session-id'];
-    delete headers['x-session-id'];
-    headers['x-session-id'] = c.var.effectiveSessionId;
+    headers = withSessionId(headers, c.var.effectiveSessionId);
   }
 
   if (c.var.bodyMutated) {
-    forceJsonContentType(headers);
+    headers = withJsonContentType(headers);
   }
 
   c.set('upstreamHeaders', headers);
