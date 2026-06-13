@@ -138,22 +138,14 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
   if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
-  // `null` means "cancel the inherited global TTL and revert to Anthropic's
-  // default" — normalize it to `undefined` so downstream consumers don't
-  // need a separate case for it.
-  if (override.cacheControlTtl === null) {
-    result.cacheControlTtl = undefined;
-  } else if (override.cacheControlTtl !== undefined) {
-    result.cacheControlTtl = override.cacheControlTtl;
+  // null = "cancel inherited TTL" → normalize to undefined; undefined = "no override" → skip
+  if (override.cacheControlTtl !== undefined) {
+    result.cacheControlTtl = override.cacheControlTtl ?? undefined;
   }
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
 }
 
-/**
- * Throw if a URL ends with /v1 — a common misconfiguration after the URL routing change.
- * Paths like /v1/chat/completions are now forwarded as-is, so including /v1 in the base
- * URL would produce doubled paths like /v1/v1/chat/completions.
- */
+/** Reject base URLs ending in /v1 — paths are forwarded as-is, so /v1 suffix causes doubled paths. */
 function throwIfV1Suffix(url: string, field: string): void {
   const { pathname } = new URL(url);
   if (pathname.endsWith('/v1') || pathname.endsWith('/v1/')) {
@@ -176,14 +168,11 @@ type LoadConfigOptions = {
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
   let fileConfig: Partial<ProxyConfig> = {};
   if (!options.noConfig) {
-    // Use tryFindConfigFile so config-less invocations (browse, menu, add
-    // with --openrouter-key and no config file) proceed with defaults instead
-    // of crashing with MissingConfigError.
+    // tryFind returns null instead of throwing, so config-less invocations proceed with defaults
     const configPath = tryFindConfigFile(options.configPath);
     if (configPath) {
       fileConfig = readConfigFile(configPath);
     }
-    // else: no config file found — proceed with defaults
   }
 
   const merged = {
@@ -192,12 +181,12 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     ...(options.host !== undefined ? { host: options.host } : {}),
     ...(options.port !== undefined ? { port: options.port } : {}),
     ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
-    ...(options.openrouterKey ? { openrouterKey: options.openrouterKey } : {}),
+    openrouterKey:
+      options.openrouterKey ||
+      fileConfig.openrouterKey ||
+      process.env.OPENROUTER_API_KEY ||
+      '',
   };
-
-  if (!merged.openrouterKey) {
-    merged.openrouterKey = process.env.OPENROUTER_API_KEY ?? '';
-  }
 
   const result = proxyConfigSchema.safeParse(merged);
   if (!result.success) {
@@ -241,10 +230,7 @@ export function getConfigSearchPaths(): string[] {
   ];
 }
 
-/**
- * Return the path of the first existing config file, or `null` if none was found.
- * Use this when "no config" is a valid outcome (e.g. wizard, doctor, validate).
- */
+/** Returns first existing config file, or null. Use when "no config" is valid (wizard, doctor, validate). */
 export function tryFindConfigFile(explicitPath?: string): string | null {
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
@@ -253,24 +239,14 @@ export function tryFindConfigFile(explicitPath?: string): string | null {
     return resolve(explicitPath);
   }
 
-  for (const candidate of LOCAL_CONFIG_CANDIDATES) {
-    const fullPath = resolve(candidate);
-    if (existsSync(fullPath)) return fullPath;
-  }
-
-  const xdgDir = getXdgConfigDir();
-  for (const candidate of XDG_CONFIG_CANDIDATES) {
-    const fullPath = join(xdgDir, candidate);
+  for (const fullPath of getConfigSearchPaths()) {
     if (existsSync(fullPath)) return fullPath;
   }
 
   return null;
 }
 
-/**
- * Resolve a config file path, throwing {@link MissingConfigError} if discovery
- * (with no explicit path) fails. Use this when the config is required.
- */
+/** Like tryFindConfigFile but throws MissingConfigError when no config is found. */
 export function findConfigFile(explicitPath?: string): string {
   const found = tryFindConfigFile(explicitPath);
   if (found) return found;
