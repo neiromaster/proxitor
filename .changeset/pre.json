@@ -13,6 +13,7 @@
     "doctor-and-validate",
     "middleware-architecture",
     "persist-explicit-config-values",
-    "remove-upstream-timeout"
+    "remove-upstream-timeout",
+    "simplify-modules"
   ]
 }
