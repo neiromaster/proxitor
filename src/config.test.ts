@@ -806,6 +806,36 @@ describe('cacheControl and sessionId config', () => {
       const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
       expect(resolved.cacheControlTtl).toBe('1h');
     });
+
+    it('carries per-model never override through resolution (no normalization)', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'gpt-*': { cacheControlTtl: 'never' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBe('never');
+    });
+
+    it('carries per-model omit override through resolution (no normalization)', () => {
+      const config: ProxyConfig = {
+        ...baseConfig,
+        cacheControlTtl: '1h',
+        modelOverrides: {
+          'gpt-*': { cacheControlTtl: 'omit' },
+        },
+      };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBe('omit');
+    });
+
+    it('propagates global never cacheControlTtl to resolved config', () => {
+      const config: ProxyConfig = { ...baseConfig, cacheControlTtl: 'never' };
+      const resolved = resolveModelConfig(config, 'gpt-4o');
+      expect(resolved.cacheControlTtl).toBe('never');
+    });
   });
 });
 
