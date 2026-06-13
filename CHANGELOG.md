@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0-beta.6
+
+### Patch Changes
+
+- 27b133b: Simplify proxy module and config schema: remove dead re-exports, hoist per-request work out of /health, extract shared Zod schema helper, trim verbose comments
+
 ## 0.9.0-beta.5
 
 ### Patch Changes
