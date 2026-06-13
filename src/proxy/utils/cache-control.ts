@@ -22,7 +22,7 @@ export function shouldInjectCacheControl(
 
 export function buildCacheControl(
   existing: unknown,
-  ttl: '5m' | '1h' | undefined,
+  ttl: '5m' | '1h' | 'omit' | 'never' | undefined,
   isAnthropic: boolean,
 ): Record<string, unknown> {
   const base =
