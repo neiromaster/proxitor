@@ -1,7 +1,8 @@
 import * as clack from '@clack/prompts';
 import { DEFAULTS, readConfigFile } from '../../config.js';
+import type { TriState } from '../../config-schema.js';
 import { requireConfigPath, setGlobalConfigField } from './config.js';
-import { askTriState, SESSION_HINTS, type TriState } from './prompts.js';
+import { askTriState, SESSION_HINTS } from './prompts.js';
 
 export async function sessionRoutingCommand(opts?: {
   configPath?: string;

@@ -1,13 +1,13 @@
 /** Verified against the live API on 2026-06-04. */
 
-export type PercentileStats = {
+type PercentileStats = {
   p50: number | null;
   p75: number | null;
   p90: number | null;
   p99: number | null;
 };
 
-export type OpenRouterModelArchitecture = {
+type OpenRouterModelArchitecture = {
   input_modalities?: string[];
   instruct_type: string | null;
   modality: string;
@@ -15,7 +15,7 @@ export type OpenRouterModelArchitecture = {
   tokenizer: string | null;
 };
 
-export type OpenRouterModelPricing = {
+type OpenRouterModelPricing = {
   completion: string;
   image?: string;
   input_cache_read?: string;
@@ -24,13 +24,13 @@ export type OpenRouterModelPricing = {
   request?: string;
 };
 
-export type OpenRouterModelTopProvider = {
+type OpenRouterModelTopProvider = {
   context_length: number;
   is_moderated: boolean;
   max_completion_tokens: number | null;
 };
 
-export type OpenRouterModelLinks = {
+type OpenRouterModelLinks = {
   details?: string;
 };
 
@@ -54,11 +54,7 @@ export type OpenRouterModel = {
   top_provider: OpenRouterModelTopProvider;
 };
 
-export type OpenRouterModelsResponse = {
-  data: OpenRouterModel[];
-};
-
-export type ModelEndpointPricing = {
+type ModelEndpointPricing = {
   completion: string;
   discount?: number;
   input_cache_read?: string;
@@ -89,19 +85,6 @@ export type ModelEndpoint = {
   uptime_last_30m: number | null;
 };
 
-export type ModelEndpointsData = {
-  architecture: OpenRouterModelArchitecture;
-  created: number;
-  description: string;
-  endpoints: ModelEndpoint[];
-  id: string;
-  name: string;
-};
-
-export type ModelEndpointsResponse = {
-  data: ModelEndpointsData;
-};
-
 export type OpenRouterProvider = {
   datacenters: string[] | null;
   headquarters: string | null;
@@ -110,8 +93,4 @@ export type OpenRouterProvider = {
   slug: string;
   status_page_url: string | null;
   terms_of_service_url: string | null;
-};
-
-export type OpenRouterProvidersResponse = {
-  data: OpenRouterProvider[];
 };

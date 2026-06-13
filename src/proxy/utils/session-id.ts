@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { TriState } from '../../config-schema.js';
 import type { ParsedRequestBody } from '../context.js';
 import { classifyEndpoint } from '../paths.js';
 
@@ -56,7 +57,7 @@ export function deriveSessionId(
   incomingHeaders: Headers,
   parsedBody: ParsedRequestBody | undefined,
   path: string,
-  mode: 'auto' | 'always' | 'never',
+  mode: TriState,
 ): string | undefined {
   if (mode === 'never') return undefined;
 

@@ -6,8 +6,7 @@ import { buildUpstreamUrl } from '../paths.js';
 export const setupRequest = createMiddleware<ProxyEnv>(async (c, next) => {
   const method = c.req.method;
   const { pathname, search } = new URL(c.req.url);
-  // `path` carries both pathname and query string so the upstream URL
-  // preserves any `?stream=true` or other client-side parameters.
+  // Preserve the query string when forwarding (e.g. ?stream=true).
   const path = `${pathname}${search}`;
 
   c.set('reqId', requestId());
@@ -15,7 +14,7 @@ export const setupRequest = createMiddleware<ProxyEnv>(async (c, next) => {
   c.set('path', path);
   c.set('upstreamUrl', buildUpstreamUrl(path, c.var.config));
   c.set('startedAt', Date.now());
-  // bodyMutated defaults to false (not undefined) — all other ProxyVariables default to undefined via Hono context.
+  // Must be false (not undefined): downstream mutation checks depend on a boolean.
   c.set('bodyMutated', false);
 
   await next();

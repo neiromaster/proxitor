@@ -1,4 +1,3 @@
-/** OpenRouter error: { error: { code, message, metadata: { raw, provider_name } } } */
 function formatMetadata(meta: Record<string, unknown>): string[] {
   const parts: string[] = [];
   if (meta.provider_name) parts.push(`provider=${meta.provider_name}`);
@@ -9,6 +8,7 @@ function formatMetadata(meta: Record<string, unknown>): string[] {
   return parts;
 }
 
+/** Parse an OpenRouter error body ({ error: { code, message, metadata: { raw, provider_name } } }) into a readable string. */
 export function extractErrorDetail(bodyText: string): string {
   try {
     const parsed = JSON.parse(bodyText);

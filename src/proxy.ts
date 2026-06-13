@@ -25,7 +25,6 @@ const injectChain = [
 export function createProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
   const app = new Hono<ProxyEnv>();
 
-  // Config is fixed for the server's lifetime — derive once.
   const globalRouting = buildProviderRouting(config.provider);
   const modelOverrideKeys = Object.keys(config.modelOverrides ?? []);
 

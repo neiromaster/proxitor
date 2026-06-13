@@ -2,8 +2,17 @@
  * CLI command tree. Separated from `cli.ts` so tests can import commands
  * without triggering `run()`.
  */
-import { command, flag, option, string, subcommands } from 'cmd-ts';
-import { ConfigPath, OpenRouterKey, Port } from './cli-types.js';
+import {
+  command,
+  extendType,
+  flag,
+  number,
+  option,
+  optional,
+  string,
+  subcommands,
+  type Type,
+} from 'cmd-ts';
 import { addOverrideCommand } from './commands/config/add.js';
 import { browseModelsCommand } from './commands/config/browse.js';
 import { editOverrideCommand } from './commands/config/edit.js';
@@ -19,6 +28,20 @@ import { logger } from './logger.js';
 import { OpenRouterDataClient } from './openrouter/data-client.js';
 import { startProxyServer } from './proxy.js';
 import { version } from './version.js';
+
+const ConfigPath: Type<string, string | undefined> = optional(string);
+
+const Port = extendType(number, {
+  from: async n => {
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+      throw new Error(`Port must be an integer in 1-65535 (got ${n})`);
+    }
+    return n;
+  },
+});
+
+/** Undefined when neither `--openrouter-key`/`-k` nor `OPENROUTER_API_KEY` is set; `loadConfig` then falls back to the file's `openrouterKey`. */
+const OpenRouterKey: Type<string, string | undefined> = optional(string);
 
 export const configArgs = {
   configPath: option({

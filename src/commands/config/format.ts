@@ -1,14 +1,68 @@
+import * as clack from '@clack/prompts';
 import { formatPrice } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
 
+type DisplayModelInfoOptions = {
+  /** Use clack.log.success for the header line instead of clack.log.info */
+  successHeader?: boolean;
+  /** Show model description (truncated at 200 chars) */
+  showDescription?: boolean;
+  /** Show supported_parameters list */
+  showParameters?: boolean;
+};
+
+function logNonZeroPrice(label: string, pricePerToken: string | undefined): void {
+  if (pricePerToken && pricePerToken !== '0') {
+    clack.log.info(`  ${label}: ${formatPrice(pricePerToken)}`);
+  }
+}
+
+export function displayModelInfo(
+  model: OpenRouterModel,
+  options?: DisplayModelInfoOptions,
+): void {
+  const { successHeader, showDescription, showParameters } = options ?? {};
+
+  if (successHeader) {
+    clack.log.success(`${model.name || model.id}`);
+  } else {
+    clack.log.info(`${model.name || model.id}`);
+  }
+
+  if (showDescription && model.description) {
+    const desc =
+      model.description.length > 200
+        ? `${model.description.slice(0, 200)}...`
+        : model.description;
+    clack.log.info(`  ${desc}`);
+  }
+
+  clack.log.info(`  Context: ${formatContextLength(model.context_length)} tokens`);
+
+  if (model.top_provider?.max_completion_tokens) {
+    clack.log.info(
+      `  Max output: ${formatContextLength(model.top_provider.max_completion_tokens)} tokens`,
+    );
+  }
+
+  clack.log.info(
+    `  Pricing: ${formatPricing(model.pricing.prompt, model.pricing.completion)}`,
+  );
+
+  logNonZeroPrice('Cache read', model.pricing.input_cache_read);
+  logNonZeroPrice('Cache write', model.pricing.input_cache_write);
+
+  if (model.architecture?.modality) {
+    clack.log.info(`  Modality: ${model.architecture.modality}`);
+  }
+
+  if (showParameters && model.supported_parameters?.length) {
+    clack.log.info(`  Parameters: ${model.supported_parameters.join(', ')}`);
+  }
+}
+
 export function formatPricing(prompt: string, completion: string): string {
-  const fmt = (perToken: string) => {
-    const per1M = Number.parseFloat(perToken) * 1_000_000;
-    if (per1M === 0) return 'free';
-    if (per1M < 0.01) return `$${per1M.toFixed(4)}`;
-    return `$${per1M.toFixed(2)}`;
-  };
-  return `${fmt(prompt)} / ${fmt(completion)}`;
+  return `${formatPrice(prompt)} / ${formatPrice(completion)}`;
 }
 
 /** `200000` → `"200k"`, `1000000` → `"1.0M"` */

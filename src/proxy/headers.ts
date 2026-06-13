@@ -9,7 +9,6 @@ const HOP_BY_HOP = new Set([
   'upgrade',
 ]);
 
-/** Sensitive headers stripped before forwarding */
 export const STRIP_REQUEST = new Set([
   'authorization',
   'x-api-key',
@@ -33,10 +32,7 @@ export function filterHeaders(
   return headers;
 }
 
-/**
- * Lowercase header keys so case-variants don't coexist in a plain object (RFC 9110 §5.1).
- * Returns a new object; does not mutate the input.
- */
+/** Lowercase keys so case-variants don't coexist in a plain object (RFC 9110 §5.1). */
 export function lowercaseKeys(record: Record<string, string>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(record)) {
@@ -45,7 +41,6 @@ export function lowercaseKeys(record: Record<string, string>): Record<string, st
   return result;
 }
 
-/** Add no-cache + no-buffering for SSE streaming. */
 export function buildResponseHeaders(from: Headers): Record<string, string> {
   const headers = filterHeaders(from, STRIP_RESPONSE);
 

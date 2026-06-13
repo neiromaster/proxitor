@@ -1,6 +1,7 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { DEFAULTS } from '../../config.js';
+import type { TriState } from '../../config-schema.js';
 
 export function maskKey(key: string): string {
   if (!key) return '(none)';
@@ -116,8 +117,6 @@ export async function askHost(current: string): Promise<string | null> {
   }
   return host as string;
 }
-
-export type TriState = 'auto' | 'always' | 'never';
 
 /** Shared hint texts for session routing tri-state — used in add, edit, session-routing. */
 export const SESSION_HINTS: Record<TriState, string> = {

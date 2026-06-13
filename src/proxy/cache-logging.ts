@@ -1,6 +1,7 @@
 import { logger, withReq } from '../logger.js';
 import { buildResponseHeaders } from './headers.js';
 
+/** @internal */
 export type CacheUsage = {
   cacheRead: number;
   cacheCreate: number;
@@ -42,7 +43,7 @@ function applyAnthropicUsage(usage: Record<string, unknown>, result: CacheUsage)
   ) {
     result.cacheCreate = usage.cache_creation_input_tokens as number;
   }
-  // input_tokens is the uncached portion; total = uncached + cache_read + cache_creation.
+  // input_tokens excludes cache; reconstruct the full total.
   if (typeof usage.input_tokens === 'number' && (usage.input_tokens as number) > 0) {
     result.inputTokens =
       (usage.input_tokens as number) + result.cacheRead + result.cacheCreate;
@@ -50,13 +51,12 @@ function applyAnthropicUsage(usage: Record<string, unknown>, result: CacheUsage)
 }
 
 function applyOpenAIUsage(usage: Record<string, unknown>, result: CacheUsage): void {
-  // prompt_tokens_details (Chat Completions format)
   const promptDetails = usage.prompt_tokens_details;
   if (typeof promptDetails === 'object' && promptDetails !== null) {
     applyOpenAIDetails(promptDetails as Record<string, unknown>, result);
   }
 
-  // Responses API: input_tokens_details (only if cache not already found)
+  // Responses API: input_tokens_details (skip if Chat Completions already reported cache).
   if (result.cacheRead === 0 && result.cacheCreate === 0) {
     const inputDetails = usage.input_tokens_details;
     if (typeof inputDetails === 'object' && inputDetails !== null) {
@@ -64,7 +64,6 @@ function applyOpenAIUsage(usage: Record<string, unknown>, result: CacheUsage): v
     }
   }
 
-  // prompt_tokens or input_tokens, depending on API
   if (typeof usage.prompt_tokens === 'number' && (usage.prompt_tokens as number) > 0) {
     result.inputTokens = usage.prompt_tokens as number;
   } else if (
@@ -87,6 +86,7 @@ function extractFromUsage(usage: Record<string, unknown>, result: CacheUsage): v
   }
 }
 
+/** @internal */
 export function extractCacheUsage(bodyText: string): CacheUsage | undefined {
   try {
     const parsed = JSON.parse(bodyText);
@@ -106,9 +106,7 @@ export function extractCacheUsage(bodyText: string): CacheUsage | undefined {
 function extractFromEvent(parsed: unknown, result: CacheUsage): boolean {
   if (typeof parsed !== 'object' || parsed === null) return false;
 
-  // Anthropic SSE: { message: { usage: {...} } }
-  // Responses API SSE: { response: { usage: {...} } }
-  // OpenAI Chat Completions SSE: { usage: {...} } (no wrapper)
+  // Provider-specific SSE wrappers: Anthropic uses { message }, Responses uses { response }, Chat Completions is bare.
   const record = parsed as Record<string, unknown>;
   const container = record.message ?? record.response ?? parsed;
   const usage = (container as Record<string, unknown>).usage;
@@ -121,6 +119,7 @@ function extractFromEvent(parsed: unknown, result: CacheUsage): boolean {
   return after > before;
 }
 
+/** @internal */
 export function extractCacheUsageFromSSE(fullText: string): CacheUsage | undefined {
   const result: CacheUsage = { cacheRead: 0, cacheCreate: 0, inputTokens: 0 };
   let found = false;

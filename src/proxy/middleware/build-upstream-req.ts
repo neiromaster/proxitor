@@ -18,7 +18,6 @@ function resolveForwardBody(opts: {
     try {
       return encoder.encode(JSON.stringify(opts.parsedBody)).buffer as ArrayBuffer;
     } catch (err) {
-      // Non-serializable mutated body; forward raw body as-is.
       logger.warn(
         withReq(
           opts.reqId,
@@ -50,7 +49,6 @@ function sanitizeExtraHeaders(
 ): Record<string, string> {
   const safe: Record<string, string> = {};
   if (!extraHeaders) return safe;
-  // Skip prototype-pollution keys from user-controlled YAML config.
   for (const [key, value] of Object.entries(extraHeaders)) {
     if (PROTO_POLLUTION_KEYS.has(key)) continue;
     safe[key] = value;
@@ -81,7 +79,7 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
     }),
   );
 
-  // Canonicalize header keys — case-variants would coexist in a plain object and corrupt merges (RFC 9110 §5.1).
+  // Canonicalize keys before merging — case-variants would corrupt merges (RFC 9110 §5.1).
   let headers = lowercaseKeys({
     ...filterHeaders(c.req.raw.headers, STRIP_REQUEST),
     ...proxyHeaders(c.var.config),
