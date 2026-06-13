@@ -596,7 +596,7 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
-  it('does not inject ttl when model override has default', async () => {
+  it('strips ttl when model override is omit (no client value)', async () => {
     let capturedBody: Record<string, unknown> = {};
 
     env = await createTestEnv(
