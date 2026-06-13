@@ -12,17 +12,16 @@ import {
   type ProxyConfig,
   proxyConfigFileSchema,
   proxyConfigSchema,
+  type TriState,
 } from './config-schema.js';
 import { toArray } from './utils.js';
 
 export type {
   AuthType,
-  MaxPrice,
   ModelOverride,
-  PercentileCutoffs,
   ProviderConfig,
-  ProviderSort,
   ProxyConfig,
+  TriState,
 } from './config-schema.js';
 export {
   ConfigParseError,
@@ -34,9 +33,9 @@ export {
 export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
-  cacheControl: 'auto' | 'always' | 'never';
+  cacheControl: TriState;
   cacheControlTtl?: '5m' | '1h';
-  sessionId: 'auto' | 'always' | 'never';
+  sessionId: TriState;
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
@@ -168,7 +167,6 @@ type LoadConfigOptions = {
 export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfig> {
   let fileConfig: Partial<ProxyConfig> = {};
   if (!options.noConfig) {
-    // tryFind returns null instead of throwing, so config-less invocations proceed with defaults
     const configPath = tryFindConfigFile(options.configPath);
     if (configPath) {
       fileConfig = readConfigFile(configPath);

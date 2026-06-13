@@ -1,15 +1,10 @@
-import { createHash } from 'node:crypto';
 import type { AuthType } from '../config-schema.js';
 import { OPENROUTER_API_URL } from '../config-schema.js';
 import { formatAuthHeader } from '../utils.js';
 import { OpenRouterClient } from './client.js';
 import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js';
 
-const MODELS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-type CacheEntry = { at: number; models: OpenRouterModel[] };
-const modelsCache = new Map<string, CacheEntry>();
-
-export type DataClientConfig = {
+type DataClientConfig = {
   openrouterBaseUrl: string;
   openrouterDataUrl?: string;
   apiKey: string;
@@ -58,7 +53,6 @@ export class OpenRouterDataClient {
   private fallbackClient: OpenRouterClient;
   private skipFallback: boolean;
   private onFallback?: (path: string) => void;
-  private cacheKey: string;
 
   constructor(config: DataClientConfig) {
     const primaryUrl = config.openrouterDataUrl ?? config.openrouterBaseUrl;
@@ -66,9 +60,6 @@ export class OpenRouterDataClient {
     this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType);
     this.fallbackClient = new OpenRouterClient(OPENROUTER_API_URL);
     this.onFallback = config.onFallback;
-    // Isolate cache per credentials.
-    const keyHash = createHash('sha256').update(config.apiKey).digest('hex').slice(0, 8);
-    this.cacheKey = `${primaryUrl}|${config.authType}|${keyHash}`;
   }
 
   async fetchProviders(): Promise<OpenRouterProvider[]> {
@@ -81,18 +72,12 @@ export class OpenRouterDataClient {
   }
 
   async fetchModels(): Promise<OpenRouterModel[]> {
-    const cached = modelsCache.get(this.cacheKey);
-    if (cached && Date.now() - cached.at < MODELS_CACHE_TTL_MS) {
-      return cached.models;
-    }
     const result = await this.withFallback(
       '/v1/models',
       () => this.primaryClient.get<unknown>('/v1/models'),
       isValidModelsResponse,
     );
-    const models = result.data.data;
-    modelsCache.set(this.cacheKey, { at: Date.now(), models });
-    return models;
+    return result.data.data;
   }
 
   async fetchModelEndpoints(author: string, slug: string): Promise<ModelEndpoint[]> {
@@ -157,10 +142,6 @@ function isNetworkError(error: Error): boolean {
     message.includes('aborted') ||
     error.name === 'TypeError'
   );
-}
-
-export function clearModelsCache(): void {
-  modelsCache.clear();
 }
 
 /** Probes upstream to validate key and count models. */

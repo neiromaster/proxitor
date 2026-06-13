@@ -140,7 +140,7 @@ openrouterBaseUrl: 'https://custom-service.example.com/api'
 # openrouterDataUrl: 'https://openrouter.ai/api'
 ```
 
-When a fallback occurs, proxitor logs a warning: `Custom API did not return providers, using OpenRouter data as fallback`.
+When a fallback occurs, proxitor logs a warning: `Custom API did not return providers, using OpenRouter as fallback`.
 
 ### Provider routing
 
@@ -288,13 +288,13 @@ cacheControlTtl: 1h
 # Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
 # cacheControl: always
 
-# Per-model overrides — TTL supports '5m', '1h', or 'default' (cancel global TTL)
+# Per-model overrides — TTL supports '5m', '1h', or null (cancel global TTL)
 modelOverrides:
   "gpt-*":
     cacheControl: never       # OpenAI caches automatically, no injection needed
     sessionId: always          # but sticky routing still helps
   "claude-opus-*":
-    cacheControlTtl: default   # cancel global 1h TTL for Opus — use Anthropic's 5 min default
+    cacheControlTtl: null      # cancel global 1h TTL for Opus — use Anthropic's 5 min default
 ```
 
 **Why all three matter:**
@@ -485,7 +485,7 @@ $ proxitor doctor
 │  ✓ port-8828 — 127.0.0.1:8828
 │
 ◇ Version
-│  ✓ version — 0.9.0-beta.1
+│  ✓ version — 0.9.0-beta.5
 
 └ Done. All checks passed.
 ```
@@ -508,7 +508,7 @@ proxitor start                  # same as above
 proxitor up                     # alias for start
 proxitor run                    # alias for start
 proxitor --port 9000            # override port
-proxitor ./team.yaml            # use an explicit config
+proxitor --config ./team.yaml   # use an explicit config
 proxitor config show            # print the resolved config
 proxitor config show --json     # machine-readable config
 proxitor config list --json     # overrides as JSON
@@ -524,8 +524,8 @@ proxitor --version              # print version
 | Flag | Default | Description |
 |---|---|---|
 | `-p, --port <port>` | `8828` | Server port (validated: 1-65535) |
-| `-h, --host <host>` | `0.0.0.0` | Server host |
-| `-c, --config <path>` | auto-discovered | Path to config file (positional `[config-path]` also accepted) |
+| `--host <host>` | `0.0.0.0` | Server host |
+| `-c, --config <path>` | auto-discovered | Path to config file |
 | `--openrouter-key <key>` / `-k <key>` | `$OPENROUTER_API_KEY` | OpenRouter API key |
 | `--verbose` | `false` | Enable verbose logging |
 | `--no-config` | | Skip config file discovery |

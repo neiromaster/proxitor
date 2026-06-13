@@ -1,7 +1,7 @@
 import type { AuthType } from '../config-schema.js';
 import { formatAuthHeader } from '../utils.js';
 
-export class OpenRouterClientError extends Error {
+class OpenRouterClientError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {

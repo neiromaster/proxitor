@@ -3,15 +3,10 @@ import { isCancel } from '@clack/prompts';
 import { matchesPattern, resolveModelConfig } from '../../config.js';
 import { DEFAULTS, type ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
-import { fetchModels, formatPrice } from '../../openrouter/models.js';
+import { fetchModels } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
-import {
-  formatContextLength,
-  formatModelHint,
-  formatModelLabel,
-  formatPricing,
-} from './format.js';
+import { displayModelInfo, formatModelHint, formatModelLabel } from './format.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
@@ -157,6 +152,7 @@ async function enterPattern(models: OpenRouterModel[]): Promise<string | null> {
   return pat;
 }
 
+/** @internal */
 export async function configureProviderAndSave(
   configPath: string,
   client: OpenRouterDataClient,
@@ -264,34 +260,11 @@ async function confirmAndSave(
           `headers: ${JSON.stringify(resolved.headers ?? {})}`,
         `Dry-run resolve for "${modelKey}"`,
       );
-      // Re-prompt after the test.
       continue;
     }
 
     setModelOverride(configPath, modelKey, override);
     return true;
-  }
-}
-
-function displayModelInfo(model: OpenRouterModel): void {
-  clack.log.info(`${model.name || model.id}`);
-  clack.log.info(`  Context: ${formatContextLength(model.context_length)} tokens`);
-  clack.log.info(
-    `  Pricing: ${formatPricing(model.pricing.prompt, model.pricing.completion)}`,
-  );
-  if (model.pricing.input_cache_read && model.pricing.input_cache_read !== '0') {
-    clack.log.info(`  Cache read: ${formatPrice(model.pricing.input_cache_read)}`);
-  }
-  if (model.pricing.input_cache_write && model.pricing.input_cache_write !== '0') {
-    clack.log.info(`  Cache write: ${formatPrice(model.pricing.input_cache_write)}`);
-  }
-  if (model.top_provider?.max_completion_tokens) {
-    clack.log.info(
-      `  Max output: ${formatContextLength(model.top_provider.max_completion_tokens)} tokens`,
-    );
-  }
-  if (model.architecture?.modality) {
-    clack.log.info(`  Modality: ${model.architecture.modality}`);
   }
 }
 

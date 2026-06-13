@@ -1,6 +1,6 @@
 import { readCache, writeCache } from './cache.js';
 import type { OpenRouterDataClient } from './data-client.js';
-import type { OpenRouterModel } from './types.js';
+import type { ModelEndpoint, OpenRouterModel } from './types.js';
 
 const CACHE_KEY = 'models';
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
@@ -32,4 +32,24 @@ export function formatPrice(pricePerToken: string): string {
   if (per1M === 0) return 'free';
   if (per1M < 0.01) return `$${per1M.toFixed(4)}`;
   return `$${per1M.toFixed(2)}`;
+}
+
+export type ProviderOption = {
+  providerName: string;
+  /** Routing slug for `provider.only/order/ignore` (e.g. "anthropic", "google-vertex/global"). */
+  tag: string;
+};
+
+export function getUniqueProviders(endpoints: ModelEndpoint[]): ProviderOption[] {
+  const seen = new Set<string>();
+  const result: ProviderOption[] = [];
+
+  for (const ep of endpoints) {
+    if (seen.has(ep.tag)) continue;
+    seen.add(ep.tag);
+    result.push({ tag: ep.tag, providerName: ep.provider_name });
+  }
+
+  result.sort((a, b) => a.providerName.localeCompare(b.providerName));
+  return result;
 }

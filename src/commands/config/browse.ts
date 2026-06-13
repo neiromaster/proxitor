@@ -1,58 +1,24 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
-import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js';
 import {
   fetchModels,
-  formatPrice,
+  getUniqueProviders,
   parseModelAuthor,
   parseModelSlug,
 } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
 import { addOverrideCommand } from './add.js';
 import {
-  formatContextLength,
+  displayModelInfo,
   formatLatency,
   formatModelHint,
   formatModelLabel,
-  formatPricing,
   formatThroughput,
 } from './format.js';
 
 function toOption(m: OpenRouterModel) {
   return { value: m.id, label: formatModelLabel(m), hint: formatModelHint(m) };
-}
-
-function displayModelDetails(model: OpenRouterModel): void {
-  clack.log.success(`${model.name || model.id}`);
-  if (model.description) {
-    const desc =
-      model.description.length > 200
-        ? `${model.description.slice(0, 200)}...`
-        : model.description;
-    clack.log.info(`  ${desc}`);
-  }
-  clack.log.info(`  Context: ${formatContextLength(model.context_length)} tokens`);
-  if (model.top_provider?.max_completion_tokens) {
-    clack.log.info(
-      `  Max output: ${formatContextLength(model.top_provider.max_completion_tokens)} tokens`,
-    );
-  }
-  clack.log.info(
-    `  Pricing: ${formatPricing(model.pricing.prompt, model.pricing.completion)}`,
-  );
-  if (model.pricing.input_cache_read && model.pricing.input_cache_read !== '0') {
-    clack.log.info(`  Cache read: ${formatPrice(model.pricing.input_cache_read)}`);
-  }
-  if (model.pricing.input_cache_write && model.pricing.input_cache_write !== '0') {
-    clack.log.info(`  Cache write: ${formatPrice(model.pricing.input_cache_write)}`);
-  }
-  if (model.architecture?.modality) {
-    clack.log.info(`  Modality: ${model.architecture.modality}`);
-  }
-  if (model.supported_parameters?.length) {
-    clack.log.info(`  Parameters: ${model.supported_parameters.join(', ')}`);
-  }
 }
 
 async function displayProviders(
@@ -64,7 +30,7 @@ async function displayProviders(
   const s = clack.spinner();
   s.start('Checking providers...');
   try {
-    const endpoints = await fetchModelEndpoints(client, author, slug);
+    const endpoints = await client.fetchModelEndpoints(author, slug);
     const unique = getUniqueProviders(endpoints);
     s.stop(`${unique.length} providers available`);
 
@@ -115,7 +81,11 @@ export async function browseModelsCommand(client: OpenRouterDataClient): Promise
   const model = models.find(m => m.id === modelId);
   if (!model) return;
 
-  displayModelDetails(model);
+  displayModelInfo(model, {
+    successHeader: true,
+    showDescription: true,
+    showParameters: true,
+  });
   await displayProviders(client, model);
 
   const configure = await clack.confirm({

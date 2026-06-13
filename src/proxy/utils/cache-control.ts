@@ -1,3 +1,4 @@
+import type { TriState } from '../../config-schema.js';
 import { ANTHROPIC_NATIVE_ENDPOINTS, classifyEndpoint } from '../paths.js';
 import { isAnthropicModel } from './model.js';
 
@@ -10,7 +11,7 @@ export function isAnthropicEndpoint(
 }
 
 export function shouldInjectCacheControl(
-  mode: 'auto' | 'always' | 'never',
+  mode: TriState,
   modelName: string | undefined,
   path: string,
 ): boolean {
@@ -29,7 +30,7 @@ export function buildCacheControl(
       ? { ...(existing as Record<string, unknown>) }
       : {};
 
-  // Anthropic API requires `type`; default to 'ephemeral'.
+  // Anthropic rejects cache_control without `type`.
   if (!('type' in base)) base.type = 'ephemeral';
 
   if (ttl && isAnthropic) base.ttl = ttl;

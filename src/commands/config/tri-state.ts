@@ -1,10 +1,4 @@
-/**
- * Shared helpers for tri-state field editing (session ID, cache control).
- * Centralises the TTL-on-cancel logic and the inherit-by-omission pattern
- * used by both the add and edit flows.
- */
-
-import type { TriState } from './prompts.js';
+import type { TriState } from '../../config-schema.js';
 import {
   askCacheControlTtl,
   askTriState,
@@ -12,14 +6,6 @@ import {
   SESSION_HINTS,
 } from './prompts.js';
 
-// ---------------------------------------------------------------------------
-// Session ID
-// ---------------------------------------------------------------------------
-
-/**
- * Prompt the user for a session routing mode.
- * Returns the updated override (with `sessionId` set) or `null` on cancel.
- */
 export async function collectSessionTriState(
   currentSid?: TriState,
 ): Promise<{ sessionId: TriState } | null> {
@@ -32,16 +18,9 @@ export async function collectSessionTriState(
   return { sessionId: sid };
 }
 
-// ---------------------------------------------------------------------------
-// Cache Control
-// ---------------------------------------------------------------------------
-
 /**
- * Prompt the user for a cache control mode and optional TTL.
- * Returns the updated fields or `null` on tri-state cancel.
- *
- * **TTL cancel behaviour**: when the user presses Escape on the TTL prompt
- * the existing TTL is preserved (not silently dropped).
+ * TTL cancel behaviour: pressing Escape on the TTL prompt preserves the
+ * existing TTL rather than silently dropping it.
  */
 export async function collectCacheTriState(
   currentCc?: TriState,

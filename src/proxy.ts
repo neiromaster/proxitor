@@ -14,14 +14,6 @@ import { resolveConfig } from './proxy/middleware/resolve-config.js';
 import { setupRequest } from './proxy/middleware/setup-request.js';
 import { INJECT_PATHS } from './proxy/paths.js';
 
-export {
-  type CacheUsage,
-  extractCacheUsage,
-  extractCacheUsageFromSSE,
-} from './proxy/cache-logging.js';
-
-export { extractErrorDetail } from './proxy/utils/error.js';
-
 const injectChain = [
   parseBody,
   resolveConfig,
@@ -33,20 +25,22 @@ const injectChain = [
 export function createProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
   const app = new Hono<ProxyEnv>();
 
+  const globalRouting = buildProviderRouting(config.provider);
+  const modelOverrideKeys = Object.keys(config.modelOverrides ?? []);
+
   app.use('*', async (c, next) => {
     c.set('config', config);
     await next();
   });
 
-  app.get('/health', c => {
-    const globalRouting = buildProviderRouting(config.provider);
-    return c.json({
+  app.get('/health', c =>
+    c.json({
       ok: true,
       upstream: config.openrouterBaseUrl,
       provider: globalRouting ?? 'not configured',
-      modelOverrides: config.modelOverrides ? Object.keys(config.modelOverrides) : [],
-    });
-  });
+      modelOverrides: modelOverrideKeys,
+    }),
+  );
 
   for (const path of INJECT_PATHS) {
     app.post(

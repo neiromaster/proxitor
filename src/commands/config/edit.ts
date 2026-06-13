@@ -1,9 +1,8 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
-import type { ModelOverride } from '../../config-schema.js';
+import type { ModelOverride, TriState } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
-import type { TriState } from './prompts.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
@@ -76,6 +75,7 @@ async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
   return { ...rest, sessionId: result.sessionId };
 }
 
+/** @internal */
 export async function editCacheControl(current: ModelOverride): Promise<ModelOverride> {
   const result = await collectCacheTriState(
     current.cacheControl as TriState | undefined,

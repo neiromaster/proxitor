@@ -1,8 +1,11 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
-import { fetchModelEndpoints, getUniqueProviders } from '../../openrouter/endpoints.js';
-import { parseModelAuthor, parseModelSlug } from '../../openrouter/models.js';
+import {
+  getUniqueProviders,
+  parseModelAuthor,
+  parseModelSlug,
+} from '../../openrouter/models.js';
 import { fetchProviders } from '../../openrouter/providers.js';
 import { formatLatency, formatThroughput } from './format.js';
 
@@ -35,7 +38,7 @@ export async function fetchEndpointsForModel(
   const s = clack.spinner();
   s.start('Fetching providers for this model...');
   try {
-    const endpoints = await fetchModelEndpoints(client, author, slug);
+    const endpoints = await client.fetchModelEndpoints(author, slug);
     const unique = getUniqueProviders(endpoints);
 
     const options = unique.map(p => {
@@ -159,9 +162,8 @@ async function selectOrderedProviders(
     message: 'Allow fallbacks to other providers?',
     initialValue: true,
   });
-  // Accept the default on cancel — the user already chose providers and
-  // this confirm has an explicit default intent (true). Canceling a confirm
-  // with initialValue ≠ canceling a text/select with no sensible default.
+  // Accept the default on cancel: the user already chose providers, and this
+  // confirm has an explicit initialValue intent (true).
   const fallbacksEnabled = isCancel(allowFallbacks) ? true : (allowFallbacks as boolean);
 
   return {

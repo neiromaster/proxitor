@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveSessionId, extractConversationFingerprint } from './session-id.js';
 
-// ---------------------------------------------------------------------------
-// extractConversationFingerprint
-// ---------------------------------------------------------------------------
-
 describe('extractConversationFingerprint', () => {
   it('extracts system + user from chat-completions (default) endpoint', () => {
     const body = {
@@ -59,7 +55,7 @@ describe('extractConversationFingerprint', () => {
 
     const fp = extractConversationFingerprint(body, '/v1/messages');
     expect(fp).not.toBeNull();
-    // Should use the *first* user message, not the follow-up
+    // Uses the first user message, not the follow-up
     expect(fp).toBe(
       extractConversationFingerprint(
         {
@@ -125,9 +121,7 @@ describe('extractConversationFingerprint', () => {
   });
 
   it('falls back gracefully when system content is non-serializable', () => {
-    // Circular references inside `system` would normally throw inside
-    // JSON.stringify. The implementation should skip the failing field and
-    // still produce a fingerprint from the remaining (user) content.
+    // Circular system ref is skipped; fingerprint from user content only.
     const circular: Record<string, unknown> = { role: 'system' };
     circular.self = circular;
 
@@ -142,10 +136,6 @@ describe('extractConversationFingerprint', () => {
     expect(fp!.length).toBe(64);
   });
 });
-
-// ---------------------------------------------------------------------------
-// deriveSessionId
-// ---------------------------------------------------------------------------
 
 describe('deriveSessionId', () => {
   const mockHeaders = (headers: Record<string, string> = {}): Headers => {

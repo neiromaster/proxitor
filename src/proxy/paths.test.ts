@@ -2,10 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { ProxyConfig } from '../config.js';
 import { buildUpstreamUrl, classifyEndpoint, INJECT_PATHS } from './paths.js';
 
-// ---------------------------------------------------------------------------
-// classifyEndpoint
-// ---------------------------------------------------------------------------
-
 describe('classifyEndpoint', () => {
   it('classifies /v1/chat/completions', () => {
     expect(classifyEndpoint('/v1/chat/completions')).toBe('chat-completions');
@@ -26,10 +22,6 @@ describe('classifyEndpoint', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// INJECT_PATHS
-// ---------------------------------------------------------------------------
-
 describe('INJECT_PATHS', () => {
   it('contains exactly the 3 expected paths', () => {
     expect(INJECT_PATHS).toEqual(
@@ -37,10 +29,6 @@ describe('INJECT_PATHS', () => {
     );
   });
 });
-
-// ---------------------------------------------------------------------------
-// buildUpstreamUrl
-// ---------------------------------------------------------------------------
 
 describe('buildUpstreamUrl', () => {
   const makeConfig = (baseUrl: string) => ({ openrouterBaseUrl: baseUrl }) as ProxyConfig;

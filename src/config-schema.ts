@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api';
 
-export const percentileCutoffsSchema = z
+const stringOrArraySchema = z.union([z.string(), z.array(z.string())]);
+
+const percentileCutoffsSchema = z
   .object({
     p50: z.number().positive().optional(),
     p75: z.number().positive().optional(),
@@ -11,7 +13,7 @@ export const percentileCutoffsSchema = z
   })
   .strict();
 
-export const providerSortSchema = z.union([
+const providerSortSchema = z.union([
   z.enum(['price', 'throughput', 'latency']),
   z
     .object({
@@ -21,7 +23,7 @@ export const providerSortSchema = z.union([
     .strict(),
 ]);
 
-export const maxPriceSchema = z
+const maxPriceSchema = z
   .object({
     prompt: z.number().nonnegative().optional(),
     completion: z.number().nonnegative().optional(),
@@ -30,11 +32,11 @@ export const maxPriceSchema = z
   })
   .strict();
 
-export const providerConfigSchema = z
+const providerConfigSchema = z
   .object({
-    only: z.union([z.string(), z.array(z.string())]).optional(),
-    order: z.union([z.string(), z.array(z.string())]).optional(),
-    ignore: z.union([z.string(), z.array(z.string())]).optional(),
+    only: stringOrArraySchema.optional(),
+    order: stringOrArraySchema.optional(),
+    ignore: stringOrArraySchema.optional(),
     allowFallbacks: z.boolean().optional(),
     sort: providerSortSchema.optional(),
     quantizations: z.array(z.string()).optional(),
@@ -54,7 +56,7 @@ export const providerConfigSchema = z
 
 const triStateSchema = z.enum(['auto', 'always', 'never']);
 
-export const modelOverrideSchema = z
+const modelOverrideSchema = z
   .object({
     provider: providerConfigSchema.optional(),
     headers: z.record(z.string(), z.string()).optional(),
@@ -88,17 +90,15 @@ export const proxyConfigSchema = z
   })
   .strict();
 
-export const DEFAULTS = proxyConfigSchema.parse({});
+export const DEFAULTS: ProxyConfig = proxyConfigSchema.parse({});
 
 export const proxyConfigFileSchema = proxyConfigSchema.partial();
 
 export type ProxyConfig = z.infer<typeof proxyConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type ModelOverride = z.infer<typeof modelOverrideSchema>;
-export type MaxPrice = z.infer<typeof maxPriceSchema>;
-export type PercentileCutoffs = z.infer<typeof percentileCutoffsSchema>;
-export type ProviderSort = z.infer<typeof providerSortSchema>;
 export type AuthType = z.infer<typeof proxyConfigSchema>['authType'];
+export type TriState = 'auto' | 'always' | 'never';
 
 export class ConfigParseError extends Error {
   constructor(filePath: string, cause?: Error) {
@@ -124,10 +124,7 @@ export class ConfigValidationError extends Error {
   }
 }
 
-/**
- * Thrown when no config file is found via discovery and no explicit path was given.
- * Callers can `instanceof` this to surface a "create one?" prompt.
- */
+/** No config found via discovery — catch with `instanceof` to offer creating one. */
 export class MissingConfigError extends Error {
   readonly searchedPaths: readonly string[];
 

@@ -15,7 +15,6 @@ export {
   ConfigParseError,
   ConfigValidationError,
   loadConfig,
-  matchScore,
   resolveModelConfig,
 } from './config.js';
 export { isAnthropicModel } from './proxy/utils/model.js';
