@@ -125,9 +125,7 @@ describe('extractConversationFingerprint', () => {
   });
 
   it('falls back gracefully when system content is non-serializable', () => {
-    // Circular references inside `system` would normally throw inside
-    // JSON.stringify. The implementation should skip the failing field and
-    // still produce a fingerprint from the remaining (user) content.
+    // Circular system ref should be skipped; fingerprint still produced from user content.
     const circular: Record<string, unknown> = { role: 'system' };
     circular.self = circular;
 

@@ -50,7 +50,7 @@ function applyAnthropicUsage(usage: Record<string, unknown>, result: CacheUsage)
 }
 
 function applyOpenAIUsage(usage: Record<string, unknown>, result: CacheUsage): void {
-  // Chat Completions / OpenRouter: prompt_tokens_details
+  // prompt_tokens_details (Chat Completions format)
   const promptDetails = usage.prompt_tokens_details;
   if (typeof promptDetails === 'object' && promptDetails !== null) {
     applyOpenAIDetails(promptDetails as Record<string, unknown>, result);
@@ -64,7 +64,7 @@ function applyOpenAIUsage(usage: Record<string, unknown>, result: CacheUsage): v
     }
   }
 
-  // Total input: prompt_tokens (Chat Completions) or input_tokens (Responses API)
+  // prompt_tokens or input_tokens, depending on API
   if (typeof usage.prompt_tokens === 'number' && (usage.prompt_tokens as number) > 0) {
     result.inputTokens = usage.prompt_tokens as number;
   } else if (
@@ -132,9 +132,7 @@ export function extractCacheUsageFromSSE(fullText: string): CacheUsage | undefin
 
     try {
       if (extractFromEvent(JSON.parse(payload), result)) found = true;
-    } catch {
-      // non-JSON data line
-    }
+    } catch {}
   }
 
   return found ? result : undefined;

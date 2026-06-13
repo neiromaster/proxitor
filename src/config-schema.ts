@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api';
 
-export const percentileCutoffsSchema = z
+const stringOrArraySchema = z.union([z.string(), z.array(z.string())]);
+
+const percentileCutoffsSchema = z
   .object({
     p50: z.number().positive().optional(),
     p75: z.number().positive().optional(),
@@ -11,7 +13,7 @@ export const percentileCutoffsSchema = z
   })
   .strict();
 
-export const providerSortSchema = z.union([
+const providerSortSchema = z.union([
   z.enum(['price', 'throughput', 'latency']),
   z
     .object({
@@ -21,7 +23,7 @@ export const providerSortSchema = z.union([
     .strict(),
 ]);
 
-export const maxPriceSchema = z
+const maxPriceSchema = z
   .object({
     prompt: z.number().nonnegative().optional(),
     completion: z.number().nonnegative().optional(),
@@ -32,9 +34,9 @@ export const maxPriceSchema = z
 
 export const providerConfigSchema = z
   .object({
-    only: z.union([z.string(), z.array(z.string())]).optional(),
-    order: z.union([z.string(), z.array(z.string())]).optional(),
-    ignore: z.union([z.string(), z.array(z.string())]).optional(),
+    only: stringOrArraySchema.optional(),
+    order: stringOrArraySchema.optional(),
+    ignore: stringOrArraySchema.optional(),
     allowFallbacks: z.boolean().optional(),
     sort: providerSortSchema.optional(),
     quantizations: z.array(z.string()).optional(),
@@ -88,7 +90,8 @@ export const proxyConfigSchema = z
   })
   .strict();
 
-export const DEFAULTS = proxyConfigSchema.parse({});
+/** Default config values — extracted by parsing an empty object through the schema. */
+export const DEFAULTS: ProxyConfig = proxyConfigSchema.parse({});
 
 export const proxyConfigFileSchema = proxyConfigSchema.partial();
 
@@ -98,7 +101,7 @@ export type ModelOverride = z.infer<typeof modelOverrideSchema>;
 export type MaxPrice = z.infer<typeof maxPriceSchema>;
 export type PercentileCutoffs = z.infer<typeof percentileCutoffsSchema>;
 export type ProviderSort = z.infer<typeof providerSortSchema>;
-export type AuthType = z.infer<typeof proxyConfigSchema>['authType'];
+export type AuthType = 'bearer' | 'oauth';
 
 export class ConfigParseError extends Error {
   constructor(filePath: string, cause?: Error) {

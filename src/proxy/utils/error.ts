@@ -25,8 +25,6 @@ export function extractErrorDetail(bodyText: string): string {
       return parts.join(' | ');
     }
     if (parsed.message) return String(parsed.message);
-  } catch {
-    // not JSON
-  }
+  } catch {}
   return bodyText;
 }

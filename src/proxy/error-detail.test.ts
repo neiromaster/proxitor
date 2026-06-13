@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractErrorDetail } from '../proxy.js';
+import { extractErrorDetail } from './utils/error.js';
 
 describe('extractErrorDetail', () => {
   it('extracts message from OpenRouter-style error', () => {

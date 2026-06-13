@@ -81,9 +81,7 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
     }),
   );
 
-  // Canonicalize to lowercase keys so case-variant headers (e.g. a user-config
-  // "Content-Type") can never coexist with their lowercase form and corrupt the
-  // merged record. HTTP header names are case-insensitive (RFC 9110 §5.1).
+  // Canonicalize header keys — case-variants would coexist in a plain object and corrupt merges (RFC 9110 §5.1).
   let headers = lowercaseKeys({
     ...filterHeaders(c.req.raw.headers, STRIP_REQUEST),
     ...proxyHeaders(c.var.config),
