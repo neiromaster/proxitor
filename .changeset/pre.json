@@ -14,6 +14,7 @@
     "middleware-architecture",
     "persist-explicit-config-values",
     "remove-upstream-timeout",
-    "simplify-modules"
+    "simplify-modules",
+    "simplify-proxy-and-config"
   ]
 }
