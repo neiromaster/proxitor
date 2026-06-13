@@ -6,6 +6,22 @@ const PROXY_SESSION_ID = crypto.randomUUID();
 
 type Message = { role?: string; content?: unknown };
 
+function firstContent(messages: unknown, ...roles: string[]): unknown {
+  if (!Array.isArray(messages)) return undefined;
+  return (messages as Message[]).find(
+    m => roles.includes(m.role ?? '') && m.content != null,
+  )?.content;
+}
+
+/** Returns '' for non-serializable values (e.g. BigInt). */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
 export function extractConversationFingerprint(
   parsedBody: ParsedRequestBody,
   path: string,
@@ -18,45 +34,16 @@ export function extractConversationFingerprint(
       system = parsedBody.instructions;
       user = parsedBody.input;
       break;
-    case 'messages': {
+    case 'messages':
       system = parsedBody.system;
-      const messages = parsedBody.messages;
-      if (Array.isArray(messages)) {
-        const firstUser = messages.find(
-          (m: Message) => m.role === 'user' && m.content != null,
-        );
-        user = firstUser?.content;
-      }
+      user = firstContent(parsedBody.messages, 'user');
       break;
-    }
-    default: {
-      const messages = parsedBody.messages;
-      if (Array.isArray(messages)) {
-        const firstSystem = messages.find(
-          (m: Message) =>
-            (m.role === 'system' || m.role === 'developer') && m.content != null,
-        );
-        const firstUser = messages.find(
-          (m: Message) => m.role === 'user' && m.content != null,
-        );
-        system = firstSystem?.content;
-        user = firstUser?.content;
-      }
-    }
+    default:
+      system = firstContent(parsedBody.messages, 'system', 'developer');
+      user = firstContent(parsedBody.messages, 'user');
   }
 
   if (system == null && user == null) return null;
-
-  // Stringify each field independently so a non-serializable value in one
-  // (e.g. BigInt) doesn't drop the whole fingerprint. A failed field is
-  // hashed as the empty string, leaving the other field(s) to contribute.
-  const safeStringify = (value: unknown): string => {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return '';
-    }
-  };
 
   const hash = createHash('sha256');
   hash.update(String(parsedBody.model ?? ''));

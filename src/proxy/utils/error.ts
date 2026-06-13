@@ -1,7 +1,4 @@
-/**
- * OpenRouter error format:
- *   { error: { code, message, metadata: { raw, provider_name } } }
- */
+/** OpenRouter error: { error: { code, message, metadata: { raw, provider_name } } } */
 function formatMetadata(meta: Record<string, unknown>): string[] {
   const parts: string[] = [];
   if (meta.provider_name) parts.push(`provider=${meta.provider_name}`);
@@ -29,7 +26,7 @@ export function extractErrorDetail(bodyText: string): string {
     }
     if (parsed.message) return String(parsed.message);
   } catch {
-    // non-JSON
+    // not JSON
   }
   return bodyText;
 }
