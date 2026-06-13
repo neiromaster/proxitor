@@ -5,13 +5,13 @@ import type { ProxyEnv } from '../context.js';
 import { buildResponseHeaders } from '../headers.js';
 import { extractErrorDetail } from '../utils/error.js';
 
+const DUPLEX_HALF = { duplex: 'half' as const };
+
 type Ctx = {
   reqId: string;
   method: string;
   path: string;
   startedAt: number;
-  upstreamShort: string;
-  modelLog: string;
   bodyMutated: boolean;
 };
 
@@ -20,9 +20,7 @@ function buildErrorResponse(
   ctx: Pick<Ctx, 'reqId' | 'method' | 'path'>,
 ): Response {
   if (err instanceof TypeError) {
-    // Network-level failures (ECONNREFUSED, DNS, connection reset) — undici
-    // wraps these in TypeError. Return 502 Bad Gateway per the documented
-    // proxy_upstream_error contract.
+    // Network failures (undici TypeError) → 502.
     logger.error(withReq(ctx.reqId, 'Upstream fetch error:'), err);
     return Response.json(
       {
@@ -34,8 +32,7 @@ function buildErrorResponse(
       { status: 502 },
     );
   }
-  // AbortError from client cancellation: the client is gone, so 499 (client
-  // closed request) is more accurate than 500.
+  // Client disconnected → 499.
   if (err instanceof DOMException && err.name === 'AbortError') {
     logger.warn(withReq(ctx.reqId, `Aborted: ${ctx.method} ${ctx.path}`));
     return new Response(null, { status: 499 });
@@ -75,8 +72,6 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     method,
     path,
     startedAt,
-    upstreamShort: upstreamUrl.replace(/^https?:\/\//, ''),
-    modelLog: c.var.modelName ? ` model=${c.var.modelName}` : '',
     bodyMutated: c.var.bodyMutated,
   };
 
@@ -84,10 +79,13 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   const onClientAbort = () => controller.abort();
   c.req.raw.signal.addEventListener('abort', onClientAbort);
 
+  const upstreamShort = upstreamUrl.replace(/^https?:\/\//, '');
+  const modelLog = c.var.modelName ? ` model=${c.var.modelName}` : '';
+
   logger.info(
     withReq(
       reqId,
-      `${method} ${path} → ${ctx.upstreamShort}${ctx.bodyMutated ? ' [inject]' : ''}${ctx.modelLog}`,
+      `${method} ${path} → ${upstreamShort}${ctx.bodyMutated ? ' [inject]' : ''}${modelLog}`,
     ),
   );
 
@@ -98,7 +96,7 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
       headers: upstreamHeaders,
       body: forwardBody,
       signal: controller.signal,
-      ...(forwardBody ? { duplex: 'half' as const } : {}),
+      ...(forwardBody ? DUPLEX_HALF : {}),
     });
   } catch (err) {
     return buildErrorResponse(err, ctx);

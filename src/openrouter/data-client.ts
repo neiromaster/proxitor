@@ -5,8 +5,6 @@ import { formatAuthHeader } from '../utils.js';
 import { OpenRouterClient } from './client.js';
 import type { ModelEndpoint, OpenRouterModel, OpenRouterProvider } from './types.js';
 
-const OPENROUTER_FALLBACK_URL = OPENROUTER_API_URL;
-
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 type CacheEntry = { at: number; models: OpenRouterModel[] };
 const modelsCache = new Map<string, CacheEntry>();
@@ -24,7 +22,7 @@ type FallbackResult<T> = {
   usedFallback: boolean;
 };
 
-function isValidProvidersResponse(data: unknown): data is { data: OpenRouterProvider[] } {
+function isValidArrayDataResponse<T>(data: unknown): data is { data: T[] } {
   return (
     typeof data === 'object' &&
     data !== null &&
@@ -33,13 +31,11 @@ function isValidProvidersResponse(data: unknown): data is { data: OpenRouterProv
   );
 }
 
+function isValidProvidersResponse(data: unknown): data is { data: OpenRouterProvider[] } {
+  return isValidArrayDataResponse(data);
+}
 function isValidModelsResponse(data: unknown): data is { data: OpenRouterModel[] } {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    'data' in data &&
-    Array.isArray((data as { data: unknown }).data)
-  );
+  return isValidArrayDataResponse(data);
 }
 
 function isValidEndpointsResponse(data: unknown): data is {
@@ -56,13 +52,7 @@ function isValidEndpointsResponse(data: unknown): data is {
   );
 }
 
-/**
- * Client for fetching provider/model data with automatic fallback to OpenRouter.
- *
- * When the primary API (openrouterDataUrl or openrouterBaseUrl) doesn't support
- * OpenRouter-specific data endpoints, falls back to https://openrouter.ai/api
- * which hosts public, unauthenticated endpoints for /providers, /models, etc.
- */
+/** Fetches provider/model data with fallback to OpenRouter. */
 export class OpenRouterDataClient {
   private primaryClient: OpenRouterClient;
   private fallbackClient: OpenRouterClient;
@@ -72,12 +62,11 @@ export class OpenRouterDataClient {
 
   constructor(config: DataClientConfig) {
     const primaryUrl = config.openrouterDataUrl ?? config.openrouterBaseUrl;
-    this.skipFallback = primaryUrl === OPENROUTER_FALLBACK_URL;
+    this.skipFallback = primaryUrl === OPENROUTER_API_URL;
     this.primaryClient = new OpenRouterClient(config.apiKey, primaryUrl, config.authType);
-    this.fallbackClient = new OpenRouterClient(OPENROUTER_FALLBACK_URL);
+    this.fallbackClient = new OpenRouterClient(OPENROUTER_API_URL);
     this.onFallback = config.onFallback;
-    // Key the cache by upstream + authType + API key hash so different
-    // credentials on the same URL don't share cached model data.
+    // Isolate cache per credentials.
     const keyHash = createHash('sha256').update(config.apiKey).digest('hex').slice(0, 8);
     this.cacheKey = `${primaryUrl}|${config.authType}|${keyHash}`;
   }
@@ -96,8 +85,6 @@ export class OpenRouterDataClient {
     if (cached && Date.now() - cached.at < MODELS_CACHE_TTL_MS) {
       return cached.models;
     }
-    // Evict expired entry so stale data doesn't accumulate in long-running contexts.
-    if (cached) modelsCache.delete(this.cacheKey);
     const result = await this.withFallback(
       '/v1/models',
       () => this.primaryClient.get<unknown>('/v1/models'),
@@ -118,10 +105,7 @@ export class OpenRouterDataClient {
     return result.data.data.endpoints ?? [];
   }
 
-  /**
-   * Try primary, validate response, fallback on failure.
-   * Network errors get 1 retry before fallback.
-   */
+  /** Primary with retry, then fallback. */
   private async withFallback<T>(
     path: string,
     primaryFn: () => Promise<unknown>,
@@ -135,29 +119,24 @@ export class OpenRouterDataClient {
       return { data, usedFallback: false };
     }
 
-    // Try primary with 1 retry on network errors
     try {
       const data = await primaryFn();
       if (validate(data)) {
         return { data, usedFallback: false };
       }
-      // Valid HTTP response but unexpected format — fall through to fallback
     } catch (error) {
       if (error instanceof Error && isNetworkError(error)) {
-        // Retry once on network errors
         try {
           const data = await primaryFn();
           if (validate(data)) {
             return { data, usedFallback: false };
           }
         } catch {
-          // Retry also failed — fall through to fallback
+          // retry also failed
         }
       }
-      // Non-network errors (4xx, 5xx) — fall through to fallback
     }
 
-    // Fallback to OpenRouter
     this.onFallback?.(path);
     const data = await this.fallbackClient.get<unknown>(path);
     if (!validate(data)) {
@@ -180,31 +159,28 @@ function isNetworkError(error: Error): boolean {
   );
 }
 
-/** Drop the in-memory model cache. Useful in tests; rarely needed at runtime. */
 export function clearModelsCache(): void {
   modelsCache.clear();
 }
 
-/**
- * Best-effort probe of the upstream API. Non-blocking — used by the wizard
- * to give early feedback on key validity without preventing save.
- */
+/** Probes upstream to validate key and count models. */
 export async function probeUpstream(
   baseUrl: string,
   apiKey: string,
   authType: AuthType,
   timeoutMs = 3_000,
 ): Promise<{ ok: true; modelCount: number } | { ok: false; reason: string }> {
+  if (!apiKey) {
+    return { ok: false, reason: 'No API key provided' };
+  }
   const url = `${baseUrl.replace(/\/$/, '')}/v1/models`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    if (!apiKey) {
-      return { ok: false, reason: 'No API key provided' };
-    }
-    const headers: Record<string, string> = {};
-    headers.Authorization = formatAuthHeader(apiKey, authType);
-    const res = await fetch(url, { signal: controller.signal, headers });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: formatAuthHeader(apiKey, authType) },
+    });
     if (res.status === 401 || res.status === 403) {
       return { ok: false, reason: `Key rejected (${res.status})` };
     }
