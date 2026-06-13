@@ -8,7 +8,7 @@ import {
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
-import { collectCacheTriState, collectSessionTriState } from './tri-state.js';
+import { applyField, collectCacheTriState, collectSessionTriState } from './tri-state.js';
 
 type EditField = 'provider' | 'sessionId' | 'cacheControl' | 'done';
 
@@ -23,6 +23,16 @@ function formatOverrideHint(override: ModelOverride | undefined): string {
   if (override.cacheControl) parts.push(`cache: ${override.cacheControl}`);
   if (override.headers) parts.push(`${Object.keys(override.headers).length} header(s)`);
   return parts.join(', ') || '(empty)';
+}
+
+function formatCacheHint(
+  cc: TriState | undefined,
+  ttl: '5m' | '1h' | 'omit' | 'never' | undefined,
+): string {
+  let ttlLabel = ttl ?? '';
+  if (ttl === 'omit') ttlLabel = 'ttl strip';
+  else if (ttl === 'never') ttlLabel = 'ttl passthrough';
+  return [cc, ttlLabel].filter(Boolean).join(', ') || '(inherit)';
 }
 
 function showCurrentConfig(modelKey: string, current: ModelOverride): void {
@@ -71,20 +81,23 @@ async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
   const result = await collectSessionTriState(current.sessionId as TriState | undefined);
   if (result === null) return current;
 
-  const { sessionId: _, ...rest } = current;
-  return { ...rest, sessionId: result.sessionId };
+  const next: Record<string, unknown> = { ...current };
+  applyField(next, 'sessionId', result.sessionId);
+  return next as ModelOverride;
 }
 
 /** @internal */
 export async function editCacheControl(current: ModelOverride): Promise<ModelOverride> {
   const result = await collectCacheTriState(
     current.cacheControl as TriState | undefined,
-    current.cacheControlTtl as '5m' | '1h' | null | undefined,
+    current.cacheControlTtl as '5m' | '1h' | 'omit' | 'never' | undefined,
   );
   if (result === null) return current;
 
-  const { cacheControl: _cc, cacheControlTtl: _ttl, ...rest } = current;
-  return { ...rest, ...result };
+  const next: Record<string, unknown> = { ...current };
+  applyField(next, 'cacheControl', result.cacheControl);
+  applyField(next, 'cacheControlTtl', result.cacheControlTtl);
+  return next as ModelOverride;
 }
 
 /** Run the interactive "Edit model override" flow. */
@@ -136,9 +149,7 @@ export async function editOverrideCommand(
         {
           value: 'cacheControl',
           label: 'Cache control',
-          hint:
-            [current.cacheControl, current.cacheControlTtl].filter(Boolean).join(', ') ||
-            '(inherit)',
+          hint: formatCacheHint(current.cacheControl, current.cacheControlTtl),
         },
         { value: 'done', label: '✓ Done' },
       ],

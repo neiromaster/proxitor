@@ -151,8 +151,9 @@ export async function askTriState(
 }
 
 export async function askCacheControlTtl(
-  current: '5m' | '1h' | undefined,
-): Promise<'5m' | '1h' | null | 'reset'> {
+  current: '5m' | '1h' | 'omit' | 'never' | undefined,
+): Promise<'5m' | '1h' | 'omit' | 'never' | null | 'reset'> {
+  const selectable = current === '5m' || current === '1h' ? current : '5m';
   const options: { value: string; label: string; hint: string }[] = [
     { value: '5m', label: '5 minutes', hint: 'Anthropic default' },
     { value: '1h', label: '1 hour', hint: 'Higher write cost' },
@@ -166,10 +167,10 @@ export async function askCacheControlTtl(
   }
   const result = await clack.select({
     message: 'Cache TTL',
-    initialValue: current ?? '5m',
+    initialValue: selectable,
     options,
   });
   if (isCancel(result)) return null;
   if (result === 'reset') return 'reset';
-  return result as '5m' | '1h';
+  return result as '5m' | '1h' | 'omit' | 'never';
 }

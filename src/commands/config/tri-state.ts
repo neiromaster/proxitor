@@ -6,26 +6,50 @@ import {
   SESSION_HINTS,
 } from './prompts.js';
 
+/** A per-field resolution: explicitly set, explicitly removed, or (when omitted) kept as-is. */
+export type ResolvedField<T> = { remove: true } | { value: T };
+
+/**
+ * Apply a resolved field to a plain object in place.
+ * - `{ value }` → assign
+ * - `{ remove: true }` → delete the key
+ * - `undefined` → leave the existing value untouched (cancel / keep)
+ */
+export function applyField<T>(
+  obj: Record<string, unknown>,
+  key: string,
+  field: ResolvedField<T> | undefined,
+): void {
+  if (field === undefined) return;
+  if ('remove' in field) delete obj[key];
+  else obj[key] = field.value;
+}
+
 export async function collectSessionTriState(
   currentSid?: TriState,
-): Promise<{ sessionId: TriState } | null> {
+): Promise<{ sessionId: ResolvedField<TriState> } | null> {
   const sid = await askTriState(
     'Session ID mode',
     (currentSid ?? 'auto') as TriState,
     SESSION_HINTS,
   );
-  if (sid === null) return null;
-  return { sessionId: sid };
+  if (sid === null) return null; // cancelled → caller keeps everything
+  return { sessionId: { value: sid } };
 }
 
 /**
- * TTL cancel behaviour: pressing Escape on the TTL prompt preserves the
- * existing TTL rather than silently dropping it.
+ * TTL is decoupled from cache mode: it is always asked and can exist on its own
+ * (it refines the inherited mode). Cancelling the TTL prompt preserves the
+ * existing TTL (field omitted from the patch); cancelling the mode prompt
+ * cancels the whole edit (returns null).
  */
 export async function collectCacheTriState(
   currentCc?: TriState,
-  currentTtl?: '5m' | '1h' | null,
-): Promise<{ cacheControl: TriState; cacheControlTtl?: '5m' | '1h' } | null> {
+  currentTtl?: '5m' | '1h' | 'omit' | 'never',
+): Promise<{
+  cacheControl: ResolvedField<TriState>;
+  cacheControlTtl?: ResolvedField<'5m' | '1h' | 'omit' | 'never'>;
+} | null> {
   const cc = await askTriState(
     'Cache control mode',
     (currentCc ?? 'auto') as TriState,
@@ -33,19 +57,15 @@ export async function collectCacheTriState(
   );
   if (cc === null) return null;
 
-  const result: { cacheControl: TriState; cacheControlTtl?: '5m' | '1h' } = {
-    cacheControl: cc,
-  };
+  const cacheControl: ResolvedField<TriState> = { value: cc };
 
-  if (cc !== 'never') {
-    const ttl = await askCacheControlTtl((currentTtl as '5m' | '1h') ?? undefined);
-    if (ttl === null) {
-      // Cancel — preserve existing TTL
-      if (currentTtl) result.cacheControlTtl = currentTtl;
-    } else if (ttl !== 'reset') {
-      result.cacheControlTtl = ttl;
-    }
+  const ttl = await askCacheControlTtl(currentTtl);
+  if (ttl === null) {
+    // cancel → keep existing TTL (omit cacheControlTtl from the patch)
+    return { cacheControl };
   }
-
-  return result;
+  if (ttl === 'reset') {
+    return { cacheControl, cacheControlTtl: { remove: true } };
+  }
+  return { cacheControl, cacheControlTtl: { value: ttl } };
 }
