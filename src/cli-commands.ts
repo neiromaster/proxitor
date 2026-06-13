@@ -1,9 +1,6 @@
 /**
- * Command tree for the proxitor CLI.
- *
- * Kept in a separate module from `cli.ts` so tests can import the commands
- * without triggering the top-level `run()` invocation that `cli.ts` performs
- * on import.
+ * CLI command tree. Separated from `cli.ts` so tests can import commands
+ * without triggering `run()`.
  */
 import { command, flag, option, string, subcommands } from 'cmd-ts';
 import { ConfigPath, OpenRouterKey, Port } from './cli-types.js';
@@ -23,7 +20,6 @@ import { OpenRouterDataClient } from './openrouter/data-client.js';
 import { startProxyServer } from './proxy.js';
 import { version } from './version.js';
 
-/** Flags that every command touching the config file accepts. */
 export const configArgs = {
   configPath: option({
     long: 'config',
@@ -40,7 +36,6 @@ export const configArgs = {
   }),
 } as const;
 
-/** `--json` flag for commands that can produce structured output. */
 export const jsonFlag = {
   json: flag({
     long: 'json',
@@ -48,14 +43,13 @@ export const jsonFlag = {
   }),
 } as const;
 
-/** Build an OpenRouterDataClient from already-parsed args. */
 export async function makeClient(args: {
   openrouterKey?: string | undefined;
   configPath?: string | undefined;
 }): Promise<OpenRouterDataClient> {
   const cfg = await loadConfig({
-    configPath: args.configPath ?? undefined,
-    openrouterKey: args.openrouterKey ?? undefined,
+    configPath: args.configPath,
+    openrouterKey: args.openrouterKey,
   });
   return new OpenRouterDataClient({
     openrouterBaseUrl: cfg.openrouterBaseUrl,
@@ -113,11 +107,11 @@ export const startCommand = command({
   handler: async ({ configPath, port, host, noConfig, openrouterKey, verbose }) => {
     try {
       const cfg = await loadConfig({
-        configPath: configPath ?? undefined,
+        configPath,
         noConfig,
         port,
         host,
-        openrouterKey: openrouterKey ?? undefined,
+        openrouterKey,
         verbose,
       });
       startProxyServer(cfg, () => {
@@ -238,7 +232,7 @@ export const doctorCli = command({
     { description: 'Output as JSON', command: 'proxitor doctor --json' },
   ],
   args: {
-    json: flag({ long: 'json', description: 'Output as JSON instead of formatted text' }),
+    ...jsonFlag,
     offline: flag({
       long: 'offline',
       description: 'Skip network checks (upstream, npm)',
