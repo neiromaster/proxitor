@@ -1,5 +1,6 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
+import { readConfigFile } from '../../config.js';
 import type { ModelOverride, TriState } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
@@ -33,6 +34,22 @@ function formatCacheHint(
   if (ttl === 'omit') ttlLabel = 'ttl strip';
   else if (ttl === 'never') ttlLabel = 'ttl passthrough';
   return [cc, ttlLabel].filter(Boolean).join(', ') || '(inherit)';
+}
+
+function readGlobalTtl(
+  configPath: string | undefined,
+): '5m' | '1h' | 'omit' | 'never' | undefined {
+  if (!configPath) return undefined;
+  try {
+    return readConfigFile(configPath).cacheControlTtl as
+      | '5m'
+      | '1h'
+      | 'omit'
+      | 'never'
+      | undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function showCurrentConfig(modelKey: string, current: ModelOverride): void {
@@ -87,10 +104,15 @@ async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
 }
 
 /** @internal */
-export async function editCacheControl(current: ModelOverride): Promise<ModelOverride> {
+export async function editCacheControl(
+  current: ModelOverride,
+  configPath?: string,
+): Promise<ModelOverride> {
+  const globalTtl = readGlobalTtl(configPath);
   const result = await collectCacheTriState(
     current.cacheControl as TriState | undefined,
     current.cacheControlTtl as '5m' | '1h' | 'omit' | 'never' | undefined,
+    globalTtl,
   );
   if (result === null) return current;
 
@@ -164,7 +186,7 @@ export async function editOverrideCommand(
         current = await editSessionId(current);
         break;
       case 'cacheControl':
-        current = await editCacheControl(current);
+        current = await editCacheControl(current, resolvedConfigPath);
         break;
     }
   }

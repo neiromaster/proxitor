@@ -17,10 +17,18 @@ export async function sessionRoutingCommand(opts?: {
     'Session routing mode',
     current as TriState,
     SESSION_HINTS,
+    {
+      removable: true,
+    },
   );
 
-  if (result === null) return;
+  if (typeof result === 'symbol') return;
 
+  if (result === 'reset') {
+    setGlobalConfigField(configPath, 'sessionId', undefined);
+    clack.log.success('sessionId reset to default (auto)');
+    return;
+  }
   setGlobalConfigField(configPath, 'sessionId', result);
   clack.log.success(`sessionId set to ${result}`);
 }

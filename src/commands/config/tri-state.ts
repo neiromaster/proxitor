@@ -32,8 +32,10 @@ export async function collectSessionTriState(
     'Session ID mode',
     (currentSid ?? 'auto') as TriState,
     SESSION_HINTS,
+    { removable: true },
   );
-  if (sid === null) return null; // cancelled → caller keeps everything
+  if (typeof sid === 'symbol') return null; // cancelled → caller keeps everything
+  if (sid === 'reset') return { sessionId: { remove: true } };
   return { sessionId: { value: sid } };
 }
 
@@ -46,6 +48,7 @@ export async function collectSessionTriState(
 export async function collectCacheTriState(
   currentCc?: TriState,
   currentTtl?: '5m' | '1h' | 'omit' | 'never',
+  globalTtl?: '5m' | '1h' | 'omit' | 'never',
 ): Promise<{
   cacheControl: ResolvedField<TriState>;
   cacheControlTtl?: ResolvedField<'5m' | '1h' | 'omit' | 'never'>;
@@ -54,13 +57,19 @@ export async function collectCacheTriState(
     'Cache control mode',
     (currentCc ?? 'auto') as TriState,
     CACHE_HINTS,
+    { removable: true },
   );
-  if (cc === null) return null;
+  if (typeof cc === 'symbol') return null;
 
-  const cacheControl: ResolvedField<TriState> = { value: cc };
+  let cacheControl: ResolvedField<TriState>;
+  if (cc === 'reset') {
+    cacheControl = { remove: true };
+  } else {
+    cacheControl = { value: cc };
+  }
 
-  const ttl = await askCacheControlTtl(currentTtl);
-  if (ttl === null) {
+  const ttl = await askCacheControlTtl(currentTtl, { removable: true, globalTtl });
+  if (typeof ttl === 'symbol') {
     // cancel → keep existing TTL (omit cacheControlTtl from the patch)
     return { cacheControl };
   }
