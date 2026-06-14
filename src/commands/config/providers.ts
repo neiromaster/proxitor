@@ -86,6 +86,14 @@ export async function selectProvidersByMode(
   mode: string,
   providerOptions: Array<{ value: string; label: string; hint?: string }>,
 ): Promise<Record<string, unknown> | null> {
+  // Empty provider list (e.g. a model alias with no endpoint data) crashes
+  // clack.multiselect — bail. Callers treat null as "no changes".
+  if (providerOptions.length === 0) {
+    clack.log.warn(
+      'No providers available for this model — cannot configure provider routing.',
+    );
+    return null;
+  }
   if (mode === 'only') return selectOnlyProviders(providerOptions);
   if (mode === 'order') return selectOrderedProviders(providerOptions);
   if (mode === 'ignore') return selectIgnoreProviders(providerOptions);
