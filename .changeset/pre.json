@@ -5,6 +5,7 @@
     "proxitor": "0.8.0"
   },
   "changesets": [
+    "cache-config-delete-and-ttl-omit",
     "cache-control-and-session",
     "cache-control-ttl",
     "cache-hit-rate-and-responses-api",
