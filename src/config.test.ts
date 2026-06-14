@@ -664,12 +664,12 @@ describe('cacheControl and sessionId config', () => {
   });
 
   it('defaults cacheControl to auto', async () => {
-    const config = await loadConfig({ openrouterKey: 'test-key' });
+    const config = await loadConfig({ noConfig: true, openrouterKey: 'test-key' });
     expect(config.cacheControl).toBe('auto');
   });
 
   it('defaults sessionId to auto', async () => {
-    const config = await loadConfig({ openrouterKey: 'test-key' });
+    const config = await loadConfig({ noConfig: true, openrouterKey: 'test-key' });
     expect(config.sessionId).toBe('auto');
   });
 
