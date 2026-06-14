@@ -31,6 +31,7 @@ describe('loadConfig', () => {
 
   it('should accept CLI options', async () => {
     const config = await loadConfig({
+      noConfig: true,
       host: '127.0.0.1',
       port: 3000,
       openrouterKey: 'test-key',
