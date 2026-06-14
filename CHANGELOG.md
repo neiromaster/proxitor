@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0-beta.9
+
+### Patch Changes
+
+- 4340696: Fix crash in `config add`/`edit` when a model has no provider endpoints
+
+  Selecting a model without published endpoint data (e.g. OpenRouter aliases like `~anthropic/claude-sonnet-latest`) yielded zero providers and crashed the provider multiselect with "Cannot read properties of undefined (reading 'disabled')". `selectProvidersByMode` now bails with a warning instead of reaching the multiselect with an empty list.
+
 ## 0.9.0-beta.8
 
 ### Minor Changes
