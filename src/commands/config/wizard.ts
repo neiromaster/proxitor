@@ -12,7 +12,14 @@ import {
   tryFindConfigFile,
 } from '../../config.js';
 import { probeUpstream } from '../../openrouter/data-client.js';
-import { askApiKey, askAuthType, askBaseUrl, askHost, askPort } from './prompts.js';
+import {
+  AUTH_OPTIONS,
+  askApiKey,
+  askAuthType,
+  askBaseUrl,
+  askHost,
+  askPort,
+} from './prompts.js';
 
 type SaveLocation = 'local' | 'user' | 'xdg';
 
@@ -92,6 +99,12 @@ function buildYaml(
     config.authType = authType;
   }
   return stringify(config);
+}
+
+/** Preview header — URL and auth are shown even when `buildYaml` omits defaults. */
+export function formatPreviewHeader(baseUrl: string, authType: string): string {
+  const label = AUTH_OPTIONS.find(o => o.value === authType)?.label ?? authType;
+  return `Base URL:  ${baseUrl}\nAuth:      ${label}`;
 }
 
 async function askSaveLocation(existingPath?: string): Promise<SaveLocation | null> {
@@ -230,7 +243,10 @@ export async function runWizard(opts: { configPath?: string } = {}): Promise<voi
       answers.authType,
       existingRaw,
     );
-    clack.note(yaml, 'Preview');
+    clack.note(
+      `${formatPreviewHeader(answers.baseUrl, answers.authType)}\n${yaml}`,
+      'Preview',
+    );
 
     const save = await clack.confirm({
       message: 'Save this configuration?',

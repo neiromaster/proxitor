@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import { DEFAULTS } from '../../config.js';
-import type { TriState } from '../../config-schema.js';
+import type { AuthType, TriState } from '../../config-schema.js';
 
 export function maskKey(key: string): string {
   if (!key) return '(none)';
@@ -69,14 +69,16 @@ export async function askBaseUrl(current: string): Promise<string | null> {
   return (url as string).trim() || DEFAULTS.openrouterBaseUrl;
 }
 
+export const AUTH_OPTIONS: Array<{ value: AuthType; label: string; hint: string }> = [
+  { value: 'bearer', label: 'Bearer token', hint: 'Standard OpenRouter' },
+  { value: 'oauth', label: 'OAuth token', hint: 'Custom proxy providers' },
+];
+
 export async function askAuthType(current: string): Promise<string | null> {
   const authType = await clack.select({
     message: 'Authentication type',
     initialValue: current,
-    options: [
-      { value: 'bearer', label: 'Bearer token', hint: 'Standard OpenRouter' },
-      { value: 'oauth', label: 'OAuth token', hint: 'Custom proxy providers' },
-    ],
+    options: AUTH_OPTIONS,
   });
   if (isCancel(authType)) return null;
   return authType as string;
