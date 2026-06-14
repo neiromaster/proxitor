@@ -13,24 +13,29 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   clack.log.info(`Current: cacheControl = ${currentCc}`);
   if (currentTtl) clack.log.info(`Current: cacheControlTtl = ${currentTtl}`);
 
-  const cc = await askTriState('Cache control mode', currentCc as TriState, CACHE_HINTS);
-  if (cc === null) return;
+  const cc = await askTriState('Cache control mode', currentCc as TriState, CACHE_HINTS, {
+    removable: true,
+  });
+  if (typeof cc === 'symbol') return;
 
-  const fields: Record<string, unknown> = {
-    cacheControl: cc,
-  };
+  const fields: Record<string, unknown> = {};
+  fields.cacheControl = cc === 'reset' ? undefined : cc;
 
-  if (cc !== 'never') {
-    const ttlResult = await askCacheControlTtl(currentTtl as '5m' | '1h' | undefined);
-    if (ttlResult === null) return;
-    if (ttlResult === 'reset') {
-      fields.cacheControlTtl = undefined; // remove TTL from config
-    } else {
-      fields.cacheControlTtl = ttlResult;
-    }
+  const ttlResult = await askCacheControlTtl(
+    currentTtl as '5m' | '1h' | 'omit' | 'never' | undefined,
+    { removable: true },
+  );
+  if (typeof ttlResult === 'symbol') {
+    // TTL cancelled — apply cacheControl only.
+    setGlobalConfigFields(configPath, fields);
+    clack.log.success(`cacheControl set to ${cc === 'reset' ? '(default)' : cc}`);
+    return;
   }
+  fields.cacheControlTtl = ttlResult === 'reset' ? undefined : ttlResult;
+
   setGlobalConfigFields(configPath, fields);
 
-  const ttlPart = fields.cacheControlTtl ? `, TTL = ${fields.cacheControlTtl}` : '';
-  clack.log.success(`cacheControl set to ${cc}${ttlPart}`);
+  const ccLabel = cc === 'reset' ? '(default)' : cc;
+  const ttlLabel = ttlResult === 'reset' ? '(default)' : ttlResult;
+  clack.log.success(`cacheControl set to ${ccLabel}, TTL = ${ttlLabel}`);
 }

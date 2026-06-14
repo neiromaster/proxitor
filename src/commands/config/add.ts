@@ -198,7 +198,8 @@ async function collectSession(override: ModelOverride): Promise<ModelOverride> {
   if (isCancel(want) || !want) return override;
 
   const result = await collectSessionTriState();
-  if (result) override.sessionId = result.sessionId;
+  if (result && !('remove' in result.sessionId))
+    override.sessionId = result.sessionId.value;
   return override;
 }
 
@@ -211,8 +212,11 @@ async function collectCache(override: ModelOverride): Promise<ModelOverride> {
 
   const result = await collectCacheTriState();
   if (result) {
-    override.cacheControl = result.cacheControl;
-    if (result.cacheControlTtl) override.cacheControlTtl = result.cacheControlTtl;
+    if (!('remove' in result.cacheControl))
+      override.cacheControl = result.cacheControl.value;
+    if (result.cacheControlTtl && !('remove' in result.cacheControlTtl)) {
+      override.cacheControlTtl = result.cacheControlTtl.value;
+    }
   }
   return override;
 }

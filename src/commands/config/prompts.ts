@@ -122,54 +122,80 @@ export async function askHost(current: string): Promise<string | null> {
 export const SESSION_HINTS: Record<TriState, string> = {
   auto: 'Passthrough client ID, generate if missing',
   always: 'Always generate proxy session ID',
-  never: "Don't manage session headers",
+  never: 'Passthrough — leave client session headers as-is',
 };
 
 /** Shared hint texts for cache control tri-state — used in add, edit, cache-control. */
 export const CACHE_HINTS: Record<TriState, string> = {
   auto: 'Anthropic models only',
   always: 'All models',
-  never: 'Off',
+  never: 'Passthrough — leave client cache_control headers as-is',
 };
 
 export async function askTriState(
   message: string,
   current: TriState | undefined,
   hints: Record<TriState, string>,
-): Promise<TriState | null> {
+  opts?: { removable?: boolean },
+): Promise<TriState | 'reset' | symbol> {
+  const options: { value: TriState | 'reset'; label: string; hint: string }[] = [
+    { value: 'auto', label: 'auto', hint: hints.auto },
+    { value: 'always', label: 'always', hint: hints.always },
+    { value: 'never', label: 'never', hint: hints.never },
+  ];
+  if (opts?.removable) {
+    options.push({
+      value: 'reset',
+      label: 'Reset / inherit',
+      hint: 'Remove override',
+    });
+  }
   const result = await clack.select({
     message,
     initialValue: current ?? 'auto',
-    options: [
-      { value: 'auto', label: 'auto', hint: hints.auto },
-      { value: 'always', label: 'always', hint: hints.always },
-      { value: 'never', label: 'never', hint: hints.never },
-    ],
+    options,
   });
-  if (isCancel(result)) return null;
-  return result as TriState;
+  return result as TriState | 'reset' | symbol; // symbol = clack cancel
 }
 
 export async function askCacheControlTtl(
-  current: '5m' | '1h' | undefined,
-): Promise<'5m' | '1h' | null | 'reset'> {
+  current: '5m' | '1h' | 'omit' | 'never' | undefined,
+  opts?: {
+    removable?: boolean;
+    globalTtl?: '5m' | '1h' | 'omit' | 'never' | undefined;
+  },
+): Promise<'5m' | '1h' | 'omit' | 'never' | 'reset' | symbol> {
+  const inherit =
+    opts?.globalTtl === undefined
+      ? 'inherit global (none)'
+      : `inherit global (${opts.globalTtl})`;
+  const overrides =
+    opts?.globalTtl === undefined
+      ? 'overrides inherited'
+      : `overrides global ${opts.globalTtl}`;
+
   const options: { value: string; label: string; hint: string }[] = [
     { value: '5m', label: '5 minutes', hint: 'Anthropic default' },
     { value: '1h', label: '1 hour', hint: 'Higher write cost' },
+    {
+      value: 'never',
+      label: 'Passthrough',
+      hint: `Preserve client ttl, ${overrides}`,
+    },
+    {
+      value: 'omit',
+      label: 'Strip',
+      hint: `Guarantee no ttl (${overrides})`,
+    },
   ];
-  if (current) {
-    options.push({
-      value: 'reset',
-      label: 'Reset to default',
-      hint: 'Remove TTL override',
-    });
+  if (opts?.removable) {
+    options.push({ value: 'reset', label: 'Reset / inherit', hint: inherit });
   }
+
   const result = await clack.select({
     message: 'Cache TTL',
     initialValue: current ?? '5m',
     options,
   });
-  if (isCancel(result)) return null;
-  if (result === 'reset') return 'reset';
-  return result as '5m' | '1h';
+  return result as '5m' | '1h' | 'omit' | 'never' | 'reset' | symbol;
 }

@@ -22,7 +22,7 @@ export function shouldInjectCacheControl(
 
 export function buildCacheControl(
   existing: unknown,
-  ttl: '5m' | '1h' | undefined,
+  ttl: '5m' | '1h' | 'omit' | 'never' | undefined,
   isAnthropic: boolean,
 ): Record<string, unknown> {
   const base =
@@ -33,6 +33,11 @@ export function buildCacheControl(
   // Anthropic rejects cache_control without `type`.
   if (!('type' in base)) base.type = 'ephemeral';
 
-  if (ttl && isAnthropic) base.ttl = ttl;
+  if (ttl === 'omit') {
+    delete base.ttl; // strip ttl (incl. client value)
+  } else if (ttl === '5m' || ttl === '1h') {
+    if (isAnthropic) base.ttl = ttl; // Anthropic only
+  }
+  // never/undefined → passthrough
   return base;
 }

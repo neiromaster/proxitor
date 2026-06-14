@@ -258,7 +258,7 @@ By default, OpenRouter doesn't enable prompt caching — every request pays full
 
 **`cacheControl`** — injects `cache_control: { "type": "ephemeral" }` into the request body. OpenRouter uses this to set cache breakpoints and advance them as conversations grow.
 
-**`cacheControlTtl`** — controls the cache time-to-live. Anthropic's default TTL is 5 minutes (300s). Set to `1h` for a 1-hour cache at higher write cost (2× vs 1.25×). Only applies to Anthropic models — other providers don't support TTL.
+**`cacheControlTtl`** (`5m` / `1h` / `omit` / `never`, default absent = passthrough) — controls the `ttl` field on injected `cache_control` (Anthropic endpoints only). TTL only has effect when caching is active (`cacheControl` is `auto`/`always`); it is now set independently of the cache mode in the editor.
 
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
@@ -268,15 +268,19 @@ Both `cacheControl` and `sessionId` support `auto` / `always` / `never` modes:
 | --- | --- | --- |
 | `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Passthrough client session ID if present; otherwise generate proxy UUID |
 | `always` | All models, all endpoints | Always generate proxy session ID, ignoring client-provided |
-| `never` | Disabled | Don't manage session headers — pass through as-is |
+| `never` | Passthrough: leave the client's `cache_control` untouched and inject nothing | Passthrough: leave client session headers untouched |
 
 `cacheControlTtl` values:
 
 | Value | TTL | Write cost | Use when |
 | --- | --- | --- | --- |
-| _(not set)_ | 5 min (Anthropic default) | 1.25× | High-frequency requests (>1 per 5 min) |
-| `5m` | 5 minutes | 1.25× | Explicit short cache |
+| _(absent)_ | Passthrough: preserve client `ttl`, add nothing; per-model absent inherits the global TTL | — | Default |
+| `5m` | 5 minutes (Anthropic default) | 1.25× | Explicit short cache; high-frequency requests (>1 per 5 min) |
 | `1h` | 1 hour | 2.0× | Low-frequency or long-running sessions |
+| `omit` | Strip the `ttl` field, guaranteeing no TTL (even one sent by the client) | — | Force-disable TTL |
+| `never` | Passthrough: preserve the client's `ttl`, add nothing, ignore an inherited value | — | Ignore global TTL without stripping |
+
+> **Note:** `null` (previously accepted in model overrides to cancel an inherited TTL) is **removed** — migrate to `never`. `null` was undocumented and unsettable from the UI.
 
 ```yaml
 cacheControl: auto    # safe default — Anthropic and safe endpoints only
@@ -288,13 +292,13 @@ cacheControlTtl: 1h
 # Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
 # cacheControl: always
 
-# Per-model overrides — TTL supports '5m', '1h', or null (cancel global TTL)
+# Per-model overrides — TTL supports '5m', '1h', 'omit', or 'never' (passthrough)
 modelOverrides:
   "gpt-*":
     cacheControl: never       # OpenAI caches automatically, no injection needed
     sessionId: always          # but sticky routing still helps
   "claude-opus-*":
-    cacheControlTtl: null      # cancel global 1h TTL for Opus — use Anthropic's 5 min default
+    cacheControlTtl: never     # passthrough for Opus — ignore the global 1h TTL, use the client ttl
 ```
 
 **Why all three matter:**
@@ -385,6 +389,8 @@ proxitor doctor --offline      # skip network checks
 ```
 
 When adding or editing a model override, you can also configure per-model `sessionId` and `cacheControl` — useful for models that need different caching or routing behavior than the global default.
+
+In `config edit`, any field (provider, session ID, cache control, cache TTL) can be reset to inherit the global/default value via the **Reset / inherit** prompt option. The global `config cache-control` and `config session-routing` commands support the same reset — it reverts the field to the schema default.
 
 ### Add override walkthrough
 

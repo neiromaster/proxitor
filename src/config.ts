@@ -34,7 +34,7 @@ export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
   cacheControl: TriState;
-  cacheControlTtl?: '5m' | '1h';
+  cacheControlTtl?: '5m' | '1h' | 'omit' | 'never';
   sessionId: TriState;
 };
 
@@ -137,9 +137,8 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
   if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
-  // null = "cancel inherited TTL" → normalize to undefined; undefined = "no override" → skip
   if (override.cacheControlTtl !== undefined) {
-    result.cacheControlTtl = override.cacheControlTtl ?? undefined;
+    result.cacheControlTtl = override.cacheControlTtl;
   }
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
 }

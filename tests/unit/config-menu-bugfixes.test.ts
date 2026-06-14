@@ -82,6 +82,9 @@ const { cacheControlCommand } = await import(
   '../../src/commands/config/cache-control.js'
 );
 const { connectionMenuCommand } = await import('../../src/commands/config/connection.js');
+const { sessionRoutingCommand } = await import(
+  '../../src/commands/config/session-routing.js'
+);
 
 // Real (un-mocked) config utilities for file-level tests
 const { setGlobalConfigFields, readConfigRaw } = await import(
@@ -101,7 +104,7 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
 
     // User re-selects 'always', then presses Escape on TTL prompt
     mockAskTriState.mockResolvedValueOnce('always');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null); // ← cancel
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel')); // ← cancel
 
     const result = await editCacheControl(current);
 
@@ -116,7 +119,7 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
     };
 
     mockAskTriState.mockResolvedValueOnce('always');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     const result = await editCacheControl(current);
 
@@ -129,7 +132,7 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
     };
 
     mockAskTriState.mockResolvedValueOnce('always');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     const result = await editCacheControl(current);
 
@@ -167,19 +170,42 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
     expect(result.cacheControlTtl).toBeUndefined();
   });
 
-  it('never mode removes TTL regardless of cancel', async () => {
+  it('removes cacheControl when user picks "reset" on the mode prompt, preserves other fields', async () => {
+    const current: ModelOverride = {
+      cacheControl: 'always',
+      cacheControlTtl: '1h',
+      provider: { order: ['Anthropic'] },
+    };
+
+    // Mode → reset (remove cacheControl). TTL cancelled → keep existing TTL.
+    mockAskTriState.mockResolvedValueOnce('reset');
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    const result = await editCacheControl(current);
+
+    // cacheControl key removed
+    expect(result.cacheControl).toBeUndefined();
+    expect('cacheControl' in result).toBe(false);
+    // TTL preserved (cancel = keep existing)
+    expect(result.cacheControlTtl).toBe('1h');
+    // provider untouched
+    expect(result.provider).toEqual({ order: ['Anthropic'] });
+  });
+
+  it('never mode keeps TTL (decoupled — TTL always asked)', async () => {
     const current: ModelOverride = {
       cacheControl: 'always',
       cacheControlTtl: '1h',
     };
 
-    // 'never' skips the TTL prompt entirely
+    // 'never' no longer skips the TTL prompt — TTL is decoupled and always asked
     mockAskTriState.mockResolvedValueOnce('never');
+    mockAskCacheControlTtl.mockResolvedValueOnce('1h');
 
     const result = await editCacheControl(current);
 
     expect(result.cacheControl).toBe('never');
-    expect(result.cacheControlTtl).toBeUndefined();
+    expect(result.cacheControlTtl).toBe('1h'); // TTL preserved/set independently
   });
 
   it('returns current unchanged when tri-state is cancelled', async () => {
@@ -188,7 +214,7 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
       cacheControlTtl: '1h',
     };
 
-    mockAskTriState.mockResolvedValueOnce(null); // ← cancel on tri-state
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel')); // ← cancel on tri-state
 
     const result = await editCacheControl(current);
 
@@ -216,9 +242,9 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     vi.clearAllMocks();
   });
 
-  it('preserves existing TTL when user cancels TTL prompt', async () => {
+  it('applies cacheControl change but preserves TTL when user cancels TTL prompt', async () => {
     mockAskTriState.mockResolvedValueOnce('always');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null); // ← cancel
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel')); // ← cancel
 
     await cacheControlCommand({ configPath });
 
@@ -230,7 +256,7 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
   it('preserves existing TTL=5m when user cancels TTL prompt', async () => {
     writeFileSync(configPath, 'cacheControl: always\ncacheControlTtl: 5m\nport: 8828\n');
     mockAskTriState.mockResolvedValueOnce('always');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     await cacheControlCommand({ configPath });
 
@@ -241,7 +267,7 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
   it('does not add TTL when user cancels and no TTL existed', async () => {
     writeFileSync(configPath, 'cacheControl: always\nport: 8828\n');
     mockAskTriState.mockResolvedValueOnce('always');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     await cacheControlCommand({ configPath });
 
@@ -260,14 +286,15 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     expect(raw).toContain('cacheControlTtl: 5m');
   });
 
-  it('preserves TTL when user picks never (app logic decides whether to use it)', async () => {
+  it('keeps TTL when user picks never (TTL decoupled — always asked)', async () => {
+    // 'never' no longer skips TTL — it is always asked
     mockAskTriState.mockResolvedValueOnce('never');
+    mockAskCacheControlTtl.mockResolvedValueOnce('1h');
 
     await cacheControlCommand({ configPath });
 
     const raw = readConfigRaw(configPath);
     expect(raw).toContain('cacheControl: never');
-    // TTL is NOT deleted — the application ignores it when cacheControl is 'never'
     expect(raw).toContain('cacheControlTtl: 1h');
   });
 
@@ -282,8 +309,23 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     expect(raw).not.toContain('cacheControlTtl');
   });
 
+  it('removes cacheControl key when user picks reset on the mode prompt', async () => {
+    // User picks 'reset' on the cache-control MODE prompt → reverts to default.
+    // TTL prompt is cancelled (matches existing cancel idiom) — we only care
+    // that the global cacheControl key is deleted.
+    mockAskTriState.mockResolvedValueOnce('reset');
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).not.toContain('cacheControl:');
+    // port must remain untouched
+    expect(raw).toContain('port: 8828');
+  });
+
   it('returns without writing when user cancels tri-state', async () => {
-    mockAskTriState.mockResolvedValueOnce(null);
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     await cacheControlCommand({ configPath });
 
@@ -292,17 +334,67 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     expect(raw).toContain('cacheControlTtl: 1h'); // unchanged
   });
 
-  it('cancels entire operation when TTL cancelled — even if mode changed', async () => {
+  it('applies cacheControl change only when TTL cancelled — even if mode changed', async () => {
     // User picks 'auto' (different from current 'always'), then cancels TTL
     mockAskTriState.mockResolvedValueOnce('auto');
-    mockAskCacheControlTtl.mockResolvedValueOnce(null);
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     await cacheControlCommand({ configPath });
 
     const raw = readConfigRaw(configPath);
-    // Nothing should be written — config stays as-is
-    expect(raw).toContain('cacheControl: always');
+    // cacheControl is applied; TTL is preserved (untouched)
+    expect(raw).toContain('cacheControl: auto');
     expect(raw).toContain('cacheControlTtl: 1h');
+  });
+});
+
+// ===========================================================================
+// Bug #1c — sessionRoutingCommand mode reset (global sessionId removal)
+// ===========================================================================
+
+describe('Bug #1c: sessionRoutingCommand (global) mode reset', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'sessionId: always\nport: 8828\n');
+    mockRequireConfigPath.mockReturnValue(configPath);
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('removes sessionId key when user picks reset on the mode prompt', async () => {
+    mockAskTriState.mockResolvedValueOnce('reset');
+
+    await sessionRoutingCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).not.toContain('sessionId:');
+    // port must remain untouched
+    expect(raw).toContain('port: 8828');
+  });
+
+  it('updates sessionId when user picks a concrete mode', async () => {
+    mockAskTriState.mockResolvedValueOnce('always');
+
+    await sessionRoutingCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('sessionId: always');
+  });
+
+  it('returns without writing when user cancels tri-state', async () => {
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await sessionRoutingCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('sessionId: always'); // unchanged
   });
 });
 
