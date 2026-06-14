@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { binary, runSafely } from 'cmd-ts';
+import { binary, parse, runSafely } from 'cmd-ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { rootCli } from '../../src/cli-commands.js';
+import { doctorCli, rootCli } from '../../src/cli-commands.js';
 import { createTestEnv, getFreePort, type TestEnv } from '../helpers.js';
 
 /** Read a useful message out of cmd-ts `Err(Exit)`. */
@@ -160,6 +160,29 @@ describe('flags-before-subcommand routing (bugfix #1)', () => {
     } catch (e: any) {
       expect(String(e.message ?? e)).not.toContain('Unknown argument');
     }
+  });
+});
+
+describe('doctor command options', () => {
+  // `--timeout` has a built-in default inside doctorCommand (DEFAULT_TIMEOUT_MS),
+  // so the CLI option must be optional. Regression for a bug where it was
+  // declared required, making every documented example — `proxitor doctor`,
+  // `proxitor doctor --offline`, `proxitor doctor --json` — fail at parse time
+  // with "No value provided for --timeout". We parse `doctorCli` directly (no
+  // `binary`/subcommand routing) so the test isolates the option definition and
+  // never runs the handler — which may call process.exit on a failing env.
+  it('parses with no --timeout (bare invocation)', async () => {
+    const result = await parse(doctorCli, []);
+    if (result._tag === 'error') {
+      const messages = result.error.errors.map(e => e.message).join(' ');
+      throw new Error(`expected parse to succeed, but got: ${messages}`);
+    }
+    expect(result._tag).toBe('ok');
+  });
+
+  it('still accepts an explicit --timeout value', async () => {
+    const result = await parse(doctorCli, ['--timeout', '5000']);
+    expect(result._tag).toBe('ok');
   });
 });
 
