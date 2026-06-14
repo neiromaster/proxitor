@@ -1,6 +1,6 @@
 {
   "name": "proxitor",
-  "version": "0.9.0-beta.6",
+  "version": "0.9.0-beta.7",
   "type": "module",
   "description": "Lightweight proxy for routing CLI requests (claude-code, codex) to OpenRouter",
   "bin": "./dist/cli.mjs",
