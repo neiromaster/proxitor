@@ -22,7 +22,7 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   fields.cacheControl = cc === 'reset' ? undefined : cc;
 
   const ttlResult = await askCacheControlTtl(
-    currentTtl as '5m' | '1h' | 'omit' | 'never' | undefined,
+    currentTtl as '5m' | '1h' | 'omit' | 'skip' | undefined,
     { removable: true },
   );
   if (typeof ttlResult === 'symbol') {

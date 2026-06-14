@@ -28,24 +28,24 @@ function formatOverrideHint(override: ModelOverride | undefined): string {
 
 function formatCacheHint(
   cc: TriState | undefined,
-  ttl: '5m' | '1h' | 'omit' | 'never' | undefined,
+  ttl: '5m' | '1h' | 'omit' | 'skip' | undefined,
 ): string {
   let ttlLabel = ttl ?? '';
   if (ttl === 'omit') ttlLabel = 'ttl strip';
-  else if (ttl === 'never') ttlLabel = 'ttl passthrough';
+  else if (ttl === 'skip') ttlLabel = 'ttl passthrough';
   return [cc, ttlLabel].filter(Boolean).join(', ') || '(inherit)';
 }
 
 function readGlobalTtl(
   configPath: string | undefined,
-): '5m' | '1h' | 'omit' | 'never' | undefined {
+): '5m' | '1h' | 'omit' | 'skip' | undefined {
   if (!configPath) return undefined;
   try {
     return readConfigFile(configPath).cacheControlTtl as
       | '5m'
       | '1h'
       | 'omit'
-      | 'never'
+      | 'skip'
       | undefined;
   } catch {
     return undefined;
@@ -111,7 +111,7 @@ export async function editCacheControl(
   const globalTtl = readGlobalTtl(configPath);
   const result = await collectCacheTriState(
     current.cacheControl as TriState | undefined,
-    current.cacheControlTtl as '5m' | '1h' | 'omit' | 'never' | undefined,
+    current.cacheControlTtl as '5m' | '1h' | 'omit' | 'skip' | undefined,
     globalTtl,
   );
   if (result === null) return current;

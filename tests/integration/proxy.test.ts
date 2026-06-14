@@ -369,10 +369,10 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
   });
 
-  it('does not inject cache_control when mode is never', async () => {
+  it('does not inject cache_control when mode is skip', async () => {
     let capturedBody: Record<string, unknown> = {};
 
-    env = await createTestEnv({ cacheControl: 'never' }, upstream => {
+    env = await createTestEnv({ cacheControl: 'skip' }, upstream => {
       catchAll(upstream, async c => {
         capturedBody = await c.req.json().catch(() => ({}));
         return c.json({ id: 'test' });
@@ -723,10 +723,10 @@ describe('Proxy Integration', () => {
     expect(capturedHeaders['x-session-id']!.length).toBeGreaterThan(0);
   });
 
-  it('does not inject session_id when mode is never', async () => {
+  it('does not inject session_id when mode is skip', async () => {
     let capturedBody: Record<string, unknown> = {};
 
-    env = await createTestEnv({ sessionId: 'never' }, upstream => {
+    env = await createTestEnv({ sessionId: 'skip' }, upstream => {
       catchAll(upstream, async c => {
         capturedBody = await c.req.json().catch(() => ({}));
         return c.json({ id: 'test' });
@@ -745,10 +745,10 @@ describe('Proxy Integration', () => {
     expect(capturedBody.session_id).toBeUndefined();
   });
 
-  it('passes through x-session-id when sessionId is "never"', async () => {
+  it('passes through x-session-id when sessionId is "skip"', async () => {
     let capturedHeaders: Record<string, string> = {};
 
-    env = await createTestEnv({ sessionId: 'never' }, upstream => {
+    env = await createTestEnv({ sessionId: 'skip' }, upstream => {
       catchAll(upstream, async c => {
         capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
         return c.json({ id: 'test' });
@@ -764,7 +764,7 @@ describe('Proxy Integration', () => {
       body: JSON.stringify({ model: 'test', messages: [] }),
     });
 
-    // "never" = proxy does not manage session headers at all
+    // "skip" = proxy does not manage session headers at all
     expect(capturedHeaders['x-session-id']).toBe('client-session-id');
   });
 
@@ -866,7 +866,7 @@ describe('Proxy Integration', () => {
       {
         cacheControl: 'auto',
         modelOverrides: {
-          'gpt-*': { cacheControl: 'never' },
+          'gpt-*': { cacheControl: 'skip' },
         },
       },
       upstream => {
@@ -886,7 +886,7 @@ describe('Proxy Integration', () => {
       }),
     });
 
-    // gpt-4o on /v1/chat/completions: auto would skip, never explicitly skips
+    // gpt-4o on /v1/chat/completions: auto would skip injection; skip mode explicitly disables it
     expect(capturedBody.cache_control).toBeUndefined();
   });
 });

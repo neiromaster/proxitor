@@ -638,8 +638,8 @@ describe('cacheControl and sessionId config', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts cacheControl: never', () => {
-    const result = proxyConfigFileSchema.safeParse({ cacheControl: 'never' });
+  it('accepts cacheControl: skip', () => {
+    const result = proxyConfigFileSchema.safeParse({ cacheControl: 'skip' });
     expect(result.success).toBe(true);
   });
 
@@ -678,11 +678,11 @@ describe('cacheControl and sessionId config', () => {
       ...baseConfig,
       cacheControl: 'auto',
       modelOverrides: {
-        'gpt-*': { cacheControl: 'never' },
+        'gpt-*': { cacheControl: 'skip' },
       },
     };
     const resolved = resolveModelConfig(config, 'gpt-4o');
-    expect(resolved.cacheControl).toBe('never');
+    expect(resolved.cacheControl).toBe('skip');
   });
 
   it('allows per-model sessionId override', () => {
@@ -722,8 +722,8 @@ describe('cacheControl and sessionId config', () => {
       expect(result.success).toBe(true);
     });
 
-    it('accepts cacheControlTtl: never in global config', () => {
-      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: 'never' });
+    it('accepts cacheControlTtl: skip in global config', () => {
+      const result = proxyConfigFileSchema.safeParse({ cacheControlTtl: 'skip' });
       expect(result.success).toBe(true);
     });
 
@@ -756,9 +756,9 @@ describe('cacheControl and sessionId config', () => {
       expect(result.success).toBe(true);
     });
 
-    it('accepts cacheControlTtl: never in model override', () => {
+    it('accepts cacheControlTtl: skip in model override', () => {
       const result = proxyConfigFileSchema.safeParse({
-        modelOverrides: { 'gpt-*': { cacheControlTtl: 'never' } },
+        modelOverrides: { 'gpt-*': { cacheControlTtl: 'skip' } },
       });
       expect(result.success).toBe(true);
     });
@@ -807,16 +807,16 @@ describe('cacheControl and sessionId config', () => {
       expect(resolved.cacheControlTtl).toBe('1h');
     });
 
-    it('carries per-model never override through resolution (no normalization)', () => {
+    it('carries per-model skip override through resolution (no normalization)', () => {
       const config: ProxyConfig = {
         ...baseConfig,
         cacheControlTtl: '1h',
         modelOverrides: {
-          'gpt-*': { cacheControlTtl: 'never' },
+          'gpt-*': { cacheControlTtl: 'skip' },
         },
       };
       const resolved = resolveModelConfig(config, 'gpt-4o');
-      expect(resolved.cacheControlTtl).toBe('never');
+      expect(resolved.cacheControlTtl).toBe('skip');
     });
 
     it('carries per-model omit override through resolution (no normalization)', () => {
@@ -831,10 +831,10 @@ describe('cacheControl and sessionId config', () => {
       expect(resolved.cacheControlTtl).toBe('omit');
     });
 
-    it('propagates global never cacheControlTtl to resolved config', () => {
-      const config: ProxyConfig = { ...baseConfig, cacheControlTtl: 'never' };
+    it('propagates global skip cacheControlTtl to resolved config', () => {
+      const config: ProxyConfig = { ...baseConfig, cacheControlTtl: 'skip' };
       const resolved = resolveModelConfig(config, 'gpt-4o');
-      expect(resolved.cacheControlTtl).toBe('never');
+      expect(resolved.cacheControlTtl).toBe('skip');
     });
   });
 });

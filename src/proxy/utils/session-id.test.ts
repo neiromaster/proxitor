@@ -142,10 +142,10 @@ describe('deriveSessionId', () => {
     return new Headers(headers);
   };
 
-  it('returns undefined when mode is "never"', () => {
+  it('returns undefined when mode is "skip"', () => {
     const headers = mockHeaders({ 'x-claude-code-session-id': 'abc123' });
     expect(
-      deriveSessionId(headers, { session_id: 'xyz' }, '/v1/chat/completions', 'never'),
+      deriveSessionId(headers, { session_id: 'xyz' }, '/v1/chat/completions', 'skip'),
     ).toBeUndefined();
   });
 

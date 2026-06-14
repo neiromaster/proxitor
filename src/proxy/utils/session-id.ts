@@ -59,7 +59,7 @@ export function deriveSessionId(
   path: string,
   mode: TriState,
 ): string | undefined {
-  if (mode === 'never') return undefined;
+  if (mode === 'skip') return undefined;
 
   if (mode === 'auto') {
     const fromHeader = incomingHeaders.get('x-claude-code-session-id');

@@ -15,14 +15,14 @@ export function shouldInjectCacheControl(
   modelName: string | undefined,
   path: string,
 ): boolean {
-  if (mode === 'never') return false;
+  if (mode === 'skip') return false;
   if (mode === 'always') return true;
   return isAnthropicEndpoint(modelName, path);
 }
 
 export function buildCacheControl(
   existing: unknown,
-  ttl: '5m' | '1h' | 'omit' | 'never' | undefined,
+  ttl: '5m' | '1h' | 'omit' | 'skip' | undefined,
   isAnthropic: boolean,
 ): Record<string, unknown> {
   const base =
@@ -38,6 +38,6 @@ export function buildCacheControl(
   } else if (ttl === '5m' || ttl === '1h') {
     if (isAnthropic) base.ttl = ttl; // Anthropic only
   }
-  // never/undefined → passthrough
+  // skip/undefined → passthrough
   return base;
 }
