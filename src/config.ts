@@ -34,7 +34,7 @@ export type ResolvedModelConfig = {
   provider?: ProviderConfig;
   headers?: Record<string, string>;
   cacheControl: TriState;
-  cacheControlTtl?: '5m' | '1h' | 'omit' | 'never';
+  cacheControlTtl?: '5m' | '1h' | 'omit' | 'skip';
   sessionId: TriState;
 };
 

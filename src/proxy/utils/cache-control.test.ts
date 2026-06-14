@@ -47,8 +47,8 @@ describe('isAnthropicEndpoint', () => {
 // ---------------------------------------------------------------------------
 
 describe('shouldInjectCacheControl', () => {
-  it('returns false for "never" mode', () => {
-    expect(shouldInjectCacheControl('never', 'claude-sonnet-4-6', '/v1/messages')).toBe(
+  it('returns false for "skip" mode', () => {
+    expect(shouldInjectCacheControl('skip', 'claude-sonnet-4-6', '/v1/messages')).toBe(
       false,
     );
   });
@@ -152,14 +152,14 @@ describe('buildCacheControl', () => {
     expect(result).not.toHaveProperty('ttl');
   });
 
-  it('preserves client ttl when TTL is never (passthrough)', () => {
+  it('preserves client ttl when TTL is skip (passthrough)', () => {
     const existing = { type: 'ephemeral', ttl: '5m' };
-    const result = buildCacheControl(existing, 'never', true);
+    const result = buildCacheControl(existing, 'skip', true);
     expect(result).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 
-  it('never adds ttl when TTL is never and none existed', () => {
-    const result = buildCacheControl(undefined, 'never', true);
+  it('does not add ttl when TTL is skip and none existed', () => {
+    const result = buildCacheControl(undefined, 'skip', true);
     expect(result).toEqual({ type: 'ephemeral' });
     expect(result).not.toHaveProperty('ttl');
   });

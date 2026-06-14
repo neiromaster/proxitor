@@ -192,19 +192,19 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
     expect(result.provider).toEqual({ order: ['Anthropic'] });
   });
 
-  it('never mode keeps TTL (decoupled — TTL always asked)', async () => {
+  it('skip mode keeps TTL (decoupled — TTL always asked)', async () => {
     const current: ModelOverride = {
       cacheControl: 'always',
       cacheControlTtl: '1h',
     };
 
-    // 'never' no longer skips the TTL prompt — TTL is decoupled and always asked
-    mockAskTriState.mockResolvedValueOnce('never');
+    // 'skip' no longer skips the TTL prompt — TTL is decoupled and always asked
+    mockAskTriState.mockResolvedValueOnce('skip');
     mockAskCacheControlTtl.mockResolvedValueOnce('1h');
 
     const result = await editCacheControl(current);
 
-    expect(result.cacheControl).toBe('never');
+    expect(result.cacheControl).toBe('skip');
     expect(result.cacheControlTtl).toBe('1h'); // TTL preserved/set independently
   });
 
@@ -286,15 +286,15 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     expect(raw).toContain('cacheControlTtl: 5m');
   });
 
-  it('keeps TTL when user picks never (TTL decoupled — always asked)', async () => {
-    // 'never' no longer skips TTL — it is always asked
-    mockAskTriState.mockResolvedValueOnce('never');
+  it('keeps TTL when user picks skip (TTL decoupled — always asked)', async () => {
+    // 'skip' no longer skips TTL — it is always asked
+    mockAskTriState.mockResolvedValueOnce('skip');
     mockAskCacheControlTtl.mockResolvedValueOnce('1h');
 
     await cacheControlCommand({ configPath });
 
     const raw = readConfigRaw(configPath);
-    expect(raw).toContain('cacheControl: never');
+    expect(raw).toContain('cacheControl: skip');
     expect(raw).toContain('cacheControlTtl: 1h');
   });
 
@@ -447,12 +447,12 @@ describe('Bug #3: Batch write — setGlobalConfigFields', () => {
     writeFileSync(configPath, 'cacheControl: always\ncacheControlTtl: 1h\n');
 
     setGlobalConfigFields(configPath, {
-      cacheControl: 'never',
+      cacheControl: 'skip',
       cacheControlTtl: undefined,
     });
 
     const raw = readConfigRaw(configPath);
-    expect(raw).toContain('cacheControl: never');
+    expect(raw).toContain('cacheControl: skip');
     expect(raw).not.toContain('cacheControlTtl');
   });
 });

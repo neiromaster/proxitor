@@ -122,14 +122,14 @@ export async function askHost(current: string): Promise<string | null> {
 export const SESSION_HINTS: Record<TriState, string> = {
   auto: 'Passthrough client ID, generate if missing',
   always: 'Always generate proxy session ID',
-  never: 'Passthrough — leave client session headers as-is',
+  skip: 'Passthrough — leave client session headers as-is',
 };
 
 /** Shared hint texts for cache control tri-state — used in add, edit, cache-control. */
 export const CACHE_HINTS: Record<TriState, string> = {
   auto: 'Anthropic models only',
   always: 'All models',
-  never: 'Passthrough — leave client cache_control headers as-is',
+  skip: 'Passthrough — leave client cache_control headers as-is',
 };
 
 export async function askTriState(
@@ -141,7 +141,7 @@ export async function askTriState(
   const options: { value: TriState | 'reset'; label: string; hint: string }[] = [
     { value: 'auto', label: 'auto', hint: hints.auto },
     { value: 'always', label: 'always', hint: hints.always },
-    { value: 'never', label: 'never', hint: hints.never },
+    { value: 'skip', label: 'skip', hint: hints.skip },
   ];
   if (opts?.removable) {
     options.push({
@@ -159,12 +159,12 @@ export async function askTriState(
 }
 
 export async function askCacheControlTtl(
-  current: '5m' | '1h' | 'omit' | 'never' | undefined,
+  current: '5m' | '1h' | 'omit' | 'skip' | undefined,
   opts?: {
     removable?: boolean;
-    globalTtl?: '5m' | '1h' | 'omit' | 'never' | undefined;
+    globalTtl?: '5m' | '1h' | 'omit' | 'skip' | undefined;
   },
-): Promise<'5m' | '1h' | 'omit' | 'never' | 'reset' | symbol> {
+): Promise<'5m' | '1h' | 'omit' | 'skip' | 'reset' | symbol> {
   const inherit =
     opts?.globalTtl === undefined
       ? 'inherit global (none)'
@@ -178,7 +178,7 @@ export async function askCacheControlTtl(
     { value: '5m', label: '5 minutes', hint: 'Anthropic default' },
     { value: '1h', label: '1 hour', hint: 'Higher write cost' },
     {
-      value: 'never',
+      value: 'skip',
       label: 'Passthrough',
       hint: `Preserve client ttl, ${overrides}`,
     },
@@ -197,5 +197,5 @@ export async function askCacheControlTtl(
     initialValue: current ?? '5m',
     options,
   });
-  return result as '5m' | '1h' | 'omit' | 'never' | 'reset' | symbol;
+  return result as '5m' | '1h' | 'omit' | 'skip' | 'reset' | symbol;
 }

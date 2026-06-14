@@ -37,11 +37,11 @@ export async function collectSessionTriState(
 /** TTL is independent of cache mode. Mode-cancel aborts; TTL-cancel keeps existing TTL. */
 export async function collectCacheTriState(
   currentCc?: TriState,
-  currentTtl?: '5m' | '1h' | 'omit' | 'never',
-  globalTtl?: '5m' | '1h' | 'omit' | 'never',
+  currentTtl?: '5m' | '1h' | 'omit' | 'skip',
+  globalTtl?: '5m' | '1h' | 'omit' | 'skip',
 ): Promise<{
   cacheControl: ResolvedField<TriState>;
-  cacheControlTtl?: ResolvedField<'5m' | '1h' | 'omit' | 'never'>;
+  cacheControlTtl?: ResolvedField<'5m' | '1h' | 'omit' | 'skip'>;
 } | null> {
   const cc = await askTriState(
     'Cache control mode',

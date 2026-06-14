@@ -54,8 +54,8 @@ const providerConfigSchema = z
   })
   .strict();
 
-const triStateSchema = z.enum(['auto', 'always', 'never']);
-const ttlSchema = z.enum(['5m', '1h', 'omit', 'never']);
+const triStateSchema = z.enum(['auto', 'always', 'skip']);
+const ttlSchema = z.enum(['5m', '1h', 'omit', 'skip']);
 
 const modelOverrideSchema = z
   .object({
@@ -99,7 +99,7 @@ export type ProxyConfig = z.infer<typeof proxyConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type ModelOverride = z.infer<typeof modelOverrideSchema>;
 export type AuthType = z.infer<typeof proxyConfigSchema>['authType'];
-export type TriState = 'auto' | 'always' | 'never';
+export type TriState = 'auto' | 'always' | 'skip';
 
 export class ConfigParseError extends Error {
   constructor(filePath: string, cause?: Error) {

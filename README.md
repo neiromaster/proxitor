@@ -258,17 +258,17 @@ By default, OpenRouter doesn't enable prompt caching — every request pays full
 
 **`cacheControl`** — injects `cache_control: { "type": "ephemeral" }` into the request body. OpenRouter uses this to set cache breakpoints and advance them as conversations grow.
 
-**`cacheControlTtl`** (`5m` / `1h` / `omit` / `never`, default absent = passthrough) — controls the `ttl` field on injected `cache_control` (Anthropic endpoints only). TTL only has effect when caching is active (`cacheControl` is `auto`/`always`); it is now set independently of the cache mode in the editor.
+**`cacheControlTtl`** (`5m` / `1h` / `omit` / `skip`, default absent = passthrough) — controls the `ttl` field on injected `cache_control` (Anthropic endpoints only). TTL only has effect when caching is active (`cacheControl` is `auto`/`always`); it is now set independently of the cache mode in the editor.
 
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
-Both `cacheControl` and `sessionId` support `auto` / `always` / `never` modes:
+Both `cacheControl` and `sessionId` support `auto` / `always` / `skip` modes:
 
 | Mode | `cacheControl` | `sessionId` |
 | --- | --- | --- |
 | `auto` (default) | Anthropic models on `/v1/chat/completions`; all models on `/v1/messages` and `/v1/responses` | Passthrough client session ID if present; otherwise generate proxy UUID |
 | `always` | All models, all endpoints | Always generate proxy session ID, ignoring client-provided |
-| `never` | Passthrough: leave the client's `cache_control` untouched and inject nothing | Passthrough: leave client session headers untouched |
+| `skip` | Passthrough: leave the client's `cache_control` untouched and inject nothing | Passthrough: leave client session headers untouched |
 
 `cacheControlTtl` values:
 
@@ -278,9 +278,9 @@ Both `cacheControl` and `sessionId` support `auto` / `always` / `never` modes:
 | `5m` | 5 minutes (Anthropic default) | 1.25× | Explicit short cache; high-frequency requests (>1 per 5 min) |
 | `1h` | 1 hour | 2.0× | Low-frequency or long-running sessions |
 | `omit` | Strip the `ttl` field, guaranteeing no TTL (even one sent by the client) | — | Force-disable TTL |
-| `never` | Passthrough: preserve the client's `ttl`, add nothing, ignore an inherited value | — | Ignore global TTL without stripping |
+| `skip` | Passthrough: preserve the client's `ttl`, add nothing, ignore an inherited value | — | Ignore global TTL without stripping |
 
-> **Note:** `null` (previously accepted in model overrides to cancel an inherited TTL) is **removed** — migrate to `never`. `null` was undocumented and unsettable from the UI.
+> **Note:** `null` (previously accepted in model overrides to cancel an inherited TTL) is **removed** — migrate to `skip`. `null` was undocumented and unsettable from the UI.
 
 ```yaml
 cacheControl: auto    # safe default — Anthropic and safe endpoints only
@@ -292,13 +292,13 @@ cacheControlTtl: 1h
 # Force caching for all models (may cause 400 on non-Anthropic /v1/chat/completions)
 # cacheControl: always
 
-# Per-model overrides — TTL supports '5m', '1h', 'omit', or 'never' (passthrough)
+# Per-model overrides — TTL supports '5m', '1h', 'omit', or 'skip' (passthrough)
 modelOverrides:
   "gpt-*":
-    cacheControl: never       # OpenAI caches automatically, no injection needed
+    cacheControl: skip       # OpenAI caches automatically, no injection needed
     sessionId: always          # but sticky routing still helps
   "claude-opus-*":
-    cacheControlTtl: never     # passthrough for Opus — ignore the global 1h TTL, use the client ttl
+    cacheControlTtl: skip     # passthrough for Opus — ignore the global 1h TTL, use the client ttl
 ```
 
 **Why all three matter:**
@@ -366,7 +366,7 @@ If a config already exists, the wizard shows its location and asks whether to re
 
 - **Show current config** — display the resolved configuration
 - **API key & connection** — change API key, port, listen address, base URL, auth type
-- **Session routing** — set global `sessionId` mode (`auto` / `always` / `never`)
+- **Session routing** — set global `sessionId` mode (`auto` / `always` / `skip`)
 - **Cache control** — set global `cacheControl` mode and TTL
 - **Model overrides** — add, edit, remove, list, or browse models
 
