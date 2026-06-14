@@ -70,21 +70,16 @@ describe('loadConfig', () => {
 });
 
 describe('config file discovery', () => {
-  const envBackup = { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
   const cwd = process.cwd();
 
   beforeEach(() => {
-    // Hide the real repo config from discovery
+    // Hide the real repo config (CWD candidate) from discovery. XDG discovery
+    // is sandboxed globally by tests/setup.ts, so only the cwd needs hiding.
     process.chdir(tmpdir());
   });
 
   afterEach(() => {
     process.chdir(cwd);
-    if (envBackup.XDG_CONFIG_HOME === undefined) {
-      delete process.env.XDG_CONFIG_HOME;
-    } else {
-      process.env.XDG_CONFIG_HOME = envBackup.XDG_CONFIG_HOME;
-    }
   });
 
   describe('tryFindConfigFile', () => {

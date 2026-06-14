@@ -21,8 +21,15 @@ async function runCli(userArgs: string[]) {
   const firstNonFlag = userArgs.find(a => !a.startsWith('-'));
   const needsDefault =
     userArgs.length === 0 || !firstNonFlag || !KNOWN_SUBCOMMANDS.has(firstNonFlag);
+  // `runCli` only exercises parsing/routing, never real config loading. Force
+  // `--no-config` on the implicit `start` so an empty/flag-only invocation
+  // (e.g. `runCli([])`) never discovers the repo's proxitor.config.yaml.
+  const startArgs =
+    needsDefault && !userArgs.includes('--no-config')
+      ? [...userArgs, '--no-config']
+      : userArgs;
   const finalArgv = needsDefault
-    ? ['node', 'proxitor', 'start', ...userArgs]
+    ? ['node', 'proxitor', 'start', ...startArgs]
     : ['node', 'proxitor', ...userArgs];
   return runSafely(binary(rootCli), finalArgv);
 }
