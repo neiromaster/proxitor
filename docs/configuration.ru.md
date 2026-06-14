@@ -1,0 +1,433 @@
+# Справочник по конфигурации
+
+🌍 [English](./configuration.md) · **Русский**
+
+Полный референс по ручной настройке proxitor. Если не хочется править файлы — интерактивное меню (`proxitor config`) покрывает большую часть этого и использует живые данные OpenRouter. Быстрый старт см. в [README](./README.ru.md).
+
+Шаблон с комментариями — [`proxitor.config.example.yaml`](../proxitor.config.example.yaml).
+
+## Где лежит конфиг
+
+Proxitor ищет файл конфигурации в таком порядке:
+
+```
+proxitor.config.yaml  →  proxitor.config.yml  →  proxitor.config.json
+.proxitor.yaml        →  .proxitor.yml         →  .proxitor.json
+```
+
+**Приоритет:** флаги CLI > файл конфигурации > переменные окружения > значения по умолчанию.
+
+## Тип аутентификации
+
+По умолчанию proxitor отправляет API-ключ как `Bearer`-токен (`Authorization: Bearer sk-...`). Для кастомного прокси-провайдера, который ждёт заголовок `OAuth`, задайте `authType: oauth`:
+
+```yaml
+authType: oauth    # "bearer" (по умолчанию) или "oauth"
+```
+
+Заголовок поменяется на `Authorization: OAuth sk-...`.
+
+## Кастомный URL API и фолбэк данных
+
+При использовании кастомного `openrouterBaseUrl`, указывающего на сторонний сервис, тот может не поддерживать специфичные эндпоинты OpenRouter вроде `/providers` или `/models/{author}/{slug}/endpoints`. Proxitor обрабатывает это автоматически:
+
+- **Автоматический фолбэк** — если кастомный API вернул ошибку (4xx/5xx) или неожиданный формат ответа для data-эндпоинтов, proxitor откатывается на `https://openrouter.ai/api` (API-ключ не нужен — эти эндпоинты публичные).
+- **`openrouterDataUrl`** — задайте явно основной URL для загрузки данных, независимо от `openrouterBaseUrl` (который используется для проксирования запросов).
+
+```yaml
+# Запросы идут на кастомный сервис, загрузка данных откатывается на OpenRouter.
+# ВАЖНО: НЕ добавляйте /v1 в базовый URL — пути запросов вроде /v1/chat/completions
+# форвардятся как есть, поэтому /v1 задвоится.
+openrouterBaseUrl: 'https://custom-service.example.com/api'
+
+# Основной URL данных явно (опц., по умолчанию равен openrouterBaseUrl).
+# openrouterDataUrl: 'https://openrouter.ai/api'
+```
+
+При срабатывании фолбэка proxitor пишет предупреждение: `Custom API did not return providers, using OpenRouter as fallback`.
+
+## Маршрутизация провайдеров
+
+Управляйте, какой провайдер обслуживает запросы. Все три опции принимают строку или массив:
+
+```yaml
+# Жёсткая фиксация — только этот провайдер, без фолбэков
+provider:
+  only: "anthropic"
+
+# Ограниченный пул — балансировка только между этими провайдерами
+provider:
+  only:
+    - "anthropic"
+    - "deepinfra"
+
+# Порядок приоритета — сначала Anthropic, при недоступности фолбэк на остальных
+provider:
+  order: "anthropic"
+  allowFallbacks: true
+
+# Строгий порядок — перебор по списку, без фолбэков вне списка
+provider:
+  order:
+    - "anthropic"
+    - "deepinfra"
+  allowFallbacks: false
+
+# Чёрный список — никогда не использовать этих провайдеров
+provider:
+  ignore: "azure"
+```
+
+| Опция | Поведение |
+|---|---|
+| `only` | Ограничение перечисленными провайдерами. Балансирует по цене внутри списка. Никогда не уходит за пределы — если все недоступны, запрос падает. |
+| `order` | Перебор провайдеров в указанном приоритете. Если ни один не сработал, фолбэк на другие доступные (если только `allowFallbacks: false`). |
+| `ignore` | Никогда не направлять запросы перечисленным провайдерам. |
+
+Без `provider` запросы форвардятся без изменений.
+
+Полный список поддерживаемых провайдеров и опций — в [документации маршрутизации OpenRouter](https://openrouter.ai/docs/guides/routing/provider-selection).
+
+### Продвинутые опции провайдеров
+
+```yaml
+provider:
+  sort: "throughput"          # сортировка: price | throughput | latency
+  quantizations:
+    - "fp8"                   # фильтр по уровню квантизации
+  maxPrice:
+    prompt: 1                 # $/M токенов
+    completion: 2
+  requireParameters: true     # только провайдеры, поддерживающие все параметры запроса
+  dataCollection: "deny"      # "allow" | "deny"
+  zdr: true                   # принудительный Zero Data Retention
+  preferredMinThroughput:
+    p90: 50                   # токенов/сек (мягкий порог)
+  preferredMaxLatency:
+    p90: 3                    # секунды (мягкий порог)
+```
+
+## Переопределения по моделям
+
+Маршрутизируйте разные модели по-разному. Ключи — точные имена или префиксные маски. Более специфичные совпадения выигрывают.
+
+```yaml
+provider:
+  order: "deepinfra"   # глобальное значение по умолчанию
+
+modelOverrides:
+  # Точное совпадение — зафиксировать эту модель на Anthropic
+  "claude-sonnet-4-6":
+    provider:
+      only: "anthropic"
+
+  # Маска — все claude-* предпочитают Anthropic с фолбэком
+  "claude-*":
+    provider:
+      order:
+        - "anthropic"
+        - "deepinfra"
+
+  # GPT-модели на OpenAI/Azure плюс кастомный заголовок
+  "gpt-*":
+    provider:
+      only:
+        - "openai"
+        - "azure"
+    headers:
+      X-Model-Family: "gpt"
+```
+
+**Приоритет совпадения:** точное имя > более длинный префикс > более короткий префикс.
+
+## Кастомные заголовки
+
+Добавляйте заголовки ко всем проксируемым запросам или по моделям (наследуются поверх глобальных):
+
+```yaml
+headers:
+  X-Custom-Header: "my-value"
+  X-Environment: "production"
+
+modelOverrides:
+  "claude-*":
+    headers:
+      X-Custom-Header: "claude-override"  # перекрывает глобальное значение
+      X-Extra: "only-for-claude"          # добавляется только для этой модели
+```
+
+## Кэширование подсказок
+
+По умолчанию OpenRouter не включает кэширование подсказок — каждый запрос платит полную цену. Proxitor умеет внедрять `cache_control` и `session_id`, чтобы кэширование заработало автоматически.
+
+**`cacheControl`** — внедряет `cache_control: { "type": "ephemeral" }` в тело запроса. OpenRouter использует это для расстановки точек кэша и их продвижения по мере роста диалога.
+
+**`cacheControlTtl`** (`5m` / `1h` / `omit` / `skip`, по умолчанию отсутствует = passthrough) — управляет полем `ttl` во внедрённом `cache_control` (только для эндпоинтов Anthropic). TTL действует только при активном кэшировании (`cacheControl` равен `auto`/`always`); в редакторе задаётся независимо от режима кэша.
+
+**`sessionId`** — внедряет `session_id` для «липкой» маршрутизации к провайдеру. Без него OpenRouter привязывается к провайдеру только после фиксации попадания в кэш. С ним маршрутизация липнет с **первого запроса** — критично для моделей OpenAI, где отложенное кэширование означает 0 закэшированных токенов на первых 1-2 запросах.
+
+И `cacheControl`, и `sessionId` поддерживают режимы `auto` / `always` / `skip`:
+
+| Режим | `cacheControl` | `sessionId` |
+| --- | --- | --- |
+| `auto` (по умолчанию) | Модели Anthropic на `/v1/chat/completions`; все модели на `/v1/messages` и `/v1/responses` | Прокидывает client session ID, если есть; иначе генерирует proxy UUID |
+| `always` | Все модели, все эндпоинты | Всегда генерирует proxy session ID, игнорируя клиентский |
+| `skip` | Passthrough: не трогает клиентский `cache_control`, ничего не внедряет | Passthrough: не трогает клиентские заголовки сессии |
+
+Значения `cacheControlTtl`:
+
+| Значение | TTL | Цена записи | Когда использовать |
+| --- | --- | --- | --- |
+| _(отсутствует)_ | Passthrough: сохранить клиентский `ttl`, ничего не добавлять; per-model absent наследует глобальный TTL | — | По умолчанию |
+| `5m` | 5 минут (значение Anthropic по умолчанию) | 1.25× | Явный короткий кэш; частые запросы (>1 за 5 мин) |
+| `1h` | 1 час | 2.0× | Редкие или долгие сессии |
+| `omit` | Вырезать поле `ttl`, гарантированно без TTL (даже присланный клиентом) | — | Принудительно выключить TTL |
+| `skip` | Passthrough: сохранить клиентский `ttl`, ничего не добавлять, игнорировать унаследованное | — | Игнорировать глобальный TTL без вырезания |
+
+> **Примечание:** `null` (ранее принимался в model overrides для отмены унаследованного TTL) **удалён** — мигрируйте на `skip`. `null` был недокументирован и не выставлялся из UI.
+
+```yaml
+cacheControl: auto    # безопасное значение по умолчанию — только Anthropic и безопасные эндпоинты
+sessionId: auto       # всегда обеспечивает липкую маршрутизацию (клиентский заголовок или proxy UUID)
+
+# Кэш на 1 час для всех моделей Anthropic (дороже запись, длиннее TTL)
+cacheControlTtl: 1h
+
+# Принудительное кэширование для всех моделей (может дать 400 на не-Anthropic /v1/chat/completions)
+# cacheControl: always
+
+# Переопределения по моделям — TTL поддерживает '5m', '1h', 'omit' или 'skip' (passthrough)
+modelOverrides:
+  "gpt-*":
+    cacheControl: skip        # OpenAI кэширует автоматически, внедрение не нужно
+    sessionId: always         # но липкая маршрутизация всё равно помогает
+  "claude-opus-*":
+    cacheControlTtl: skip     # passthrough для Opus — игнорировать глобальный 1h, брать клиентский ttl
+```
+
+**Почему важны все три:**
+
+- **Модели Anthropic** — `cache_control` активирует кэширование, `cacheControlTtl` продлевает его свыше 5 мин, `session_id` не даёт провайдеру «дрожать» и инвалидируя кэш.
+- **Модели OpenAI** — кэширование автоматическое (`cache_control` не нужен), но `session_id` обеспечивает липкую маршрутизацию с запроса №1, а не ожидание попадания в кэш.
+- **Все модели** — `session_id` предотвращает переключение провайдера, которое молча сбрасывает кэш.
+
+## Логирование использования кэша
+
+Proxitor автоматически логирует использование кэш-токенов из ответов апстрима — и для non-streaming JSON, и для стримингового SSE. Никакой настройки не нужно.
+
+```
+[abc123] Cache read: 50000, write: 25000 tokens (99.6% hit)
+[def456] Cache read: 1088 tokens (90.0% hit)
+[ghi789] Cache: no cached tokens
+```
+
+Поддерживаются все три формата провайдеров:
+
+| Формат провайдера | Поля |
+| --- | --- |
+| Anthropic | `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` |
+| OpenAI / OpenRouter | `usage.prompt_tokens_details.cached_tokens` / `cache_write_tokens` |
+| Responses API | `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` |
+
+Если присутствуют оба формата (например, OpenRouter проксирует ответ Anthropic), приоритет у полей Anthropic.
+
+## Интерактивный менеджер конфигурации
+
+### Мастер настройки
+
+```sh
+proxitor config wizard
+```
+
+Мастер спрашивает:
+
+- **API-ключ OpenRouter** — сохраняется в конфиг или задаётся как переменная `OPENROUTER_API_KEY`
+- **Порт** — по умолчанию `8828` (избегает конфликтов с типичными dev-серверами на 8080)
+- **Адрес прослушивания** — все интерфейсы (`0.0.0.0`), только localhost (`127.0.0.1`) или свой адрес (IP, hostname или `unix:/path`)
+- **Базовый URL API** — по умолчанию `https://openrouter.ai/api`; меняется для self-hosted или кастомных эндпоинтов
+- **Тип аутентификации** — `bearer` (по умолчанию) или `oauth`; `oauth` — для кастомных прокси-провайдеров, передающих токен в заголовке `Authorization: OAuth ...`
+- **Куда сохранить** — каталог проекта, `~/.config/proxitor/` или `$XDG_CONFIG_HOME/proxitor/`
+
+После получения ключа, базового URL и типа аутентификации мастер выполняет **пробу апстрима по возможности** (таймаут 3 с), чтобы проверить связность. Если апстрим недоступен или ключ отклонён, выводится предупреждение, но конфиг всё равно сохраняется — это только информация.
+
+Если конфиг уже существует, мастер показывает его расположение и спрашивает, перенастроить ли. Все поля **предзаполнены** текущими значениями — жмите Enter, чтобы оставить, или вводите новое. Существующие `modelOverrides`, `provider` и прочие поля сохраняются — обновляются только поля мастера.
+
+### Меню и команды конфигурации
+
+`proxitor config` (или `proxitor config menu`) открывает интерактивное меню, которое крутится до выхода. Оттуда можно управлять всеми настройками:
+
+- **Показать текущий конфиг** — вывести резолвнутую конфигурацию
+- **API-ключ и подключение** — поменять ключ, порт, адрес, базовый URL, тип аутентификации
+- **Маршрутизация сессий** — глобальный режим `sessionId` (`auto` / `always` / `skip`)
+- **Управление кэшем** — глобальный режим `cacheControl` и TTL
+- **Переопределения моделей** — добавлять, редактировать, удалять, смотреть, листать модели
+
+```sh
+proxitor config menu           # интерактивное меню
+proxitor config add            # добавить переопределение модели
+proxitor config edit           # редактировать существующее
+proxitor config remove         # удалить переопределение(я)
+proxitor config list           # показать текущие переопределения
+proxitor config list --json    # переопределения в JSON
+proxitor config show           # вывести резолвнутый конфиг (слитый)
+proxitor config show --json    # то же, машиночитаемо
+proxitor config browse         # изучать модели с ценами
+proxitor config wizard         # мастер настройки
+proxitor config validate       # проверить файл конфига (exit 0 ок, 1 невалиден)
+proxitor config validate --json  # структурированный JSON-результат
+proxitor doctor                # диагностика окружения + сети + порта + версии
+proxitor doctor --json         # машиночитаемый диагностический отчёт
+proxitor doctor --offline      # пропустить сетевые проверки
+```
+
+При добавлении или редактировании переопределения модели можно также настроить per-model `sessionId` и `cacheControl` — полезно для моделей, которым нужно поведение по кэшу/маршрутизации, отличное от глобального.
+
+В `config edit` любое поле (провайдер, session ID, cache control, cache TTL) можно сбросить к наследованию глобального/значения по умолчанию через опцию **Reset / inherit**. Глобальные команды `config cache-control` и `config session-routing` поддерживают тот же сброс — поле возвращается к значению схемы по умолчанию.
+
+### Разбор добавления переопределения
+
+```sh
+$ proxitor config add
+
+┌──────────────────────────────────┐
+│   Add Model Override             │
+╰──────────────────────────────────╯
+
+◇ Search for a model
+│ claude
+  (23 matches)
+  ● anthropic/claude-sonnet-4-6 · $3.00/$15.00 · 200k
+  ○ anthropic/claude-opus-4-8   · $15.00/$75.00 · 200k
+  ...
+
+◇ Configure provider routing
+│ ○ Use specific providers only
+  ○ Set provider priority order
+  ○ Ignore specific providers
+  ○ Skip provider routing
+```
+
+**«Use specific providers only» / «Ignore specific providers»** — множественный выбор, отмечаете нужные:
+
+```text
+◇ Select providers
+  ◼ anthropic (anthropic)     · 1.0s · 40 t/s
+  ◻ google-vertex/global      · 1.1s · 39 t/s
+  ◻ amazon-bedrock            · 1.2s · 40 t/s
+```
+
+**«Set provider priority order»** — выбираете провайдеров по одному, затем жмёте **✓ Done** внизу для завершения:
+
+```text
+◇ Select provider #1 (or cancel to finish)
+│ ● anthropic (anthropic)     · 1.0s · 40 t/s
+  ○ google-vertex/global      · 1.1s · 39 t/s
+  ○ amazon-bedrock            · 1.2s · 40 t/s
+  ○ ✓ Done
+
+◇ Select provider #2 (or cancel to finish)
+│ ● google-vertex/global      · 1.1s · 39 t/s
+  ○ amazon-bedrock            · 1.2s · 40 t/s
+  ○ ✓ Done
+
+◇ Select provider #3 (or cancel to finish)
+│ ● ✓ Done
+
+◇ Allow fallbacks to other providers? Yes
+
+◇ Save to config? Yes
+
+╭──────────────────────────────────╮
+│ ✓ Model override saved           │
+╰──────────────────────────────────╯
+```
+
+Интерфейс использует живые данные OpenRouter API — поиск моделей с type-ahead, реальная доступность провайдеров и цены для каждой модели.
+
+## Диагностика
+
+Когда что-то не работает, `proxitor doctor` прогоняет батарею проверок и печатает отчёт. Разделы:
+
+- **Окружение** — версия Node, платформа, TTY
+- **Конфиг** — путь обнаружения, валидность, число переопределений
+- **API-ключ** — источник (env или файл; сам ключ не печатается)
+- **Сеть** — достижимость апстрима (с настраиваемым таймаутом)
+- **Порт** — доступность настроенного порта
+- **Версия** — установленная версия
+
+Статусы: `✓ ok` / `⚠ warn` / `✗ fail` / `ⓘ skip`. Код выхода `0`, если нет `fail`, иначе `1` — можно дёргать из CI.
+
+```sh
+$ proxitor doctor
+
+▲ Proxitor Doctor
+│
+◇ Environment
+│  ✓ node-version — v22.4.1
+│  ✓ platform — darwin arm64
+│  ✓ tty — true
+│
+◇ Config
+│  ✓ config-found — /Users/u/proj/proxitor.config.yaml
+│  ✓ config-valid — 12 keys, 3 override(s)
+│
+◇ API key
+│  ✓ api-key — set (env: set, file: set)
+│
+◇ Network
+│  ✓ upstream — https://openrouter.ai/api — 200, 342 models
+│
+◇ Port
+│  ✓ port-8828 — 127.0.0.1:8828
+│
+◇ Version
+│  ✓ version — 0.9.0-beta.5
+
+└ Done. All checks passed.
+```
+
+Полезные флаги:
+
+```sh
+proxitor doctor --json         # структурированный JSON для CI/скриптов
+proxitor doctor --offline      # пропустить сетевые проверки (без апстрима и npm)
+proxitor doctor --timeout 5000 # свой сетевой таймаут на проверку (мс)
+```
+
+## Опции CLI
+
+```sh
+proxitor                        # запустить прокси (команда по умолчанию)
+proxitor start                  # то же самое
+proxitor up                     # алиас для start
+proxitor run                    # алиас для start
+proxitor --port 9000            # переопределить порт
+proxitor --config ./team.yaml   # явно указать конфиг
+proxitor config show            # вывести резолвнутый конфиг
+proxitor config show --json     # машиночитаемый конфиг
+proxitor config list --json     # переопределения в JSON
+proxitor config wizard          # мастер настройки
+proxitor config validate        # проверить текущий конфиг (exit 0/1)
+proxitor config validate --json # структурированный JSON-результат
+proxitor doctor                 # диагностика окружения, сети, порта, версии
+proxitor doctor --offline       # пропустить сетевые проверки
+proxitor --help                 # полная справка
+proxitor --version              # напечатать версию
+```
+
+| Флаг | По умолчанию | Описание |
+|---|---|---|
+| `-p, --port <порт>` | `8828` | Порт сервера (валидация: 1-65535) |
+| `--host <хост>` | `0.0.0.0` | Хост сервера |
+| `-c, --config <путь>` | автообнаружение | Путь к файлу конфига |
+| `--openrouter-key <ключ>` / `-k <ключ>` | `$OPENROUTER_API_KEY` | API-ключ OpenRouter |
+| `--verbose` | `false` | Подробное логирование |
+| `--no-config` | | Пропустить обнаружение файла конфига |
+| `-v, --version` | | Напечатать версию |
+| `--help` | | Напечатать справку |
+
+Подкоманды живут под `proxitor config <подкоманда>`. Полный список — `proxitor config --help`.
+
+---
+
+← [Назад к README](./README.ru.md)

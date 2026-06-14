@@ -65,3 +65,26 @@ PRs targeting `main` require all CI checks to pass before merging.
 ## Reporting issues
 
 Please use the issue templates — they help narrow down problems faster, especially for config-related bugs.
+
+## Translations
+
+Docs are bilingual. English is the source of truth — the root `README.md` and `docs/configuration.md`. Other languages mirror them:
+
+- `docs/README.<lang>.md` — README in `<lang>`
+- `docs/configuration.<lang>.md` — configuration reference in `<lang>`
+
+`<lang>` is an [ISO 639-1](https://en.wikipedia.org/wiki/ISO_639-1) code (`ru`, `de`, `zh`, `fr`, …).
+
+Each localized page opens with a language row: the **current language in bold**, every other available language as a link, using its native name. English comes first, then the rest in a stable order.
+
+```
+🌍 **English** · [Русский](./README.ru.md) · [Deutsch](./README.de.md)
+```
+
+Configuration reference pages (`docs/configuration.<lang>.md`) keep the row to languages only and link back to their README at the bottom — `← Back to README`.
+
+To add a language:
+
+1. Copy `README.md` → `docs/README.<lang>.md` and `docs/configuration.md` → `docs/configuration.<lang>.md`.
+2. Translate them.
+3. On **every** localized page, add the new language to the row in the same position, and write the matching row on the new pages (with the new language bolded).
