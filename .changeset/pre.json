@@ -18,6 +18,7 @@
     "persist-explicit-config-values",
     "remove-upstream-timeout",
     "simplify-modules",
-    "simplify-proxy-and-config"
+    "simplify-proxy-and-config",
+    "wizard-preview-url-auth"
   ]
 }
