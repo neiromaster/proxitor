@@ -12,6 +12,7 @@
     "cli-cmd-ts-refactor",
     "dead-code-and-url-cleanup",
     "doctor-and-validate",
+    "fix-empty-providers-crash",
     "middleware-architecture",
     "never-to-skip-rename",
     "persist-explicit-config-values",
