@@ -6,15 +6,10 @@ import {
   SESSION_HINTS,
 } from './prompts.js';
 
-/** A per-field resolution: explicitly set, explicitly removed, or (when omitted) kept as-is. */
+/** Set, removed, or (omitted) keep existing. */
 export type ResolvedField<T> = { remove: true } | { value: T };
 
-/**
- * Apply a resolved field to a plain object in place.
- * - `{ value }` → assign
- * - `{ remove: true }` → delete the key
- * - `undefined` → leave the existing value untouched (cancel / keep)
- */
+/** Apply a resolved field: {value}→assign, {remove}→delete, undefined→keep. */
 export function applyField<T>(
   obj: Record<string, unknown>,
   key: string,
@@ -34,17 +29,12 @@ export async function collectSessionTriState(
     SESSION_HINTS,
     { removable: true },
   );
-  if (typeof sid === 'symbol') return null; // cancelled → caller keeps everything
+  if (typeof sid === 'symbol') return null; // cancelled
   if (sid === 'reset') return { sessionId: { remove: true } };
   return { sessionId: { value: sid } };
 }
 
-/**
- * TTL is decoupled from cache mode: it is always asked and can exist on its own
- * (it refines the inherited mode). Cancelling the TTL prompt preserves the
- * existing TTL (field omitted from the patch); cancelling the mode prompt
- * cancels the whole edit (returns null).
- */
+/** TTL is independent of cache mode. Mode-cancel aborts; TTL-cancel keeps existing TTL. */
 export async function collectCacheTriState(
   currentCc?: TriState,
   currentTtl?: '5m' | '1h' | 'omit' | 'never',
@@ -70,7 +60,7 @@ export async function collectCacheTriState(
 
   const ttl = await askCacheControlTtl(currentTtl, { removable: true, globalTtl });
   if (typeof ttl === 'symbol') {
-    // cancel → keep existing TTL (omit cacheControlTtl from the patch)
+    // cancel → keep existing TTL
     return { cacheControl };
   }
   if (ttl === 'reset') {

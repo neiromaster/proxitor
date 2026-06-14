@@ -137,7 +137,6 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.headers = { ...(result.headers ?? {}), ...override.headers };
   }
   if (override.cacheControl !== undefined) result.cacheControl = override.cacheControl;
-  // 'omit' = "cancel inherited TTL"; undefined = "no override" → skip
   if (override.cacheControlTtl !== undefined) {
     result.cacheControlTtl = override.cacheControlTtl;
   }

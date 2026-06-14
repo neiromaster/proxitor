@@ -21,13 +21,12 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   const fields: Record<string, unknown> = {};
   fields.cacheControl = cc === 'reset' ? undefined : cc;
 
-  // TTL decoupled from mode — always asked.
   const ttlResult = await askCacheControlTtl(
     currentTtl as '5m' | '1h' | 'omit' | 'never' | undefined,
     { removable: true },
   );
   if (typeof ttlResult === 'symbol') {
-    // TTL cancelled — still apply the cacheControl change only.
+    // TTL cancelled — apply cacheControl only.
     setGlobalConfigFields(configPath, fields);
     clack.log.success(`cacheControl set to ${cc === 'reset' ? '(default)' : cc}`);
     return;

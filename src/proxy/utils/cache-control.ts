@@ -34,10 +34,10 @@ export function buildCacheControl(
   if (!('type' in base)) base.type = 'ephemeral';
 
   if (ttl === 'omit') {
-    delete base.ttl; // strip — guarantee no ttl, even one sent by the client
+    delete base.ttl; // strip ttl (incl. client value)
   } else if (ttl === '5m' || ttl === '1h') {
-    if (isAnthropic) base.ttl = ttl; // set value (Anthropic only)
+    if (isAnthropic) base.ttl = ttl; // Anthropic only
   }
-  // 'never' | undefined → passthrough: preserve client ttl, add nothing
+  // never/undefined → passthrough
   return base;
 }
