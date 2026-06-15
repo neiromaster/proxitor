@@ -257,7 +257,7 @@ export function readConfigFile(filePath: string): Partial<ProxyConfig> {
   try {
     raw = filePath.endsWith('.json') ? JSON.parse(content) : yaml.load(content);
   } catch (err) {
-    // biome-ignore lint/nursery/useErrorCause: cause is propagated inside ConfigParseError
+    // biome-ignore lint/style/useErrorCause: cause is propagated inside ConfigParseError
     throw new ConfigParseError(filePath, err instanceof Error ? err : undefined);
   }
 
