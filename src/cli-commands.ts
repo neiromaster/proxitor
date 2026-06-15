@@ -263,7 +263,7 @@ export const doctorCli = command({
     timeout: option({
       long: 'timeout',
       short: 't',
-      type: string,
+      type: optional(string),
       description: 'Network check timeout in milliseconds',
     }),
   },
