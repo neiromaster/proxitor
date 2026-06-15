@@ -13,6 +13,7 @@
     "dead-code-and-url-cleanup",
     "doctor-and-validate",
     "doctor-timeout-optional",
+    "doctor-version-display",
     "fix-empty-providers-crash",
     "middleware-architecture",
     "never-to-skip-rename",
