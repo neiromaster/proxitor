@@ -2,21 +2,22 @@ import { createMiddleware } from 'hono/factory';
 import { logger, withReq } from '../../logger.js';
 import type { ProxyEnv } from '../context.js';
 
+const BODY_LIMIT_MULTIPLIERS = {
+  kb: 1024,
+  mb: 1024 ** 2,
+  gb: 1024 ** 3,
+} as const;
+
 function parseBodyLimit(limit: string): number {
   const match = limit.match(/^(\d+)\s*(kb|mb|gb)$/i);
   if (!match) return Number.MAX_SAFE_INTEGER;
   const n = parseInt(match[1] as string, 10);
-  const unit = (match[2] as string).toLowerCase();
-  switch (unit) {
-    case 'kb':
-      return n * 1024;
-    case 'mb':
-      return n * 1024 * 1024;
-    case 'gb':
-      return n * 1024 * 1024 * 1024;
-    default:
-      return Number.MAX_SAFE_INTEGER;
-  }
+  return (
+    n *
+    BODY_LIMIT_MULTIPLIERS[
+      (match[2] as string).toLowerCase() as keyof typeof BODY_LIMIT_MULTIPLIERS
+    ]
+  );
 }
 
 export const readBody = createMiddleware<ProxyEnv>(async (c, next) => {

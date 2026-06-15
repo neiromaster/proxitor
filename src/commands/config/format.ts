@@ -39,7 +39,7 @@ export function displayModelInfo(
 
   clack.log.info(`  Context: ${formatContextLength(model.context_length)} tokens`);
 
-  if (model.top_provider?.max_completion_tokens) {
+  if (model.top_provider.max_completion_tokens) {
     clack.log.info(
       `  Max output: ${formatContextLength(model.top_provider.max_completion_tokens)} tokens`,
     );
@@ -52,11 +52,11 @@ export function displayModelInfo(
   logNonZeroPrice('Cache read', model.pricing.input_cache_read);
   logNonZeroPrice('Cache write', model.pricing.input_cache_write);
 
-  if (model.architecture?.modality) {
+  if (model.architecture.modality) {
     clack.log.info(`  Modality: ${model.architecture.modality}`);
   }
 
-  if (showParameters && model.supported_parameters?.length) {
+  if (showParameters && model.supported_parameters.length) {
     clack.log.info(`  Parameters: ${model.supported_parameters.join(', ')}`);
   }
 }
