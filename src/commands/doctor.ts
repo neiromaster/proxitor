@@ -189,7 +189,7 @@ function checkVersion(): Check {
   return {
     name: 'version',
     status: 'ok',
-    current: version,
+    value: version,
   };
 }
 

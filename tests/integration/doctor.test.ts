@@ -167,3 +167,20 @@ describe('doctor does not throw on the project directory', () => {
     expect(typeof existsSync).toBe('function');
   });
 });
+
+describe('doctor version check', () => {
+  // Regression: checkVersion() stored the version in `current`, but the text
+  // formatter (formatTextCheck) only reads `value` — so the report showed
+  // "✓ version" with no number. The version must be exposed on `value` (the
+  // field that gets rendered), matching checkNodeVersion/checkPlatform.
+  it('exposes the app version on `value` so it renders in the report', async () => {
+    const out = await captureStdout(() =>
+      Promise.resolve(doctorCommand({ json: true, offline: true })),
+    );
+    const parsed = JSON.parse(out) as {
+      checks: Array<{ name: string; value?: string }>;
+    };
+    const versionCheck = parsed.checks.find(c => c.name === 'version');
+    expect(versionCheck?.value).toMatch(/^\d+\.\d+\.\d+/);
+  });
+});
