@@ -17,7 +17,10 @@ export const ANTHROPIC_NATIVE_ENDPOINTS: ReadonlySet<Endpoint> = new Set([
 ]);
 
 export function classifyEndpoint(pathname: string): Endpoint {
-  return ENDPOINT_MAP[pathname] ?? 'other';
+  // Map keys are bare pathnames — ignore any query string defensively.
+  const queryIndex = pathname.indexOf('?');
+  const route = queryIndex === -1 ? pathname : pathname.slice(0, queryIndex);
+  return ENDPOINT_MAP[route] ?? 'other';
 }
 
 export function buildUpstreamUrl(pathname: string, config: ProxyConfig): string {

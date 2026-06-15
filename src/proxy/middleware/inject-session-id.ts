@@ -8,7 +8,7 @@ export const injectSessionId = createMiddleware<ProxyEnv>(async (c, next) => {
   const sessionId = deriveSessionId(
     c.req.raw.headers,
     c.var.parsedBody,
-    c.var.path,
+    c.req.path,
     mode,
   );
 

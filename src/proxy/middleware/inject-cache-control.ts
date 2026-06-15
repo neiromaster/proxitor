@@ -15,8 +15,8 @@ export const injectCacheControl = createMiddleware<ProxyEnv>(async (c, next) => 
     return;
   }
 
-  if (shouldInjectCacheControl(resolved.cacheControl, c.var.modelName, c.var.path)) {
-    const isAnthropic = isAnthropicEndpoint(c.var.modelName, c.var.path);
+  if (shouldInjectCacheControl(resolved.cacheControl, c.var.modelName, c.req.path)) {
+    const isAnthropic = isAnthropicEndpoint(c.var.modelName, c.req.path);
     parsedBody.cache_control = buildCacheControl(
       parsedBody.cache_control,
       resolved.cacheControlTtl,
