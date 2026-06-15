@@ -25,7 +25,9 @@
       },
       "suspicious": {
         "noImportCycles": "warn",
-        "noEvolvingTypes": "warn"
+        "noEvolvingTypes": "warn",
+        "noShadow": "warn",
+        "useArraySortCompare": "warn"
       },
       "style": {
         "noCommonJs": "error",
@@ -38,7 +40,8 @@
           "level": "error",
           "options": { "style": "type" }
         },
-        "useErrorCause": "warn"
+        "useErrorCause": "warn",
+        "useGlobalThis": "warn"
       },
       "complexity": {
         "noExcessiveCognitiveComplexity": {
@@ -53,7 +56,8 @@
       "nursery": {
         "noFloatingPromises": "error",
         "noMisusedPromises": "error",
-        "useExhaustiveSwitchCases": "warn"
+        "useExhaustiveSwitchCases": "warn",
+        "useIncludes": "warn"
       }
     }
   },
@@ -93,7 +97,8 @@
     "actions": {
       "source": {
         "organizeImports": "on",
-        "useSortedInterfaceMembers": "on"
+        "useSortedInterfaceMembers": "on",
+        "useSortedPackageJson": "on"
       }
     }
   }
