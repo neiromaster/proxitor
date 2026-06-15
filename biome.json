@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
   "root": true,
   "vcs": {
     "enabled": true,
@@ -19,7 +19,7 @@
       "test": "recommended"
     },
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "useImportExtensions": "off"
       },
@@ -37,7 +37,8 @@
         "useConsistentTypeDefinitions": {
           "level": "error",
           "options": { "style": "type" }
-        }
+        },
+        "useErrorCause": "warn"
       },
       "complexity": {
         "noExcessiveCognitiveComplexity": {
@@ -52,8 +53,7 @@
       "nursery": {
         "noFloatingPromises": "error",
         "noMisusedPromises": "error",
-        "useExhaustiveSwitchCases": "warn",
-        "useErrorCause": "warn"
+        "useExhaustiveSwitchCases": "warn"
       }
     }
   },
