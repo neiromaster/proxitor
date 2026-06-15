@@ -1,5 +1,147 @@
 # Changelog
 
+## 0.9.0
+
+### Minor Changes
+
+- af88022: Config menu: delete cache/session overrides + TTL `omit`/`never` model
+
+  - `proxitor config edit` and the global `config cache-control` / `config session-routing` commands now support **Reset / inherit** — removes the field so the model inherits the global (or the global reverts to the schema default).
+  - **`cacheControlTtl`** gains two explicit values:
+    - `omit` — strips the `ttl` field from injected `cache_control`, guaranteeing no TTL (even a client-sent one).
+    - `never` — passthrough: preserve the client `ttl`, add nothing, ignore an inherited value.
+  - The ambiguous `cacheControlTtl: null` (model override) is **removed** — migrate to `never`. `null` was undocumented and unsettable from the UI.
+  - TTL is now decoupled from cache mode in the editor: it can be set independently (it refines the inherited mode).
+  - Clarified that `cacheControl` / `sessionId` `never` means passthrough (client headers left untouched), not stripping.
+
+- 6b16b74: Add `cacheControl` and `sessionId` options for automatic prompt caching through OpenRouter
+
+  - **`cacheControl`** (`auto`/`always`/`never`, default `auto`) — injects `cache_control: { "type": "ephemeral" }` to enable OpenRouter prompt caching. In `auto` mode, injection is endpoint-safe: `/v1/messages` and `/v1/responses` always get it; `/v1/chat/completions` only for Anthropic models (non-Anthropic providers may reject it with 400). Per-model overrides supported.
+  - **`sessionId`** (`auto`/`always`/`never`, default `auto`) — injects `session_id` for provider sticky routing from the first request. In `auto` mode, uses the `X-Claude-Code-Session-Id` header if present; otherwise generates a proxy UUID to ensure sticky routing always works. Both `x-claude-code-session-id` and `x-session-id` client headers are stripped from forwarded requests.
+  - Refactored body injection into `injectBodyFields()` returning `InjectionResult` with `effectiveSessionId` for consistent body/header session handling.
+  - Extracted `computeInjection()` from `resolveRequest()` to reduce cognitive complexity.
+  - `injectBodyFields` errors now fall back to forwarding the body as-is instead of returning 400.
+  - `shouldInjectCacheControl` simplified — dead-code path branches removed.
+
+- b63df3c: Add `cacheControlTtl` option for Anthropic prompt cache TTL control
+
+  - **`cacheControlTtl`** (`'5m'` | `'1h'`, optional) — controls the cache time-to-live for Anthropic models. Without it, Anthropic's default 5-minute TTL applies. Set to `'1h'` for a 1-hour cache (2× write cost vs 1.25×, same 90% read discount). TTL is only injected for Anthropic models/endpoints — other providers don't support it.
+  - **`null` in model overrides** — per-model `cacheControlTtl` accepts `null` to cancel a global TTL and revert to Anthropic's default behavior for specific models.
+  - **Existing `cache_control` handling** — when the request body already contains `cache_control` without `ttl`, proxitor adds `ttl` if configured. If `ttl` is already present, it's preserved unchanged.
+
+- 4dd5e55: Refactor CLI around `cmd-ts` features and add a `config show` command
+
+  - Replaced manual `argv` parsing (`isInfo`, `hasSubcommand`, `process.argv.slice(2)`) with `binary()` and a 4-line default-command prefix, so `proxitor --port 9000` behaves like `proxitor start --port 9000` and `--help` / `--version` are handled by the parser.
+  - Extracted the command tree to `src/cli-commands.ts` so tests can import `rootCli`, `startCommand`, and `configCli` without triggering the top-level `run()` invocation in `cli.ts`.
+  - Added `src/cli-types.ts` with custom cmd-ts `Type`s: `ConfigPath`, `OpenRouterKey`, `Port`, `NonEmptyString`, `AuthTypeCli` — all validated at parse time.
+  - Replaced the 20-line `resolveApiKey` / 4-source priority chain with `option({ env: 'OPENROUTER_API_KEY', type: OpenRouterKey })`. CLI flag → env var → `undefined` is now native cmd-ts precedence.
+  - Replaced the magic-string `err.message.includes('No config file found')` check with `instanceof MissingConfigError`. Added `tryFindConfigFile()` and `getConfigSearchPaths()` for proper discovery / error reporting.
+  - `start` now has aliases (`up`, `run`), `examples` (visible in `--help`), and validates port range / integer-ness at parse time.
+  - Replaced all 4 copies of `--config` / `--openrouter-key` declarations with one `configArgs` object spread across subcommands.
+  - Removed lazy `await import(...)` from every command handler in favor of static imports.
+  - `loadConfig` is now called exactly once per `start` invocation (was previously called twice via `resolveApiKey` + `withClient`).
+  - **`config show`**: new subcommand. Prints the resolved configuration (defaults + file + env + flags merged). Supports `--json` for machine-readable output. Masks `openrouterKey`.
+  - **`config list --json`**: now emits structured JSON `{ configPath, count, overrides: [...] }`.
+  - `wizard` now accepts `--config <path>` and forwards it to `askSaveLocation` so reconfiguration lands at the right file.
+  - New `vitest.config.ts` `define` for `__PROXITOR_VERSION__` (required by cmd-ts `--version` circuit breaker).
+  - 26 new unit tests + 13 new integration tests covering CLI dispatch, validation, `config show`, `config list --json`, and end-to-end proxy health.
+  - `src/cli.ts` is no longer excluded from coverage.
+
+  ### Wizard UX (Sprint 3)
+
+  - **Custom listen address** — the host prompt now offers a "Custom address…" option accepting arbitrary IPs, hostnames, and `unix:/path` sockets.
+  - **Upstream probe** — after collecting key, base URL, and auth type, the wizard performs a best-effort `GET /v1/models` (3 s timeout) against the configured upstream. Shows success (model count) or warning (unreachable / key rejected); never blocks the save.
+  - **Progress markers** — each step shows `Step N/6` via `clack.log.step` for visual progress.
+  - **Pre-filled reconfiguration** — when re-running the wizard with an existing config, all prompts are pre-filled with current values. Press Enter to keep, or type a new value.
+  - **`maskKey` export** — now returns `(none)` for empty keys; exported for reuse in other commands.
+  - **Reduced complexity** — extracted `collectAnswers` + `expectValue` (cancel-on-null sentinel) to bring `runWizard` cognitive complexity under the lint threshold.
+  - 5 unit tests for `maskKey` + 4 integration tests covering happy path, custom host, cancel, and reconfigure scenarios.
+
+- b63df3c: Remove dead code and simplify URL routing
+
+  - **Breaking**: `openrouterBaseUrl` default changed from `https://openrouter.ai/api/v1` to `https://openrouter.ai/api` — incoming request paths (e.g. `/v1/chat/completions`) are now forwarded as-is instead of stripping `/v1`
+  - **Breaking**: removed `extractModel`, `InjectionParams`, and `tryParseBody` from public API (unused after middleware refactor)
+  - **Breaking**: removed `shouldInject` and `toUpstreamPath` from `src/proxy/paths.ts`
+  - Added runtime warning when `openrouterBaseUrl` or `openrouterDataUrl` ends with `/v1` — helps catch configs from previous versions that would produce doubled paths like `/v1/v1/chat/completions`
+  - Added `classifyEndpoint()` for centralized endpoint type detection, replacing scattered string comparisons across middleware
+  - Added `tsc --noEmit` to pre-commit hook alongside biome
+  - Added `config: ProxyConfig` to `ProxyVariables` context type (removed unsafe `as never` casts)
+  - Data client paths updated to `/v1/providers`, `/v1/models`, `/v1/models/{author}/{slug}/endpoints`
+
+- 4dd5e55: Add `proxitor doctor` diagnostic command and improve `config validate` output
+
+  - **New `proxitor doctor` command** — runs a battery of checks and prints a report, intended as a first-aid tool for "why doesn't this work?". Sections: Environment (Node version, platform, TTY), Config discovery + validity, API key resolution, Network (upstream reachability, configurable timeout), Port availability, Version. Statuses: `ok` / `warn` / `fail` / `skip`. Exit code is `0` when no `fail`, `1` otherwise, so the command is scriptable from CI.
+    - `--json` — emit machine-readable JSON instead of formatted text
+    - `--offline` — skip network checks (upstream, npm)
+    - `--timeout` — per-check network timeout in ms (default `3000`)
+  - **`config validate` now returns exit code** — `0` on success, `1` on invalid config or no file. CI can use it as a gate.
+  - **`config validate --json`** — structured `{ ok, configPath, keyCount | error, issues? }` output.
+  - **`config validate` actionable advice** — on failure, lists each issue (path + message) and prints tips: open in `$EDITOR`, run `wizard`, or run `doctor`.
+  - **`config edit` cleanup** — removed the dead "Replace entirely" option that pointed at the same handler as "Provider routing". Only provider routing is supported for now; the option was misleading.
+
+  8 new tests in `tests/integration/doctor.test.ts` cover the no-config, valid-config, invalid-config, and offline paths, plus the JSON shape and exit code.
+
+- b63df3c: Refactor proxy request processing into composable Hono middleware architecture
+
+  - **Breaking**: removed `injectBodyFields`, `injectProvider`, `buildRequestHeaders`, and `InjectionResult` from public API
+  - **Breaking**: session_id is now sent exclusively via `x-session-id` header instead of body injection (universal across all OpenRouter endpoints)
+  - Decomposed monolithic proxy handler into 9 ordered middleware: setupRequest, readBody, parseBody, resolveConfig, injectProvider, injectCacheControl, injectSessionId, buildUpstreamReq, forwardRequest
+  - Route-based middleware composition: injection middleware only registered on `/v1/chat/completions`, `/v1/responses`, `/v1/messages`; all other paths pass through without overhead
+  - Eliminated double JSON parse — single parse in parseBody, in-place mutation by injection middleware, single serialize in buildUpstreamReq
+  - Content-based session ID derivation for clients without session support: SHA-256 fingerprint of model + first system message + first user message gives stable per-conversation stickiness without cross-session pollution
+  - Session ID sources (priority order): `x-claude-code-session-id` header (Claude Code) → `session_id` from body (Codex CLI) → content hash fingerprint → random UUID fallback
+  - Shared `ProxyVariables` context type for type-safe data flow across middleware chain
+  - Global `app.onError()` handler for unhandled errors
+
+- f5beb28: Rename passthrough sentinel `never` → `skip`
+
+  - The config value `never` (passthrough: leave the client value untouched, inject nothing) is renamed to `skip` across `cacheControl`, `sessionId`, and `cacheControlTtl`. `never` is no longer accepted — set `skip` instead. `omit` (strip) is unchanged.
+  - `never` was temporal and clashed with its passthrough semantics; `skip` reads more clearly.
+
+- b63df3c: Remove upstream request timeout — trust the upstream (OpenRouter) to enforce its own deadline and the client to cancel if it gives up.
+
+  - **Breaking**: removed `upstreamTimeoutMs` config option (default was 5 minutes). The proxy no longer aborts upstream requests on its own timer; a slow OpenRouter response will stream as long as it takes, and Anthropic SSE generations of any length are no longer cut off mid-stream.
+  - **Client cancellation** is still honored — when the client disconnects, the proxy aborts the upstream fetch and returns `499 Client Closed Request` (previously this surfaced as `500` via the global error handler).
+  - **Network-level failures** (ECONNREFUSED, DNS, connection reset) still return `502 Bad Gateway` with `proxy_upstream_error` — the documented contract is preserved.
+
+- f648798: Show base URL and auth type in the setup wizard preview
+
+  The wizard's Preview note omitted `openrouterBaseUrl` and `authType` when they matched the defaults, so users couldn't see two values they had just chosen on steps 4–5. The preview now always shows a two-line header (Base URL + auth type, friendly label) above the YAML. The saved config file stays clean — defaults are still omitted. Auth option metadata is extracted into a shared `AUTH_OPTIONS` constant (DRY) reused by the auth prompt and the preview.
+
+### Patch Changes
+
+- 7eb186c: Fix cache_control TTL to use string format and add Responses API cache logging
+
+  - **TTL fix**: `cache_control.ttl` now sends string values (`"5m"`, `"1h"`) instead of numeric seconds, matching the Anthropic and OpenRouter API spec
+  - **Responses API SSE**: cache usage extraction now supports the `response` wrapper in SSE events (e.g. `response.completed`, `response.incomplete`), enabling cache logging for the `/v1/responses` endpoint
+  - **Cache hit rate**: log messages now include hit rate percentage, e.g. `Cache read: 1088 tokens (90.0% hit)`
+  - **Removed `TTL_SECONDS`** constant — no longer needed since TTL is passed as string
+
+- 9a7da21: Make `doctor --timeout` optional so bare `proxitor doctor` works
+
+  `--timeout` was declared as a required cmd-ts option, so every documented invocation — `proxitor doctor`, `proxitor doctor --offline`, `proxitor doctor --json` — failed at parse time with "No value provided for --timeout". The option is now optional, matching the built-in `DEFAULT_TIMEOUT_MS` fallback the handler already assumed.
+
+- 06fe2c3: Show the app version in `doctor`'s version check
+
+  The `version` check stored its value under `current`, which the text report formatter ignores (it reads `value`), so the report printed `✓ version` with no number. The version now lives on `value`, matching every other check, so the line reads e.g. `✓ version — 0.9.0-beta.9`.
+
+- 4340696: Fix crash in `config add`/`edit` when a model has no provider endpoints
+
+  Selecting a model without published endpoint data (e.g. OpenRouter aliases like `~anthropic/claude-sonnet-latest`) yielded zero providers and crashed the provider multiselect with "Cannot read properties of undefined (reading 'disabled')". `selectProvidersByMode` now bails with a warning instead of reaching the multiselect with an empty list.
+
+- 733e966: Fix config menu stripping values that match defaults. Selected values are now always persisted to the config file, even when they equal the built-in defaults.
+- 0b3c874: Simplify internal logic across modules and canonicalize upstream header casing
+
+  - **Header canonicalization**: merged upstream request headers are now lowercased via a new pure `lowercaseKeys()` helper, so a case-variant header (e.g. a user-config `Content-Type` / `CONTENT-TYPE`) can no longer coexist with its lowercase form and corrupt the forwarded `content-type`. Fixes a latent bug where an odd-cased extra header produced a merged value like `text/xml, application/json` upstream.
+  - **Pure header helpers**: `applyProxyHeaders`/`applyExtraHeaders`/`forceJsonContentType` rewritten as pure producers/transformers (`proxyHeaders`, `sanitizeExtraHeaders`, `withSessionId`, `withJsonContentType`) composed via object spread — no mutation or `delete`.
+  - **CLI**: reuse `jsonFlag`, drop redundant `?? undefined`, extract `INFO_FLAGS`, collapse default-subcommand and `config`/`menu` injection logic.
+  - **Config**: reuse `getConfigSearchPaths()` in `tryFindConfigFile`, simplify `cacheControlTtl` override normalization and `openrouterKey` resolution.
+  - **OpenRouter data client**: drop redundant `OPENROUTER_FALLBACK_URL` alias, extract shared `isValidArrayDataResponse`, add missing-API-key guard in `probeUpstream`.
+  - **Proxy utils/middleware**: simplify `cache-control`, `error`, `session-id`, and `forward-request` internals.
+  - **Tests**: add `tests/unit/headers.test.ts` (AAA) and `tests/integration/header-casing.test.ts` regression.
+
+- 27b133b: Simplify proxy module and config schema: remove dead re-exports, hoist per-request work out of /health, extract shared Zod schema helper, trim verbose comments
+
 ## 0.9.0-beta.12
 
 ### Patch Changes
