@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { binary, parse, runSafely } from 'cmd-ts';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { doctorCli, rootCli } from '../../src/cli-commands.js';
 import { createTestEnv, getFreePort, type TestEnv } from '../helpers.js';
 
@@ -115,19 +115,30 @@ describe('flags-before-subcommand routing (bugfix #1)', () => {
     // `proxitor --offline doctor` should route to the doctor command, NOT
     // prepend `start`. The old heuristic checked userArgs[0]?.startsWith('-')
     // which incorrectly prepended `start` when flags came before the subcommand.
-    const result = await runSafely(binary(rootCli), [
-      'node',
-      'proxitor',
-      '--offline',
-      'doctor',
-    ]);
-    // doctor exits 1 when there's no config and no API key, but it should be
-    // a doctor exit — not a cmd-ts "unknown flag" parse error.
-    if (result._tag === 'error') {
-      const msg = errorMessage(result.error);
-      // Should NOT contain cmd-ts parse errors about unknown flags on start.
-      expect(msg).not.toContain('Unknown argument');
-      expect(msg).not.toContain('unexpected');
+    //
+    // The doctor handler calls `process.exit(non-zero)` when a check fails —
+    // and CI has no config file (gitignored), so doctor exits 1. Vitest
+    // intercepts that exit and throws, so stub it here: this test only cares
+    // about routing, not doctor's result. If routing were broken, `start`
+    // would reject `--offline`/`doctor` as an "Unknown argument" parse error.
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(() => undefined as never);
+    try {
+      const result = await runSafely(binary(rootCli), [
+        'node',
+        'proxitor',
+        '--offline',
+        'doctor',
+      ]);
+      if (result._tag === 'error') {
+        const msg = errorMessage(result.error);
+        // Should NOT contain cmd-ts parse errors about unknown flags on start.
+        expect(msg).not.toContain('Unknown argument');
+        expect(msg).not.toContain('unexpected');
+      }
+    } finally {
+      exitSpy.mockRestore();
     }
   });
 
