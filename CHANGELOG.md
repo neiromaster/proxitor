@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0-beta.11
+
+### Patch Changes
+
+- 9a7da21: Make `doctor --timeout` optional so bare `proxitor doctor` works
+
+  `--timeout` was declared as a required cmd-ts option, so every documented invocation — `proxitor doctor`, `proxitor doctor --offline`, `proxitor doctor --json` — failed at parse time with "No value provided for --timeout". The option is now optional, matching the built-in `DEFAULT_TIMEOUT_MS` fallback the handler already assumed.
+
 ## 0.9.0-beta.10
 
 ### Minor Changes
