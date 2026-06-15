@@ -1,35 +1,7 @@
 {
   "name": "proxitor",
   "version": "0.9.0-beta.12",
-  "type": "module",
   "description": "Lightweight proxy for routing CLI requests (claude-code, codex) to OpenRouter",
-  "bin": "./dist/cli.mjs",
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "prepare": "lefthook install",
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "start": "node dist/cli.mjs",
-    "start:dev": "pnpm run build && pnpm run start",
-    "lint": "biome lint ./src",
-    "lint:fix": "biome lint --fix ./src",
-    "format": "biome format --write ./src",
-    "format:check": "biome format ./src",
-    "check:biome": "biome check ./src",
-    "typecheck": "tsc --noEmit",
-    "typecheck:all": "tsc --noEmit -p tsconfig.tests.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:integration": "vitest run --reporter verbose tests/integration/",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "check": "npm run typecheck:all && npm run check:biome && npm run test",
-    "prepublishOnly": "npm run build",
-    "version-packages": "changeset version",
-    "release": "changeset publish"
-  },
   "keywords": [
     "proxy",
     "openrouter",
@@ -39,20 +11,44 @@
     "ai",
     "llm"
   ],
-  "packageManager": "pnpm@11.5.1",
-  "author": "neiromaster",
-  "license": "MIT",
-  "engines": {
-    "node": ">=22.0.0"
+  "homepage": "https://github.com/neiromaster/proxitor#readme",
+  "bugs": {
+    "url": "https://github.com/neiromaster/proxitor/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/neiromaster/proxitor.git"
   },
-  "bugs": {
-    "url": "https://github.com/neiromaster/proxitor/issues"
+  "license": "MIT",
+  "author": "neiromaster",
+  "type": "module",
+  "bin": "./dist/cli.mjs",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "check": "npm run typecheck:all && npm run check:biome && npm run test",
+    "check:biome": "biome check ./src",
+    "dev": "tsdown --watch",
+    "format": "biome format --write ./src",
+    "format:check": "biome format ./src",
+    "lint": "biome lint ./src",
+    "lint:fix": "biome lint --fix ./src",
+    "prepare": "lefthook install",
+    "prepublishOnly": "npm run build",
+    "release": "changeset publish",
+    "start": "node dist/cli.mjs",
+    "start:dev": "pnpm run build && pnpm run start",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:integration": "vitest run --reporter verbose tests/integration/",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "typecheck:all": "tsc --noEmit -p tsconfig.tests.json",
+    "version-packages": "changeset version"
   },
-  "homepage": "https://github.com/neiromaster/proxitor#readme",
   "dependencies": {
     "@clack/prompts": "^1.5.0",
     "@hono/node-server": "^2.0.4",
@@ -75,5 +71,9 @@
     "tsdown": "^0.22.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
+  },
+  "packageManager": "pnpm@11.5.1",
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

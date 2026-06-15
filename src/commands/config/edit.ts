@@ -154,7 +154,7 @@ export async function editOverrideCommand(
 
   showCurrentConfig(modelKey, current);
 
-  while (true) {
+  for (;;) {
     const field = await clack.select<EditField>({
       message: 'Edit which field?',
       options: [

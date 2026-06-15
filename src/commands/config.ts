@@ -15,7 +15,7 @@ import { validateConfigCommand } from './config/validate.js';
 export async function runConfigMenu(client: OpenRouterDataClient): Promise<void> {
   clack.intro('Proxitor Config Manager');
 
-  while (true) {
+  for (;;) {
     const action = await clack.select({
       message: 'What would you like to do?',
       options: [

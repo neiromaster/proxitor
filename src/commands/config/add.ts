@@ -231,7 +231,7 @@ async function confirmAndSave(
   override: ModelOverride,
   _client: OpenRouterDataClient,
 ): Promise<boolean> {
-  while (true) {
+  for (;;) {
     clack.log.info(
       `Proposed override:\n  ${modelKey}:\n    ${formatOverrideYaml(override)}`,
     );
