@@ -20,6 +20,22 @@ describe('classifyEndpoint', () => {
     expect(classifyEndpoint('/v1/models')).toBe('other');
     expect(classifyEndpoint('/health')).toBe('other');
   });
+
+  it('ignores query string when classifying chat-completions', () => {
+    expect(classifyEndpoint('/v1/chat/completions?stream=true')).toBe('chat-completions');
+  });
+
+  it('ignores query string when classifying messages', () => {
+    expect(classifyEndpoint('/v1/messages?beta=true')).toBe('messages');
+  });
+
+  it('ignores query string when classifying responses', () => {
+    expect(classifyEndpoint('/v1/responses?foo=bar')).toBe('responses');
+  });
+
+  it('returns "other" for unknown paths even with a query string', () => {
+    expect(classifyEndpoint('/v1/models?order=price')).toBe('other');
+  });
 });
 
 describe('INJECT_PATHS', () => {
