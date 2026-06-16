@@ -64,6 +64,7 @@ const modelOverrideSchema = z
     cacheControl: triStateSchema.optional(),
     cacheControlTtl: ttlSchema.optional(),
     sessionId: triStateSchema.optional(),
+    normalizeVolatileSystem: z.boolean().optional(),
   })
   .strict();
 
@@ -87,6 +88,7 @@ export const proxyConfigSchema = z
     cacheControl: triStateSchema.default('auto'),
     cacheControlTtl: ttlSchema.optional(),
     sessionId: triStateSchema.default('auto'),
+    normalizeVolatileSystem: z.boolean().default(false),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
   })
   .strict();
