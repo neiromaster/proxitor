@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULTS, type ProxyConfig } from './config.js';
-import { summarizeChanges } from './config-source.js';
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULTS, type LoadConfigOptions, type ProxyConfig } from './config.js';
+import { createConfigSource, summarizeChanges } from './config-source.js';
+import { logger } from './logger.js';
 
 const base = (): ProxyConfig => ({ ...DEFAULTS });
 
@@ -76,5 +77,77 @@ describe('summarizeChanges', () => {
     expect(summarizeChanges(prev, next)).toBe(
       'cacheControl: auto→always, normalizeVolatileSystem: off→on',
     );
+  });
+});
+
+describe('FileWatchingConfigSource.reload', () => {
+  const initial: ProxyConfig = { ...DEFAULTS };
+  const loadOptions: LoadConfigOptions = { noConfig: true };
+
+  it('applies a successfully loaded config', async () => {
+    const load = vi.fn(async () => ({ ...initial, cacheControl: 'always' as const }));
+    const source = createConfigSource({ loadOptions, initial, load });
+
+    const result = await source.reload();
+
+    expect(result).toEqual({ ok: true });
+    expect(source.get().cacheControl).toBe('always');
+  });
+
+  it('keeps the previous config and reports the error on failure', async () => {
+    const load = vi.fn().mockRejectedValue(new Error('cacheControl: bad value'));
+    const source = createConfigSource({ loadOptions, initial, load });
+    const before = source.get();
+
+    const result = await source.reload();
+
+    expect(result).toEqual({ ok: false, error: 'cacheControl: bad value' });
+    expect(source.get()).toBe(before);
+  });
+
+  it('never rejects even when the loader throws a non-Error', async () => {
+    const load = vi.fn(async () => {
+      // biome-ignore lint/style/useThrowOnlyError: intentionally non-Error to test the catch branch
+      throw 'string error';
+    });
+    const source = createConfigSource({ loadOptions, initial, load });
+
+    await expect(source.reload()).resolves.toEqual({ ok: false, error: 'string error' });
+  });
+
+  it('re-reads after a change that lands during an in-flight reload (pending latch)', async () => {
+    let resolveFirst: (cfg: ProxyConfig) => void = () => undefined;
+    const first = new Promise<ProxyConfig>(resolve => {
+      resolveFirst = resolve;
+    });
+    const load = vi
+      .fn<(opts: LoadConfigOptions) => Promise<ProxyConfig>>()
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce({ ...initial, cacheControl: 'always' as const });
+    const source = createConfigSource({ loadOptions, initial, load });
+
+    const p1 = source.reload(); // in-flight
+    void source.reload(); // arrives mid-flight → sets pending
+    expect(load).toHaveBeenCalledTimes(1);
+
+    resolveFirst({ ...initial, cacheControl: 'skip' as const });
+    await p1;
+
+    // pending triggers a second load after the first resolves
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(source.get().cacheControl).toBe('always'));
+  });
+
+  it('warns when host/port differ from the bound socket', async () => {
+    const load = vi.fn(async () => ({ ...initial, port: initial.port + 1 }));
+    const source = createConfigSource({ loadOptions, initial, load });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    await source.reload();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('host/port changed — restart'),
+    );
+    warn.mockRestore();
   });
 });
