@@ -432,6 +432,30 @@ describe('resolveModelConfig', () => {
     const resolved = resolveModelConfig(config, 'llama-3');
     expect(resolved.provider).toEqual({ only: 'deepinfra' });
   });
+
+  it('should override normalizeVolatileSystem from model override', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      normalizeVolatileSystem: false,
+      modelOverrides: {
+        'qwen-*': { normalizeVolatileSystem: true },
+      },
+    };
+    const resolved = resolveModelConfig(config, 'qwen-plus');
+    expect(resolved.normalizeVolatileSystem).toBe(true);
+  });
+
+  it('should inherit global normalizeVolatileSystem when override omits it', () => {
+    const config: ProxyConfig = {
+      ...baseConfig,
+      normalizeVolatileSystem: true,
+      modelOverrides: {
+        'qwen-*': { provider: { only: 'deepinfra' } },
+      },
+    };
+    const resolved = resolveModelConfig(config, 'qwen-plus');
+    expect(resolved.normalizeVolatileSystem).toBe(true);
+  });
 });
 
 // --- Schema validation tests ---

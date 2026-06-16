@@ -84,6 +84,10 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 #         - "azure"
 #     headers:
 #       X-Model-Family: "gpt"
+#   # Any field can also override its global counterpart per-model — e.g.
+#   # normalizeVolatileSystem, cacheControl, cacheControlTtl, sessionId.
+#   "qwen-*":
+#     normalizeVolatileSystem: true
 
 # Request body size limit
 # bodyLimit: "50mb"
