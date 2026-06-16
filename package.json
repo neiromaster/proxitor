@@ -28,7 +28,7 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "check": "npm run typecheck:all && npm run check:biome && npm run test",
+    "check": "pnpm run typecheck:all && pnpm run check:biome && pnpm run test",
     "check:biome": "biome check ./src",
     "dev": "tsdown --watch",
     "format": "biome format --write ./src",
@@ -36,7 +36,7 @@
     "lint": "biome lint ./src",
     "lint:fix": "biome lint --fix ./src",
     "prepare": "lefthook install",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "pnpm run build",
     "release": "changeset publish",
     "start": "node dist/cli.mjs",
     "start:dev": "pnpm run build && pnpm run start",
@@ -57,14 +57,12 @@
     "consola": "^3.4.2",
     "dotenv": "^17.4.2",
     "hono": "^4.12.23",
-    "js-yaml": "^4.2.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
+    "@biomejs/biome": "^2.5.0",
     "@changesets/cli": "^2.31.0",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.8",
     "lefthook": "^2.1.9",
