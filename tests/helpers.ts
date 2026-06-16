@@ -65,6 +65,7 @@ export async function createTestEnv(
     authType: 'bearer',
     cacheControl: 'auto',
     sessionId: 'auto',
+    normalizeVolatileSystem: false,
     verbose: false,
     bodyLimit: '50mb',
     attributionReferer: 'https://github.com/neiromaster/proxitor',

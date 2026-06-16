@@ -1,4 +1,5 @@
 import { logger, withReq } from '../logger.js';
+import { dumpEnabled, dumpResponse } from './body-dump.js';
 import { buildResponseHeaders } from './headers.js';
 
 /** @internal */
@@ -160,8 +161,16 @@ function formatCacheUsage(usage: CacheUsage, reqId: string): void {
 function createLoggingStream(
   contentType: string,
   reqId: string,
+  status: number,
 ): TransformStream<Uint8Array, Uint8Array> {
-  const chunks: Uint8Array[] = [];
+  const isDumpEnabled = dumpEnabled();
+  const isSSE = contentType.toLowerCase().includes('text/event-stream');
+  // Buffer the full body for dumps and non-SSE (single JSON) responses. For SSE
+  // without dumping, keep only a 4KB rolling tail (O(1) memory) — the final
+  // usage payload always sits in the last event.
+  const bufferAll = isDumpEnabled || !isSSE;
+  const chunks: Uint8Array[] | null = bufferAll ? [] : null;
+  let tailText = '';
 
   return new TransformStream({
     transform(
@@ -169,24 +178,26 @@ function createLoggingStream(
       controller: TransformStreamDefaultController<Uint8Array>,
     ) {
       controller.enqueue(chunk);
-      chunks.push(chunk);
+      if (chunks) {
+        chunks.push(chunk);
+      } else {
+        const decoder = new TextDecoder();
+        tailText += decoder.decode(chunk, { stream: true });
+        if (tailText.length > 4096) tailText = tailText.slice(-4096);
+      }
     },
     flush() {
       try {
         const decoder = new TextDecoder();
-        const fullText = chunks.reduce(
-          (acc, chunk) => acc + decoder.decode(chunk, { stream: true }),
-          '',
-        );
-        const remaining = decoder.decode();
-        const text = fullText + remaining;
+        const text = chunks
+          ? `${chunks.reduce((acc, chunk) => acc + decoder.decode(chunk, { stream: true }), '')}${decoder.decode()}`
+          : // Leading newline guards a truncated first line; broken lines are
+            // safely skipped by extractCacheUsageFromSSE.
+            `\n${tailText}${decoder.decode()}`;
 
-        const isSSE = contentType.toLowerCase().includes('text/event-stream');
         const usage = isSSE ? extractCacheUsageFromSSE(text) : extractCacheUsage(text);
-
-        if (usage) {
-          formatCacheUsage(usage, reqId);
-        }
+        if (usage) formatCacheUsage(usage, reqId);
+        if (isDumpEnabled) dumpResponse(reqId, status, usage);
       } catch (err) {
         logger.debug(
           withReq(
@@ -216,7 +227,7 @@ export function buildUpstreamResponseWithLogging(
     lower.includes('application/json') || lower.includes('text/event-stream');
 
   const body = shouldLog
-    ? upstream.body.pipeThrough(createLoggingStream(contentType, reqId))
+    ? upstream.body.pipeThrough(createLoggingStream(contentType, reqId, upstream.status))
     : upstream.body;
 
   return new Response(body, { status: upstream.status, headers });

@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import { logger, withReq } from '../../logger.js';
+import { dumpEnabled, dumpRequest } from '../body-dump.js';
 import { buildUpstreamResponseWithLogging } from '../cache-logging.js';
 import type { ProxyEnv } from '../context.js';
 import { buildResponseHeaders } from '../headers.js';
@@ -88,6 +89,10 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
       `${method} ${path} → ${upstreamShort}${ctx.bodyMutated ? ' [inject]' : ''}${modelLog}`,
     ),
   );
+
+  if (dumpEnabled()) {
+    dumpRequest({ reqId, method, path, model: c.var.modelName, forwardBody });
+  }
 
   let upstream: Response;
   try {

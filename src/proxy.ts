@@ -8,6 +8,7 @@ import { forwardRequest } from './proxy/middleware/forward-request.js';
 import { injectCacheControl } from './proxy/middleware/inject-cache-control.js';
 import { injectProvider } from './proxy/middleware/inject-provider.js';
 import { injectSessionId } from './proxy/middleware/inject-session-id.js';
+import { normalizeVolatileSystemMiddleware } from './proxy/middleware/normalize-volatile-system.js';
 import { parseBody } from './proxy/middleware/parse-body.js';
 import { readBody } from './proxy/middleware/read-body.js';
 import { resolveConfig } from './proxy/middleware/resolve-config.js';
@@ -19,6 +20,7 @@ const injectChain = [
   resolveConfig,
   injectProvider,
   injectCacheControl,
+  normalizeVolatileSystemMiddleware,
   injectSessionId,
 ] as const;
 

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import * as yaml from 'js-yaml';
+import { parse as parseYaml } from 'yaml';
 import {
   ConfigParseError,
   ConfigValidationError,
@@ -36,6 +36,7 @@ export type ResolvedModelConfig = {
   cacheControl: TriState;
   cacheControlTtl?: '5m' | '1h' | 'omit' | 'skip';
   sessionId: TriState;
+  normalizeVolatileSystem: boolean;
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
@@ -107,6 +108,7 @@ export function resolveModelConfig(
     cacheControl: config.cacheControl,
     cacheControlTtl: config.cacheControlTtl,
     sessionId: config.sessionId,
+    normalizeVolatileSystem: config.normalizeVolatileSystem,
   };
 
   if (!modelName || !config.modelOverrides) return result;
@@ -141,6 +143,9 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
     result.cacheControlTtl = override.cacheControlTtl;
   }
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
+  if (override.normalizeVolatileSystem !== undefined) {
+    result.normalizeVolatileSystem = override.normalizeVolatileSystem;
+  }
 }
 
 /** Reject base URLs ending in /v1 — paths are forwarded as-is, so /v1 suffix causes doubled paths. */
@@ -255,7 +260,7 @@ export function readConfigFile(filePath: string): Partial<ProxyConfig> {
   let raw: unknown;
 
   try {
-    raw = filePath.endsWith('.json') ? JSON.parse(content) : yaml.load(content);
+    raw = filePath.endsWith('.json') ? JSON.parse(content) : parseYaml(content);
   } catch (err) {
     // biome-ignore lint/style/useErrorCause: cause is propagated inside ConfigParseError
     throw new ConfigParseError(filePath, err instanceof Error ? err : undefined);

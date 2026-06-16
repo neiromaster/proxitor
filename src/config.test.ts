@@ -324,6 +324,7 @@ describe('resolveModelConfig', () => {
     attributionTitle: 'proxitor',
     cacheControl: 'auto',
     sessionId: 'auto',
+    normalizeVolatileSystem: false,
     provider: { only: 'deepinfra' },
     headers: { 'X-Global': 'global-value' },
   };
@@ -622,6 +623,7 @@ describe('cacheControl and sessionId config', () => {
     attributionTitle: 'proxitor',
     cacheControl: 'auto',
     sessionId: 'auto',
+    normalizeVolatileSystem: false,
   };
 
   it('accepts cacheControl: auto', () => {

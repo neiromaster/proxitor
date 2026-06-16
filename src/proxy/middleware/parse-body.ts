@@ -6,8 +6,9 @@ const decoder = new TextDecoder();
 
 export const parseBody = createMiddleware<ProxyEnv>(async (c, next) => {
   const rawBody = c.var.rawBody;
+  const contentType = c.req.header('content-type') || '';
 
-  if (!rawBody || rawBody.byteLength === 0) {
+  if (!rawBody || rawBody.byteLength === 0 || !contentType.includes('application/json')) {
     c.set('parsedBody', undefined);
     c.set('modelName', undefined);
     await next();
