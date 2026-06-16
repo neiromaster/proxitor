@@ -24,6 +24,7 @@ import { runWizard } from './commands/config/wizard.js';
 import { runConfigMenu } from './commands/config.js';
 import { doctorCommand } from './commands/doctor.js';
 import { DEFAULTS, loadConfig } from './config.js';
+import { staticConfigSource } from './config-source.js';
 import { logger } from './logger.js';
 import { OpenRouterDataClient } from './openrouter/data-client.js';
 import { startProxyServer } from './proxy.js';
@@ -137,7 +138,7 @@ export const startCommand = command({
         openrouterKey,
         verbose,
       });
-      startProxyServer(cfg, () => {
+      startProxyServer(staticConfigSource(cfg), () => {
         logger.ready(`Proxitor proxy listening on ${cfg.host}:${cfg.port}`);
         logger.info('Routing requests to OpenRouter');
       });
