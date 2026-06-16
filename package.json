@@ -1,6 +1,6 @@
 {
   "name": "proxitor",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Lightweight proxy for routing CLI requests (claude-code, codex) to OpenRouter",
   "keywords": [
     "proxy",
