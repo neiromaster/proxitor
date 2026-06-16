@@ -63,7 +63,7 @@ function parseForwardBody(body: ArrayBuffer | undefined): unknown {
   }
 }
 
-/** Write the forwarded request body; `response` is filled when the stream completes. */
+/** `response` is filled later by dumpResponse, once the upstream stream completes. */
 export function dumpRequest(meta: DumpRequestMeta): void {
   if (!dumpEnabled()) return;
   ensureDir(dumpDir());
@@ -79,7 +79,6 @@ export function dumpRequest(meta: DumpRequestMeta): void {
   writeFileSync(filePath(meta.reqId, meta.model), `${JSON.stringify(record, null, 2)}\n`);
 }
 
-/** Patch the request dump with the upstream response status and cache usage. */
 export function dumpResponse(
   reqId: string,
   status: number,

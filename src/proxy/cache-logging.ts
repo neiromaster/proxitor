@@ -165,10 +165,11 @@ function createLoggingStream(
 ): TransformStream<Uint8Array, Uint8Array> {
   const isDumpEnabled = dumpEnabled();
   const isSSE = contentType.toLowerCase().includes('text/event-stream');
-  // Buffer everything if dumping is enabled, or if it's a non-SSE (single JSON) response.
-  // For SSE without dumping, we only keep a rolling tail to achieve O(1) memory usage.
-  const chunks: Uint8Array[] =
-    isDumpEnabled || !isSSE ? [] : ([] as unknown as Uint8Array[]);
+  // Buffer the full body for dumps and non-SSE (single JSON) responses. For SSE
+  // without dumping, keep only a 4KB rolling tail (O(1) memory) — the final
+  // usage payload always sits in the last event.
+  const bufferAll = isDumpEnabled || !isSSE;
+  const chunks: Uint8Array[] | null = bufferAll ? [] : null;
   let tailText = '';
 
   return new TransformStream({
@@ -177,43 +178,26 @@ function createLoggingStream(
       controller: TransformStreamDefaultController<Uint8Array>,
     ) {
       controller.enqueue(chunk);
-      if (isDumpEnabled || !isSSE) {
+      if (chunks) {
         chunks.push(chunk);
       } else {
         const decoder = new TextDecoder();
         tailText += decoder.decode(chunk, { stream: true });
-        // Keep only the last 4KB to stay O(1) memory.
-        // This is more than enough to capture the final 'usage' payload in SSE streams.
-        if (tailText.length > 4096) {
-          tailText = tailText.slice(-4096);
-        }
+        if (tailText.length > 4096) tailText = tailText.slice(-4096);
       }
     },
     flush() {
       try {
-        let text = '';
-        if (isDumpEnabled || !isSSE) {
-          const decoder = new TextDecoder();
-          text = chunks.reduce(
-            (acc, chunk) => acc + decoder.decode(chunk, { stream: true }),
-            '',
-          );
-          text += decoder.decode();
-        } else {
-          const decoder = new TextDecoder();
-          // Prepend newline to ensure the first (potentially truncated) line doesn't break JSON parsing
-          // The try/catch in extractCacheUsageFromSSE safely ignores broken leading lines.
-          text = '\n' + tailText + decoder.decode();
-        }
+        const decoder = new TextDecoder();
+        const text = chunks
+          ? `${chunks.reduce((acc, chunk) => acc + decoder.decode(chunk, { stream: true }), '')}${decoder.decode()}`
+          : // Leading newline guards a truncated first line; broken lines are
+            // safely skipped by extractCacheUsageFromSSE.
+            `\n${tailText}${decoder.decode()}`;
 
         const usage = isSSE ? extractCacheUsageFromSSE(text) : extractCacheUsage(text);
-
-        if (usage) {
-          formatCacheUsage(usage, reqId);
-        }
-        if (isDumpEnabled) {
-          dumpResponse(reqId, status, usage);
-        }
+        if (usage) formatCacheUsage(usage, reqId);
+        if (isDumpEnabled) dumpResponse(reqId, status, usage);
       } catch (err) {
         logger.debug(
           withReq(

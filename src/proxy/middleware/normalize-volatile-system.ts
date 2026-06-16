@@ -5,11 +5,23 @@ import type { ParsedRequestBody, ProxyEnv } from '../context.js';
 const CCH_PATTERN = /cch=[0-9a-f]+/g;
 const CCH_REPLACEMENT = 'cch=00000';
 
+type TextBlock = Record<string, unknown> & { text?: unknown };
+
 function normalizeText(text: string): string {
   return text.replace(CCH_PATTERN, CCH_REPLACEMENT);
 }
 
-/** Returns the normalized system plus whether any bytes changed. */
+function textOf(block: unknown): string | undefined {
+  if (
+    block !== null &&
+    typeof block === 'object' &&
+    typeof (block as TextBlock).text === 'string'
+  ) {
+    return (block as TextBlock).text as string;
+  }
+  return undefined;
+}
+
 export function normalizeVolatileSystemBlocks(system: unknown): {
   changed: boolean;
   value: unknown;
@@ -19,51 +31,29 @@ export function normalizeVolatileSystemBlocks(system: unknown): {
     return { changed: value !== system, value };
   }
 
-  if (Array.isArray(system)) {
-    let changed = false;
-    let firstChangedIdx = -1;
-
-    // Phase 1: Find the first change without allocating a new array
-    for (let i = 0; i < system.length; i++) {
-      const block = system[i];
-      if (
-        block !== null &&
-        typeof block === 'object' &&
-        typeof (block as Record<string, unknown>).text === 'string'
-      ) {
-        const original = (block as Record<string, unknown>).text as string;
-        const normalized = normalizeText(original);
-        if (normalized !== original) {
-          changed = true;
-          firstChangedIdx = i;
-          break;
-        }
-      }
-    }
-
-    // Phase 2: If nothing changed, return the original reference (strict equality preserved)
-    if (!changed) {
-      return { changed: false, value: system };
-    }
-
-    // Phase 3: Only allocate a new array if a change was actually detected
-    const value = [...system];
-    for (let i = firstChangedIdx; i < value.length; i++) {
-      const block = value[i];
-      if (
-        block !== null &&
-        typeof block === 'object' &&
-        typeof (block as Record<string, unknown>).text === 'string'
-      ) {
-        (value[i] as Record<string, unknown>).text = normalizeText(
-          (block as Record<string, unknown>).text as string,
-        );
-      }
-    }
-    return { changed: true, value };
+  if (!Array.isArray(system)) {
+    return { changed: false, value: system };
   }
 
-  return { changed: false, value: system };
+  // Lazy: find the first changed block without allocating a new array.
+  const firstChanged = findFirstChangedTextBlock(system);
+  if (firstChanged === -1) return { changed: false, value: system };
+
+  // Copy once, then normalize every text block from the first change onward.
+  const value = [...system];
+  for (let i = firstChanged; i < value.length; i++) {
+    const text = textOf(value[i]);
+    if (text !== undefined) (value[i] as TextBlock).text = normalizeText(text);
+  }
+  return { changed: true, value };
+}
+
+function findFirstChangedTextBlock(system: unknown[]): number {
+  for (let i = 0; i < system.length; i++) {
+    const text = textOf(system[i]);
+    if (text !== undefined && normalizeText(text) !== text) return i;
+  }
+  return -1;
 }
 
 export const normalizeVolatileSystemMiddleware = createMiddleware<ProxyEnv>(
