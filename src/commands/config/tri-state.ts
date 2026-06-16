@@ -1,6 +1,7 @@
 import type { TriState } from '../../config-schema.js';
 import {
   askCacheControlTtl,
+  askNormalizeVolatileSystem,
   askTriState,
   CACHE_HINTS,
   SESSION_HINTS,
@@ -67,4 +68,17 @@ export async function collectCacheTriState(
     return { cacheControl, cacheControlTtl: { remove: true } };
   }
   return { cacheControl, cacheControlTtl: { value: ttl } };
+}
+
+export async function collectNormalizeVolatileSystem(
+  currentNvs?: boolean,
+): Promise<{ normalizeVolatileSystem: ResolvedField<boolean> } | null> {
+  const nvs = await askNormalizeVolatileSystem(
+    'Normalize volatile system (cch hash)',
+    currentNvs,
+    { removable: true },
+  );
+  if (typeof nvs === 'symbol') return null; // cancelled
+  if (nvs === 'reset') return { normalizeVolatileSystem: { remove: true } };
+  return { normalizeVolatileSystem: { value: nvs } };
 }

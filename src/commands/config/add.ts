@@ -12,7 +12,11 @@ import {
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
-import { collectCacheTriState, collectSessionTriState } from './tri-state.js';
+import {
+  collectCacheTriState,
+  collectNormalizeVolatileSystem,
+  collectSessionTriState,
+} from './tri-state.js';
 
 const CUSTOM_PATTERN_VALUE = '__proxitor_custom_pattern__';
 
@@ -178,15 +182,29 @@ export async function configureProviderAndSave(
   if (!providerResult) return;
   override = providerResult as ModelOverride;
 
-  override = await collectSessionAndCache(override);
+  override = await collectOptionalOverrides(override);
 
   if (!(await confirmAndSave(configPath, modelKey, override, client))) return;
   clack.outro('✓ Model override saved');
 }
 
-async function collectSessionAndCache(override: ModelOverride): Promise<ModelOverride> {
+async function collectOptionalOverrides(override: ModelOverride): Promise<ModelOverride> {
   override = await collectSession(override);
   override = await collectCache(override);
+  override = await collectNormalize(override);
+  return override;
+}
+
+async function collectNormalize(override: ModelOverride): Promise<ModelOverride> {
+  const want = await clack.confirm({
+    message: 'Configure normalizeVolatileSystem for this model?',
+    initialValue: false,
+  });
+  if (isCancel(want) || !want) return override;
+
+  const result = await collectNormalizeVolatileSystem(override.normalizeVolatileSystem);
+  if (result && !('remove' in result.normalizeVolatileSystem))
+    override.normalizeVolatileSystem = result.normalizeVolatileSystem.value;
   return override;
 }
 
@@ -284,5 +302,7 @@ function formatOverrideYaml(override: Record<string, unknown>): string {
   if (override.cacheControl) parts.push(`cacheControl: ${override.cacheControl}`);
   if (override.cacheControlTtl)
     parts.push(`cacheControlTtl: ${override.cacheControlTtl}`);
+  if (override.normalizeVolatileSystem !== undefined)
+    parts.push(`normalizeVolatileSystem: ${override.normalizeVolatileSystem}`);
   return parts.join('\n    ') || '(empty)';
 }

@@ -21,6 +21,10 @@ const { mockAskTriState, mockAskCacheControlTtl } = vi.hoisted(() => ({
   mockAskCacheControlTtl: vi.fn(),
 }));
 
+const { mockAskNvs } = vi.hoisted(() => ({
+  mockAskNvs: vi.fn(),
+}));
+
 const { mockSelectRoutingMode } = vi.hoisted(() => ({
   mockSelectRoutingMode: vi.fn(),
 }));
@@ -40,6 +44,7 @@ vi.mock('../../src/commands/config/prompts.js', async importOriginal => {
     ...actual,
     askTriState: mockAskTriState,
     askCacheControlTtl: mockAskCacheControlTtl,
+    askNormalizeVolatileSystem: mockAskNvs,
   };
 });
 
@@ -77,7 +82,9 @@ vi.mock('../../src/openrouter/models.js', () => ({
 }));
 
 // Import AFTER mocks are set up
-const { editCacheControl } = await import('../../src/commands/config/edit.js');
+const { editCacheControl, editNormalizeVolatileSystem } = await import(
+  '../../src/commands/config/edit.js'
+);
 const { cacheControlCommand } = await import(
   '../../src/commands/config/cache-control.js'
 );
@@ -217,6 +224,44 @@ describe('Bug #1a: TTL loss on cancel in editCacheControl', () => {
     mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel')); // ← cancel on tri-state
 
     const result = await editCacheControl(current);
+
+    expect(result).toEqual(current);
+  });
+});
+
+// ===========================================================================
+// per-model normalizeVolatileSystem editing
+// ===========================================================================
+
+describe('editNormalizeVolatileSystem (per-model)', () => {
+  it('sets normalizeVolatileSystem when user picks On', async () => {
+    const current: ModelOverride = { provider: { only: 'deepinfra' } };
+
+    mockAskNvs.mockResolvedValueOnce(true);
+
+    const result = await editNormalizeVolatileSystem(current);
+
+    expect(result.normalizeVolatileSystem).toBe(true);
+    expect(result.provider).toEqual({ only: 'deepinfra' });
+  });
+
+  it('removes normalizeVolatileSystem when user picks reset', async () => {
+    const current: ModelOverride = { normalizeVolatileSystem: true };
+
+    mockAskNvs.mockResolvedValueOnce('reset');
+
+    const result = await editNormalizeVolatileSystem(current);
+
+    expect(result.normalizeVolatileSystem).toBeUndefined();
+    expect('normalizeVolatileSystem' in result).toBe(false);
+  });
+
+  it('returns current unchanged when cancelled', async () => {
+    const current: ModelOverride = { normalizeVolatileSystem: true };
+
+    mockAskNvs.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    const result = await editNormalizeVolatileSystem(current);
 
     expect(result).toEqual(current);
   });

@@ -1,6 +1,7 @@
 import * as clack from '@clack/prompts';
 import { DEFAULTS, readConfigFile } from '../../config.js';
 import { requireConfigPath, setGlobalConfigFields } from './config.js';
+import { askNormalizeVolatileSystem } from './prompts.js';
 
 export async function normalizeVolatileSystemCommand(opts?: {
   configPath?: string;
@@ -11,20 +12,14 @@ export async function normalizeVolatileSystemCommand(opts?: {
 
   clack.log.info(`Current: normalizeVolatileSystem = ${current}`);
 
-  const choice = await clack.select<boolean | 'reset'>({
-    message:
-      "Normalize Claude Code's volatile cch hash in the system prompt? Stabilizes the prefix cache for non-Anthropic providers (qwen/glm/etc.).",
-    options: [
-      { value: true, label: 'On', hint: 'rewrite cch → stable prefix' },
-      { value: false, label: 'Off', hint: 'passthrough' },
-      {
-        value: 'reset',
-        label: 'Reset',
-        hint: `remove (default: ${DEFAULTS.normalizeVolatileSystem})`,
-      },
-    ],
-    initialValue: current,
-  });
+  const choice = await askNormalizeVolatileSystem(
+    "Normalize Claude Code's volatile cch hash in the system prompt? Stabilizes the prefix cache for non-Anthropic providers (qwen/glm/etc.).",
+    current,
+    {
+      removable: true,
+      resetHint: `remove (default: ${DEFAULTS.normalizeVolatileSystem})`,
+    },
+  );
   if (typeof choice === 'symbol') return; // cancelled
 
   const fields: Record<string, unknown> = {};

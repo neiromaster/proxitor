@@ -134,6 +134,35 @@ export const CACHE_HINTS: Record<TriState, string> = {
   skip: 'Passthrough — leave client cache_control headers as-is',
 };
 
+export const NORMALIZE_HINTS = {
+  on: 'Rewrite cch → stable prefix cache',
+  off: 'Passthrough — rewrite nothing',
+} as const;
+
+export async function askNormalizeVolatileSystem(
+  message: string,
+  current: boolean | undefined,
+  opts?: { removable?: boolean; resetHint?: string },
+): Promise<boolean | 'reset' | symbol> {
+  const options: { value: boolean | 'reset'; label: string; hint: string }[] = [
+    { value: true, label: 'On', hint: NORMALIZE_HINTS.on },
+    { value: false, label: 'Off', hint: NORMALIZE_HINTS.off },
+  ];
+  if (opts?.removable) {
+    options.push({
+      value: 'reset',
+      label: 'Reset / inherit',
+      hint: opts.resetHint ?? 'Remove override',
+    });
+  }
+  const result = await clack.select({
+    message,
+    initialValue: current ?? false,
+    options,
+  });
+  return result as boolean | 'reset' | symbol; // symbol = clack cancel
+}
+
 export async function askTriState(
   message: string,
   current: TriState | undefined,
