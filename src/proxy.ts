@@ -1,6 +1,7 @@
 import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
-import { buildProviderRouting, type ProxyConfig } from './config.js';
+import { buildProviderRouting } from './config.js';
+import type { ConfigSource } from './config-source.js';
 import { logger, withReq } from './logger.js';
 import type { ProxyEnv } from './proxy/context.js';
 import { buildUpstreamReq } from './proxy/middleware/build-upstream-req.js';
@@ -24,25 +25,28 @@ const injectChain = [
   injectSessionId,
 ] as const;
 
-export function createProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
+export function createProxyServer(
+  source: ConfigSource,
+  onReady?: () => void,
+): ServerType {
   const app = new Hono<ProxyEnv>();
 
-  const globalRouting = buildProviderRouting(config.provider);
-  const modelOverrideKeys = Object.keys(config.modelOverrides ?? []);
-
   app.use('*', async (c, next) => {
-    c.set('config', config);
+    c.set('config', source.get());
     await next();
   });
 
-  app.get('/health', c =>
-    c.json({
+  app.get('/health', c => {
+    const config = source.get();
+    const globalRouting = buildProviderRouting(config.provider);
+    const modelOverrideKeys = Object.keys(config.modelOverrides ?? []);
+    return c.json({
       ok: true,
       upstream: config.openrouterBaseUrl,
       provider: globalRouting ?? 'not configured',
       modelOverrides: modelOverrideKeys,
-    }),
-  );
+    });
+  });
 
   for (const path of INJECT_PATHS) {
     app.post(
@@ -66,11 +70,12 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
     );
   });
 
+  const initial = source.get();
   return serve(
     {
       fetch: app.fetch,
-      port: config.port,
-      hostname: config.host,
+      port: initial.port,
+      hostname: initial.host,
     },
     onReady,
   );
@@ -78,8 +83,8 @@ export function createProxyServer(config: ProxyConfig, onReady?: () => void): Se
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-export function startProxyServer(config: ProxyConfig, onReady?: () => void): ServerType {
-  const server = createProxyServer(config, onReady);
+export function startProxyServer(source: ConfigSource, onReady?: () => void): ServerType {
+  const server = createProxyServer(source, onReady);
 
   let shuttingDown = false;
 
@@ -89,6 +94,7 @@ export function startProxyServer(config: ProxyConfig, onReady?: () => void): Ser
 
     logger.info(`${signal} received — draining active connections…`);
 
+    source.stop();
     const timer = setTimeout(() => {
       logger.warn('Forcing shutdown — drain timeout exceeded');
       process.exit(1);

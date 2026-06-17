@@ -24,6 +24,7 @@ import { runWizard } from './commands/config/wizard.js';
 import { runConfigMenu } from './commands/config.js';
 import { doctorCommand } from './commands/doctor.js';
 import { DEFAULTS, loadConfig } from './config.js';
+import { createConfigSource } from './config-source.js';
 import { logger } from './logger.js';
 import { OpenRouterDataClient } from './openrouter/data-client.js';
 import { startProxyServer } from './proxy.js';
@@ -129,17 +130,16 @@ export const startCommand = command({
   },
   handler: async ({ configPath, port, host, noConfig, openrouterKey, verbose }) => {
     try {
-      const cfg = await loadConfig({
-        configPath,
-        noConfig,
-        port,
-        host,
-        openrouterKey,
-        verbose,
-      });
-      startProxyServer(cfg, () => {
+      const loadOptions = { configPath, noConfig, port, host, openrouterKey, verbose };
+      const cfg = await loadConfig(loadOptions);
+      const source = createConfigSource({ loadOptions, initial: cfg });
+      source.start();
+      startProxyServer(source, () => {
         logger.ready(`Proxitor proxy listening on ${cfg.host}:${cfg.port}`);
         logger.info('Routing requests to OpenRouter');
+        if (source.resolvedPath) {
+          logger.info(`Watching ${source.resolvedPath} for changes (live reload)`);
+        }
       });
     } catch (error) {
       logger.error('Failed to start proxy:', error);

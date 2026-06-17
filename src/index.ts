@@ -17,6 +17,8 @@ export {
   loadConfig,
   resolveModelConfig,
 } from './config.js';
+export type { ConfigSource } from './config-source.js';
+export { createConfigSource, staticConfigSource } from './config-source.js';
 export { isAnthropicModel } from './proxy/utils/model.js';
 export { createProxyServer } from './proxy.js';
 export { toArray } from './utils.js';

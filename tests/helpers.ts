@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
-import { createProxyServer, type ProxyConfig } from '../src/index.js';
+import { createProxyServer, type ProxyConfig, staticConfigSource } from '../src/index.js';
 
 /** Get a random available port (used by cli.test.ts for CLI flag tests). */
 export function getFreePort(): Promise<number> {
@@ -77,7 +77,7 @@ export async function createTestEnv(
     server: ServerType;
     port: number;
   }>(resolve => {
-    const server = createProxyServer(config, () => {
+    const server = createProxyServer(staticConfigSource(config), () => {
       const addr = server.address() as AddressInfo;
       resolve({ server, port: addr.port });
     });

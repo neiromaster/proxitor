@@ -159,7 +159,7 @@ function throwIfV1Suffix(url: string, field: string): void {
   }
 }
 
-type LoadConfigOptions = {
+export type LoadConfigOptions = {
   configPath?: string;
   noConfig?: boolean;
   host?: string;
