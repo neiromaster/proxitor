@@ -1,10 +1,10 @@
-import { mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   type ConfigSource,
   createConfigSource,
@@ -12,11 +12,6 @@ import {
   loadConfig,
   type ProxyConfig,
 } from '../../src/index.js';
-
-function touchFuture(path: string, addSeconds: number): void {
-  const when = Date.now() / 1000 + addSeconds;
-  utimesSync(path, when, when);
-}
 
 describe('config hot-reload (integration)', () => {
   let upstream: ServerType | undefined;
@@ -29,7 +24,7 @@ describe('config hot-reload (integration)', () => {
     if (upstream) await new Promise<void>(r => upstream!.close(() => r()));
   });
 
-  it('applies a config edit to subsequent requests without restart', async () => {
+  it('applies a reloaded config to subsequent requests without restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'proxitor-hotreload-'));
 
     // upstream records the forwarded body
@@ -70,14 +65,9 @@ describe('config hot-reload (integration)', () => {
     writeConfig('skip');
 
     const fileConfig = await loadConfig({ configPath });
-    // port:0 binds a free port; reloads come from the file.
+    // port:0 binds a free port; reloads re-read the file.
     const initial: ProxyConfig = { ...fileConfig, host: '127.0.0.1', port: 0 };
-    source = createConfigSource({
-      loadOptions: { configPath },
-      initial,
-      pollIntervalMs: 50,
-    });
-    source.start();
+    source = createConfigSource({ loadOptions: { configPath }, initial });
 
     proxy = await new Promise<ServerType>(resolve => {
       const server = createProxyServer(source!, () => resolve(server));
@@ -100,13 +90,9 @@ describe('config hot-reload (integration)', () => {
     });
     expect(JSON.stringify(lastBody)).not.toContain('cache_control');
 
-    // flip cacheControl → always
+    // flip cacheControl → always, then reload (watch→reload wiring is unit-tested separately)
     writeConfig('always');
-    touchFuture(configPath, 2);
-    await vi.waitFor(() => expect(source!.get().cacheControl).toBe('always'), {
-      timeout: 2000,
-      interval: 30,
-    });
+    await source.reload();
 
     // request 2: cache_control present
     lastBody = undefined;

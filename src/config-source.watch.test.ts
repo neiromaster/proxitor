@@ -1,91 +1,96 @@
-import { mkdtempSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, type Stats, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { loadConfig, type ProxyConfig } from './config.js';
+import { DEFAULTS, type ProxyConfig } from './config.js';
 import { createConfigSource } from './config-source.js';
 import { logger } from './logger.js';
 
-// Force an mtime bump — watchFile polling can miss same-tick edits on coarse-mtime filesystems.
-function touchFuture(path: string, addSeconds: number): void {
-  const when = Date.now() / 1000 + addSeconds;
-  utimesSync(path, when, when);
+const initial: ProxyConfig = { ...DEFAULTS };
+
+const stat = (mtimeMs: number, nlink = 1): Stats =>
+  ({ mtimeMs, nlink }) as unknown as Stats;
+
+// tryFindConfigFile needs an existing path so start() proceeds to watch;
+// load is injected, so the file's contents don't matter.
+function tempConfigPath(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'config-source-watch-'));
+  const path = join(dir, 'config.yaml');
+  writeFileSync(path, 'openrouterKey: test-key\n');
+  return path;
+}
+
+function fakeWatcher() {
+  let onChange: ((curr: Stats, prev: Stats) => void) | undefined;
+  const stop = vi.fn();
+  const watch = vi.fn(
+    (
+      _filename: string,
+      _pollIntervalMs: number,
+      cb: (curr: Stats, prev: Stats) => void,
+    ) => {
+      onChange = cb;
+      return stop;
+    },
+  );
+  return {
+    watch,
+    stop,
+    fire: (curr: Stats, prev: Stats) => onChange?.(curr, prev),
+  };
 }
 
 describe('FileWatchingConfigSource file watching', () => {
-  it('reloads when the config file changes', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'config-source-watch-'));
-    const configPath = join(dir, 'config.yaml');
-    const original = [
-      'openrouterKey: test-key',
-      'openrouterBaseUrl: https://example.com',
-      'cacheControl: auto',
-    ].join('\n');
-    writeFileSync(configPath, original);
-
-    const initial = await loadConfig({ configPath });
+  it('reloads when the watcher signals a content change', async () => {
+    const { watch, fire } = fakeWatcher();
+    const load = vi.fn(async () => ({ ...initial, cacheControl: 'always' as const }));
     const source = createConfigSource({
-      loadOptions: { configPath },
+      loadOptions: { configPath: tempConfigPath() },
       initial,
-      pollIntervalMs: 50,
+      load,
+      watch,
     });
     source.start();
+    expect(watch).toHaveBeenCalledTimes(1);
 
-    try {
-      writeFileSync(
-        configPath,
-        original.replace('cacheControl: auto', 'cacheControl: always'),
-      );
-      touchFuture(configPath, 2);
+    fire(stat(2), stat(1)); // mtime changed → reload
 
-      await vi.waitFor(() => expect(source.get().cacheControl).toBe('always'), {
-        timeout: 2000,
-        interval: 30,
-      });
-    } finally {
-      source.stop();
-    }
+    await vi.waitFor(() => expect(source.get().cacheControl).toBe('always'));
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the current config and warns when the file disappears, then reloads on recreate', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'config-source-watch-'));
-    const configPath = join(dir, 'config.yaml');
-    const original = [
-      'openrouterKey: test-key',
-      'openrouterBaseUrl: https://example.com',
-      'cacheControl: always',
-    ].join('\n');
-    writeFileSync(configPath, original);
-
-    const initial = (await loadConfig({ configPath })) as ProxyConfig;
+  it('skips reload on identical mtime and warns on deletion, keeping the config', async () => {
+    const { watch, fire } = fakeWatcher();
+    const load = vi.fn(async () => ({ ...initial, cacheControl: 'skip' as const }));
     const source = createConfigSource({
-      loadOptions: { configPath },
+      loadOptions: { configPath: tempConfigPath() },
       initial,
-      pollIntervalMs: 50,
+      load,
+      watch,
     });
     source.start();
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
-    try {
-      unlinkSync(configPath);
-      await vi.waitFor(
-        () => expect(warn).toHaveBeenCalledWith(expect.stringContaining('disappeared')),
-        { timeout: 2000, interval: 30 },
-      );
-      expect(source.get().cacheControl).toBe('always'); // unchanged
+    fire(stat(1), stat(1)); // identical mtime → skip
+    expect(load).not.toHaveBeenCalled();
 
-      writeFileSync(
-        configPath,
-        original.replace('cacheControl: always', 'cacheControl: skip'),
-      );
-      touchFuture(configPath, 4);
-      await vi.waitFor(() => expect(source.get().cacheControl).toBe('skip'), {
-        timeout: 2000,
-        interval: 30,
-      });
-    } finally {
-      warn.mockRestore();
-      source.stop();
-    }
+    fire(stat(0, 0), stat(1)); // file deleted
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('disappeared'));
+    expect(source.get().cacheControl).toBe('auto'); // unchanged
+    expect(load).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  it('stops the watcher on stop()', () => {
+    const { watch, stop } = fakeWatcher();
+    const source = createConfigSource({
+      loadOptions: { configPath: tempConfigPath() },
+      initial,
+      watch,
+    });
+    source.start();
+    source.stop();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

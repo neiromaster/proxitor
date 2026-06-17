@@ -8,6 +8,18 @@ import {
 } from './config.js';
 import { logger } from './logger.js';
 
+type WatchFn = (
+  filename: string,
+  pollIntervalMs: number,
+  onChange: (curr: Stats, prev: Stats) => void,
+) => () => void;
+
+/** Default watcher: fs.watchFile polling; returns a stop function. */
+const watchStat: WatchFn = (filename, pollIntervalMs, onChange) => {
+  watchFile(filename, { interval: pollIntervalMs, persistent: false }, onChange);
+  return () => unwatchFile(filename);
+};
+
 function fmt(value: unknown): string {
   if (value === undefined) return 'unset';
   if (value === true) return 'on';
@@ -79,6 +91,8 @@ export type ConfigSourceOptions = {
   load?: (opts: LoadConfigOptions) => Promise<ProxyConfig>;
   /** watchFile poll interval (ms). */
   pollIntervalMs?: number;
+  /** Watcher override for tests; defaults to fs.watchFile polling. */
+  watch?: WatchFn;
 };
 
 export function staticConfigSource(config: ProxyConfig): ConfigSource {
@@ -100,9 +114,11 @@ class FileWatchingConfigSource implements ConfigSource {
   private readonly loadOptions: LoadConfigOptions;
   private readonly load: (opts: LoadConfigOptions) => Promise<ProxyConfig>;
   private readonly pollIntervalMs: number;
+  private readonly watch: WatchFn;
   private readonly boundHost: string;
   private readonly boundPort: number;
   readonly resolvedPath: string | null;
+  private stopWatch?: () => void;
   private loading: boolean = false;
   private pending: boolean = false;
   private watching: boolean = false;
@@ -112,6 +128,7 @@ class FileWatchingConfigSource implements ConfigSource {
     this.loadOptions = options.loadOptions;
     this.load = options.load ?? loadConfig;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
+    this.watch = options.watch ?? watchStat;
     this.boundHost = options.initial.host;
     this.boundPort = options.initial.port;
     this.resolvedPath = options.loadOptions.noConfig
@@ -167,17 +184,13 @@ class FileWatchingConfigSource implements ConfigSource {
     }
     this.watching = true;
     const path = this.resolvedPath;
-    watchFile(
-      path,
-      { interval: this.pollIntervalMs, persistent: false },
-      (curr: Stats, prev: Stats) => {
-        try {
-          this.onStat(path, curr, prev);
-        } catch {
-          /* never leak to the watcher */
-        }
-      },
-    );
+    this.stopWatch = this.watch(path, this.pollIntervalMs, (curr, prev) => {
+      try {
+        this.onStat(path, curr, prev);
+      } catch {
+        /* never leak to the watcher */
+      }
+    });
   }
 
   private onStat(path: string, curr: Stats, prev: Stats): void {
@@ -190,8 +203,9 @@ class FileWatchingConfigSource implements ConfigSource {
   }
 
   stop(): void {
-    if (this.watching && this.resolvedPath) {
-      unwatchFile(this.resolvedPath);
+    if (this.watching) {
+      this.stopWatch?.();
+      this.stopWatch = undefined;
       this.watching = false;
     }
   }
