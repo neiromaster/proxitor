@@ -3,13 +3,11 @@ import { isCancel } from '@clack/prompts';
 import type { OpenRouterDataClient } from '../openrouter/data-client.js';
 import { addOverrideCommand } from './config/add.js';
 import { browseModelsCommand } from './config/browse.js';
-import { cacheControlCommand } from './config/cache-control.js';
+import { globalCachingMenu } from './config/caching-menu.js';
 import { connectionMenuCommand } from './config/connection.js';
 import { editOverrideCommand } from './config/edit.js';
 import { listOverridesCommand } from './config/list.js';
-import { normalizeVolatileSystemCommand } from './config/normalize-system.js';
 import { removeOverrideCommand } from './config/remove.js';
-import { sessionRoutingCommand } from './config/session-routing.js';
 import { showConfigCommand } from './config/show.js';
 import { validateConfigCommand } from './config/validate.js';
 
@@ -23,9 +21,7 @@ export async function runConfigMenu(client: OpenRouterDataClient): Promise<void>
         { value: 'show', label: '📋  Show current config' },
         { value: '_sep1', label: '── Global Settings ──', disabled: true },
         { value: 'connection', label: '🔑  API key & connection' },
-        { value: 'session', label: '🔗  Session routing' },
-        { value: 'cache', label: '💾  Cache control' },
-        { value: 'normalize', label: '🧹  Normalize volatile system' },
+        { value: 'caching', label: '💾  Caching' },
         { value: '_sep2', label: '── Model Overrides ──', disabled: true },
         { value: 'add', label: '➕  Add model override' },
         { value: 'edit', label: '✏️   Edit model override' },
@@ -50,14 +46,8 @@ export async function runConfigMenu(client: OpenRouterDataClient): Promise<void>
       case 'connection':
         await connectionMenuCommand();
         break;
-      case 'session':
-        await sessionRoutingCommand();
-        break;
-      case 'cache':
-        await cacheControlCommand();
-        break;
-      case 'normalize':
-        await normalizeVolatileSystemCommand();
+      case 'caching':
+        await globalCachingMenu();
         break;
       case 'add':
         await addOverrideCommand({ client });
