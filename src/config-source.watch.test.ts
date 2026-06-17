@@ -6,8 +6,7 @@ import { loadConfig, type ProxyConfig } from './config.js';
 import { createConfigSource } from './config-source.js';
 import { logger } from './logger.js';
 
-// watchFile uses real OS polling; bump mtime explicitly so the change is detectable
-// even on filesystems with coarse (1s) mtime resolution.
+// Force an mtime bump — watchFile polling can miss same-tick edits on coarse-mtime filesystems.
 function touchFuture(path: string, addSeconds: number): void {
   const when = Date.now() / 1000 + addSeconds;
   utimesSync(path, when, when);

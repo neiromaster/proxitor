@@ -35,7 +35,7 @@ function canonicalEntries(record: Record<string, unknown> | undefined): string {
   );
 }
 
-/** Returns a human-readable diff of cache-relevant fields, or '' if nothing material changed. */
+/** Diff of cache-relevant fields; '' if nothing changed. */
 export function summarizeChanges(prev: ProxyConfig, next: ProxyConfig): string {
   const parts: string[] = [];
 
@@ -75,9 +75,9 @@ export type ConfigSource = {
 export type ConfigSourceOptions = {
   loadOptions: LoadConfigOptions;
   initial: ProxyConfig;
-  /** Override the loader (defaults to `loadConfig`). Useful for tests. */
+  /** Loader override for tests; defaults to loadConfig. */
   load?: (opts: LoadConfigOptions) => Promise<ProxyConfig>;
-  /** `watchFile` poll interval in ms (default 1000). */
+  /** watchFile poll interval (ms). */
   pollIntervalMs?: number;
 };
 
@@ -174,7 +174,7 @@ class FileWatchingConfigSource implements ConfigSource {
         try {
           this.onStat(path, curr, prev);
         } catch {
-          /* defense-in-depth: never leak an exception to the watcher */
+          /* never leak to the watcher */
         }
       },
     );

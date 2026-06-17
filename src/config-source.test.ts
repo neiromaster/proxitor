@@ -107,7 +107,7 @@ describe('FileWatchingConfigSource.reload', () => {
 
   it('never rejects even when the loader throws a non-Error', async () => {
     const load = vi.fn(async () => {
-      // biome-ignore lint/style/useThrowOnlyError: intentionally non-Error to test the catch branch
+      // biome-ignore lint/style/useThrowOnlyError: tests the non-Error catch branch
       throw 'string error';
     });
     const source = createConfigSource({ loadOptions, initial, load });
@@ -126,7 +126,7 @@ describe('FileWatchingConfigSource.reload', () => {
       .mockResolvedValueOnce({ ...initial, cacheControl: 'always' as const });
     const source = createConfigSource({ loadOptions, initial, load });
 
-    const p1 = source.reload(); // in-flight
+    const p1 = source.reload();
     void source.reload(); // arrives mid-flight → sets pending
     expect(load).toHaveBeenCalledTimes(1);
 

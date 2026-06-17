@@ -32,7 +32,7 @@ describe('config hot-reload (integration)', () => {
   it('applies a config edit to subsequent requests without restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'proxitor-hotreload-'));
 
-    // 1. mock upstream that records the last received body
+    // upstream records the forwarded body
     let lastBody: unknown;
     const upstreamApp = new Hono();
     upstreamApp.post('/v1/messages', async c => {
@@ -55,7 +55,7 @@ describe('config hot-reload (integration)', () => {
     });
     const upstreamPort = (upstream.address() as AddressInfo).port;
 
-    // 2. config file with cacheControl: skip (no injection)
+    // cacheControl: skip → no injection
     const configPath = join(dir, 'config.yaml');
     const writeConfig = (cacheControl: string): void => {
       writeFileSync(
@@ -70,7 +70,7 @@ describe('config hot-reload (integration)', () => {
     writeConfig('skip');
 
     const fileConfig = await loadConfig({ configPath });
-    // Literal initial keeps port:0 (race-free binding); the file is what the watcher reloads.
+    // port:0 binds a free port; reloads come from the file.
     const initial: ProxyConfig = { ...fileConfig, host: '127.0.0.1', port: 0 };
     source = createConfigSource({
       loadOptions: { configPath },
@@ -79,7 +79,6 @@ describe('config hot-reload (integration)', () => {
     });
     source.start();
 
-    // 3. start proxy on an OS-assigned port
     proxy = await new Promise<ServerType>(resolve => {
       const server = createProxyServer(source!, () => resolve(server));
     });
@@ -92,7 +91,7 @@ describe('config hot-reload (integration)', () => {
       messages: [{ role: 'user', content: 'hi' }],
     });
 
-    // 4. request 1 — cacheControl: skip → no cache_control anywhere in the body
+    // request 1: skip → no cache_control
     lastBody = undefined;
     await fetch(`${proxyUrl}/v1/messages`, {
       method: 'POST',
@@ -101,7 +100,7 @@ describe('config hot-reload (integration)', () => {
     });
     expect(JSON.stringify(lastBody)).not.toContain('cache_control');
 
-    // 5. edit config → cacheControl: always
+    // flip cacheControl → always
     writeConfig('always');
     touchFuture(configPath, 2);
     await vi.waitFor(() => expect(source!.get().cacheControl).toBe('always'), {
@@ -109,7 +108,7 @@ describe('config hot-reload (integration)', () => {
       interval: 30,
     });
 
-    // 6. request 2 — cache_control now injected
+    // request 2: cache_control present
     lastBody = undefined;
     await fetch(`${proxyUrl}/v1/messages`, {
       method: 'POST',
