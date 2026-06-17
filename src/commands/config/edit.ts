@@ -113,7 +113,8 @@ async function editProvider(
   return { ...current, provider: (result as ModelOverride).provider };
 }
 
-async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
+/** @internal */
+export async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
   const result = await collectSessionTriState(current.sessionId as TriState | undefined);
   if (result === null) return current;
 
