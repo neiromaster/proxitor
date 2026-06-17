@@ -12,11 +12,6 @@ import { editCacheControl, editNormalizeVolatileSystem, editSessionId } from './
 import { normalizeVolatileSystemCommand } from './normalize-system.js';
 import { sessionRoutingCommand } from './session-routing.js';
 
-/**
- * Global "Caching" screen: shows the three levers' resolved state, then drills
- * into the existing per-lever commands (which persist immediately). Loops until
- * Back/Cancel so several levers can be tuned without leaving the screen.
- */
 export async function globalCachingMenu(opts?: { configPath?: string }): Promise<void> {
   const configPath = requireConfigPath(opts?.configPath);
 
@@ -51,12 +46,7 @@ export async function globalCachingMenu(opts?: { configPath?: string }): Promise
   }
 }
 
-/**
- * Per-model "Caching" screen: shows inherit-aware state, drills into the
- * per-model edit helpers, and persists each changed lever immediately via
- * setModelOverride. Returns the latest override so the edit loop's hints stay
- * in sync (the writes have already happened).
- */
+/** Persists each changed lever itself; returns the latest override for display sync. */
 export async function perModelCachingMenu(opts: {
   modelKey: string;
   current: ModelOverride;
@@ -103,7 +93,6 @@ export async function perModelCachingMenu(opts: {
   }
 }
 
-/** `proxitor config cache` — CLI entry that wraps the global screen. */
 export async function cachingCommand(opts?: { configPath?: string }): Promise<void> {
   clack.intro('Proxitor · Caching');
   await globalCachingMenu(opts);

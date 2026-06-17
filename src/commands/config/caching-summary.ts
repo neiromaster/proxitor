@@ -11,10 +11,6 @@ function boolLabel(value: boolean | undefined, fallback: boolean): string {
   return (value ?? fallback) ? 'on' : 'off';
 }
 
-/**
- * Per-model normalizeVolatileSystem label. An explicit boolean renders as
- * `on`/`off`; an unset field renders as `(inherit -> <global>)`.
- */
 function nvsLabel(value: boolean | undefined, globalValue: boolean): string {
   if (value === undefined) {
     return `(inherit -> ${globalValue ? 'on' : 'off'})`;
@@ -22,10 +18,6 @@ function nvsLabel(value: boolean | undefined, globalValue: boolean): string {
   return value ? 'on' : 'off';
 }
 
-/**
- * One-screen summary of the three global caching levers. Plain text for
- * `clack.note` — no clack import, so it is unit-testable in isolation.
- */
 export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
   const cc = cfg.cacheControl ?? DEFAULTS.cacheControl;
   const sid = cfg.sessionId ?? DEFAULTS.sessionId;
@@ -43,10 +35,6 @@ export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
   ].join('\n');
 }
 
-/**
- * Per-model summary. Unset fields show `(inherit -> <global>)` so an explicit
- * override is distinguishable from an inherited value.
- */
 export function formatPerModelCachingSummary(
   modelKey: string,
   current: ModelOverride,

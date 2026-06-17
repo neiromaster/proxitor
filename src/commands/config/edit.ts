@@ -211,8 +211,7 @@ export async function editOverrideCommand(
     if (isCancel(field) || field === 'done') break;
 
     if (field === 'caching') {
-      // The submenu persists each changed lever itself; we only refresh the
-      // local reference so this loop's hints stay in sync (no extra write here).
+      // Submenu self-persists; just refresh the local ref (no extra write).
       current = await perModelCachingMenu({
         modelKey,
         current,
