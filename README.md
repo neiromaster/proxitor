@@ -111,6 +111,16 @@ While proxitor runs, it logs cache usage from upstream so you can see whether ca
 
 Quick health poke: `curl http://localhost:8828/health`.
 
+### Tuning the cache
+
+If the cache hit looks low, three levers fix it — tune them from `proxitor config` → **💾 Caching** (or `proxitor config cache`):
+
+- **`cacheControl`** — inject `cache_control` to activate caching (Anthropic-native).
+- **`sessionId`** — inject `session_id` so the provider pins from the first request.
+- **`normalizeVolatileSystem`** — strip Claude Code's volatile `cch` hash so the prefix cache warms on non-Anthropic providers (qwen/glm/…).
+
+See the [configuration reference](./docs/configuration.md#prompt-caching) for the full detail.
+
 ## Commands
 
 | Command | Description |
