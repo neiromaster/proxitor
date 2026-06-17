@@ -158,7 +158,17 @@ modelOverrides:
 
 ## Prompt caching
 
-By default, OpenRouter doesn't enable prompt caching — every request pays full token price. Proxitor can inject `cache_control` and `session_id` to make caching work automatically.
+Prompt caching is **provider-scoped**: a cache built on Anthropic doesn't help when the next request lands on another provider. Three request-shaping settings make caching survive across requests. Think of them as **levers** — most setups need only the first two.
+
+| Lever | Field | Default | What it does |
+| --- | --- | --- | --- |
+| **Activate caching** | `cacheControl` | `auto` | Injects `cache_control` so the upstream caches the prompt (Anthropic-native providers) |
+| **Pin the provider** | `sessionId` | `auto` | Injects `session_id` so routing sticks from the first request — no provider flip-flop that resets the cache |
+| **Stabilize the prefix** | `normalizeVolatileSystem` | `false` | Strips Claude Code's volatile `cch` hash from the system prompt so the prefix stops churning (non-Anthropic providers) |
+
+**Rule of thumb:** Anthropic models need levers **1+2**; non-Anthropic providers (qwen / glm / etc. behind Claude Code) need **all three**.
+
+`cacheControlTtl` (below) is a sub-option of lever 1 — it controls the injected `cache_control.ttl`, not a separate lever.
 
 **`cacheControl`** — injects `cache_control: { "type": "ephemeral" }` into the request body. OpenRouter uses this to set cache breakpoints and advance them as conversations grow.
 
@@ -205,11 +215,12 @@ modelOverrides:
     cacheControlTtl: skip     # passthrough for Opus — ignore the global 1h TTL, use the client ttl
 ```
 
-**Why all three matter:**
+**Why the levers matter:**
 
-- **Anthropic models** — `cache_control` activates caching, `cacheControlTtl` extends it beyond 5 min, `session_id` prevents provider flip-flopping that would invalidate it.
-- **OpenAI models** — caching is automatic (no `cache_control` needed), but `session_id` ensures sticky routing from request #1 instead of waiting for a cache hit.
-- **All models** — `session_id` prevents the provider switch that silently resets cache.
+- **Anthropic models** — lever 1 (`cache_control`) activates caching, `cacheControlTtl` extends it beyond 5 min, lever 2 (`session_id`) prevents the provider flip-flop that would invalidate it.
+- **OpenAI models** — caching is automatic (no lever 1 needed), but lever 2 (`session_id`) ensures sticky routing from request #1 instead of waiting for a cache hit.
+- **Non-Anthropic models behind Claude Code (qwen / glm / …)** — lever 3 (`normalizeVolatileSystem`) stabilizes the prefix; without it the churned `cch` hash prevents the prefix cache from ever warming.
+- **All models** — lever 2 (`session_id`) prevents the provider switch that silently resets the cache.
 
 ## Cache usage logging
 
@@ -230,6 +241,30 @@ Supports all three provider formats:
 | Responses API | `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` |
 
 When both formats are present (e.g., OpenRouter relaying an Anthropic response), Anthropic fields take priority.
+
+## normalizeVolatileSystem (stable prefix for non-Anthropic providers)
+
+Claude Code embeds a volatile `cch=…` hash in the system prompt that changes on (almost) every turn. For **Anthropic-native** providers this is harmless — the cache key absorbs it. But for **non-Anthropic** providers (qwen, glm, and others routed through OpenRouter), those churned bytes sit inside the cached prefix, so the prefix cache never warms and every turn re-pays full price.
+
+`normalizeVolatileSystem` rewrites that volatile hash out of `messages[0]` (the system block) so the prefix bytes stay stable turn-to-turn.
+
+```yaml
+normalizeVolatileSystem: true   # strip the volatile cch hash from the system prompt
+```
+
+- **Enable when:** you route Claude Code through a non-Anthropic provider and the cache-read log stays near zero.
+- **No effect on:** Anthropic-native caching (the hash is harmless there) — safe to leave on globally.
+- **Per-model:** unset inherits the global value.
+
+```yaml
+modelOverrides:
+  "qwen-*":
+    provider:
+      only: "qwen"          # non-Anthropic provider
+    normalizeVolatileSystem: true
+```
+
+Toggle it from the menu (`proxitor config` → **💾 Caching** → Stabilize prefix) or `proxitor config cache`.
 
 ## Interactive Config Manager
 
@@ -258,9 +293,8 @@ If a config already exists, the wizard shows its location and asks whether to re
 
 - **Show current config** — display the resolved configuration
 - **API key & connection** — change API key, port, listen address, base URL, auth type
-- **Session routing** — set global `sessionId` mode (`auto` / `always` / `skip`)
-- **Cache control** — set global `cacheControl` mode and TTL
-- **Model overrides** — add, edit, remove, list, or browse models
+- **Caching** — the three caching levers on one screen: `cacheControl` (+TTL), `sessionId`, `normalizeVolatileSystem`
+- **Model overrides** — add, edit, remove, list, or browse models (each override has its own **💾 Caching** submenu)
 
 ```sh
 proxitor config menu           # interactive menu
