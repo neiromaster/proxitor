@@ -82,9 +82,8 @@ vi.mock('../../src/openrouter/models.js', () => ({
 }));
 
 // Import AFTER mocks are set up
-const { editCacheControl, editNormalizeVolatileSystem } = await import(
-  '../../src/commands/config/edit.js'
-);
+const { editCacheControl, editNormalizeVolatileSystem, editOverrideCommand } =
+  await import('../../src/commands/config/edit.js');
 const { cacheControlCommand } = await import(
   '../../src/commands/config/cache-control.js'
 );
@@ -582,5 +581,63 @@ describe('Bug #6: Skip short-circuit in add override', () => {
     const savedOverride = mockSetModelOverride.mock.calls[0]![2];
     expect(savedOverride.sessionId).toBeUndefined();
     expect(savedOverride.cacheControl).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// Instant-save model-edit: each changed field persists; no "Save changes?"
+// ===========================================================================
+
+describe('editOverrideCommand: instant-save', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    writeFileSync(
+      configPath,
+      'modelOverrides:\n  claude-*:\n    provider:\n      only: anthropic\n',
+    );
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockGetModelOverrides.mockReturnValue({
+      'claude-*': { provider: { only: 'anthropic' } },
+    });
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('persists a provider change immediately and skips the Save prompt', async () => {
+    const { select: mockSelect, confirm: mockConfirm } = await import('@clack/prompts');
+    const select = mockSelect as ReturnType<typeof vi.fn>;
+    // 1) pick the override, 2) pick "provider", 3) pick "Done"
+    select
+      .mockResolvedValueOnce('claude-*')
+      .mockResolvedValueOnce('provider')
+      .mockResolvedValueOnce('done');
+    // provider edit → user drops routing ("skip")
+    mockSelectRoutingMode.mockResolvedValueOnce('skip');
+
+    await editOverrideCommand({} as any, configPath);
+
+    expect(mockSetModelOverride).toHaveBeenCalled();
+    const confirmMessages = (mockConfirm as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: any[]) => c[0]?.message ?? '',
+    );
+    expect(confirmMessages).not.toContainEqual(expect.stringContaining('Save changes'));
+  });
+
+  it('writes nothing when the field-select is cancelled', async () => {
+    const { select: mockSelect } = await import('@clack/prompts');
+    const select = mockSelect as ReturnType<typeof vi.fn>;
+    select
+      .mockResolvedValueOnce('claude-*')
+      .mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await editOverrideCommand({} as any, configPath);
+
+    expect(mockSetModelOverride).not.toHaveBeenCalled();
   });
 });
