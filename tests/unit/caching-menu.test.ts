@@ -32,7 +32,7 @@ vi.mock('../../src/commands/config/session-routing.js', () => ({
 vi.mock('../../src/commands/config/normalize-system.js', () => ({
   normalizeVolatileSystemCommand: mockNormalizeCommand,
 }));
-vi.mock('../../src/commands/config/edit.js', () => ({
+vi.mock('../../src/commands/config/override-levers.js', () => ({
   editCacheControl: mockEditCacheControl,
   editSessionId: mockEditSessionId,
   editNormalizeVolatileSystem: mockEditNvs,

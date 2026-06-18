@@ -1,7 +1,6 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
-import { readConfigFile } from '../../config.js';
-import type { ModelOverride, TriState } from '../../config-schema.js';
+import type { ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { perModelCachingMenu } from './caching-menu.js';
 import { describeTtl } from './caching-summary.js';
@@ -12,12 +11,6 @@ import {
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
-import {
-  applyField,
-  collectCacheTriState,
-  collectNormalizeVolatileSystem,
-  collectSessionTriState,
-} from './tri-state.js';
 
 type EditField = 'provider' | 'caching' | 'done';
 
@@ -49,22 +42,6 @@ function formatCachingHint(current: ModelOverride): string {
   return `cc ${cc} · ttl ${ttl} · sid ${sid} · nvs ${nvs}`;
 }
 
-function readGlobalTtl(
-  configPath: string | undefined,
-): '5m' | '1h' | 'omit' | 'skip' | undefined {
-  if (!configPath) return undefined;
-  try {
-    return readConfigFile(configPath).cacheControlTtl as
-      | '5m'
-      | '1h'
-      | 'omit'
-      | 'skip'
-      | undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function editProvider(
   modelKey: string,
   current: ModelOverride,
@@ -87,47 +64,6 @@ async function editProvider(
   if (!result) return current;
 
   return { ...current, provider: (result as ModelOverride).provider };
-}
-
-/** @internal */
-export async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
-  const result = await collectSessionTriState(current.sessionId as TriState | undefined);
-  if (result === null) return current;
-
-  const next: Record<string, unknown> = { ...current };
-  applyField(next, 'sessionId', result.sessionId);
-  return next as ModelOverride;
-}
-
-/** @internal */
-export async function editCacheControl(
-  current: ModelOverride,
-  configPath?: string,
-): Promise<ModelOverride> {
-  const globalTtl = readGlobalTtl(configPath);
-  const result = await collectCacheTriState(
-    current.cacheControl as TriState | undefined,
-    current.cacheControlTtl as '5m' | '1h' | 'omit' | 'skip' | undefined,
-    globalTtl,
-  );
-  if (result === null) return current;
-
-  const next: Record<string, unknown> = { ...current };
-  applyField(next, 'cacheControl', result.cacheControl);
-  applyField(next, 'cacheControlTtl', result.cacheControlTtl);
-  return next as ModelOverride;
-}
-
-/** @internal */
-export async function editNormalizeVolatileSystem(
-  current: ModelOverride,
-): Promise<ModelOverride> {
-  const result = await collectNormalizeVolatileSystem(current.normalizeVolatileSystem);
-  if (result === null) return current;
-
-  const next: Record<string, unknown> = { ...current };
-  applyField(next, 'normalizeVolatileSystem', result.normalizeVolatileSystem);
-  return next as ModelOverride;
 }
 
 /** Run the interactive "Edit model override" flow. */

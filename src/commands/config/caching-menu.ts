@@ -8,9 +8,13 @@ import {
   formatPerModelCachingSummary,
 } from './caching-summary.js';
 import { requireConfigPath, setModelOverride } from './config.js';
-import { editCacheControl, editNormalizeVolatileSystem, editSessionId } from './edit.js';
 import { overridesEqual } from './equality.js';
 import { normalizeVolatileSystemCommand } from './normalize-system.js';
+import {
+  editCacheControl,
+  editNormalizeVolatileSystem,
+  editSessionId,
+} from './override-levers.js';
 import { sessionRoutingCommand } from './session-routing.js';
 
 type LeverValue = 'cacheControl' | 'sessionId' | 'normalizeVolatileSystem';

@@ -82,8 +82,10 @@ vi.mock('../../src/openrouter/models.js', () => ({
 }));
 
 // Import AFTER mocks are set up
-const { editCacheControl, editNormalizeVolatileSystem, editOverrideCommand } =
-  await import('../../src/commands/config/edit.js');
+const { editOverrideCommand } = await import('../../src/commands/config/edit.js');
+const { editCacheControl, editNormalizeVolatileSystem } = await import(
+  '../../src/commands/config/override-levers.js'
+);
 const { cacheControlCommand } = await import(
   '../../src/commands/config/cache-control.js'
 );
