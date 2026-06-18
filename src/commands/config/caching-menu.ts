@@ -15,11 +15,7 @@ import { sessionRoutingCommand } from './session-routing.js';
 
 type LeverValue = 'cacheControl' | 'sessionId' | 'normalizeVolatileSystem';
 
-/**
- * The three caching levers — single source of truth for the option list AND the
- * dispatch. `global` writes a global field; `perModel` edits one override and
- * returns it (caller persists). Adding/removing/relabeling a lever is one edit.
- */
+/** Cache levers: option list + dispatch in one table. */
 const CACHING_LEVERS: ReadonlyArray<{
   value: LeverValue;
   label: string;
@@ -46,7 +42,6 @@ const CACHING_LEVERS: ReadonlyArray<{
   },
 ];
 
-/** Shared loop: render a note, let the user tune a lever, repeat until Back/cancel. */
 async function runCachingLeverMenu(opts: {
   noteTitle: string;
   backLabel: string;
@@ -81,7 +76,7 @@ export async function globalCachingMenu(opts?: { configPath?: string }): Promise
   });
 }
 
-/** Persists each changed lever itself; returns the latest override for display sync. */
+/** Self-persists each lever; returns the latest override. */
 export async function perModelCachingMenu(opts: {
   modelKey: string;
   current: ModelOverride;
@@ -100,7 +95,7 @@ export async function perModelCachingMenu(opts: {
       ),
     onLever: async lever => {
       const next = await lever.perModel(current, opts.configPath);
-      // Skip the write when nothing actually changed (instant-save stays for real changes).
+      // Skip no-op writes; instant-save still fires on real changes.
       if (!overridesEqual(next, current)) {
         setModelOverride(opts.configPath, opts.modelKey, next);
         current = next;

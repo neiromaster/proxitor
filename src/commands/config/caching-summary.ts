@@ -3,7 +3,7 @@ import type { ModelOverride, ProxyConfig } from '../../config-schema.js';
 
 type TtlValue = '5m' | '1h' | 'omit' | 'skip' | undefined;
 
-/** Human-readable TTL label shared by global + per-model summaries + edit hint. */
+/** Friendly TTL label (omit→strip, skip→passthrough). */
 export function describeTtl(value: TtlValue): string {
   if (value === undefined) return '(default)';
   if (value === 'omit') return 'strip';
@@ -22,7 +22,6 @@ function nvsLabel(value: boolean | undefined, globalValue: boolean): string {
   return value ? 'on' : 'off';
 }
 
-/** Per-model TTL: explicit value wins, else inherit the global TTL, else bare inherit. */
 function perModelTtl(current: ModelOverride, globalCfg: Partial<ProxyConfig>): string {
   if (current.cacheControlTtl !== undefined) return describeTtl(current.cacheControlTtl);
   if (globalCfg.cacheControlTtl !== undefined) {

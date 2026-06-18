@@ -28,7 +28,7 @@ function fmt(value: unknown): string {
   return String(value);
 }
 
-/** Cache-lever keys shared by global config and per-model overrides — single source of truth. */
+/** Cache-lever keys shared by global config + per-model overrides. */
 const CACHE_LEVER_KEYS = [
   'cacheControl',
   'cacheControlTtl',
