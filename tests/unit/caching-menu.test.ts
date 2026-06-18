@@ -141,6 +141,20 @@ describe('perModelCachingMenu', () => {
     expect(mockSetModelOverride).not.toHaveBeenCalled();
   });
 
+  it('does NOT write on a no-op reselect (new ref, structurally equal data)', async () => {
+    const start: ModelOverride = { cacheControl: 'always', sessionId: 'auto' };
+    // New reference, identical values — simulates the user re-confirming the same choice.
+    mockEditCacheControl.mockResolvedValueOnce({
+      cacheControl: 'always',
+      sessionId: 'auto',
+    });
+    select.mockResolvedValueOnce('cacheControl').mockResolvedValueOnce('back');
+
+    await perModelCachingMenu({ modelKey: 'm', current: start, configPath });
+
+    expect(mockSetModelOverride).not.toHaveBeenCalled();
+  });
+
   it('writes once per changed lever across multiple edits', async () => {
     const a = { cacheControl: 'always' };
     const b = { cacheControl: 'always', sessionId: 'always' };

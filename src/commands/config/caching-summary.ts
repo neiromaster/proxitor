@@ -3,8 +3,12 @@ import type { ModelOverride, ProxyConfig } from '../../config-schema.js';
 
 type TtlValue = '5m' | '1h' | 'omit' | 'skip' | undefined;
 
-function ttlLabel(value: TtlValue): string {
-  return value ?? '(default)';
+/** Human-readable TTL label shared by global + per-model summaries + edit hint. */
+export function describeTtl(value: TtlValue): string {
+  if (value === undefined) return '(default)';
+  if (value === 'omit') return 'strip';
+  if (value === 'skip') return 'passthrough';
+  return value;
 }
 
 function boolLabel(value: boolean | undefined, fallback: boolean): string {
@@ -18,6 +22,15 @@ function nvsLabel(value: boolean | undefined, globalValue: boolean): string {
   return value ? 'on' : 'off';
 }
 
+/** Per-model TTL: explicit value wins, else inherit the global TTL, else bare inherit. */
+function perModelTtl(current: ModelOverride, globalCfg: Partial<ProxyConfig>): string {
+  if (current.cacheControlTtl !== undefined) return describeTtl(current.cacheControlTtl);
+  if (globalCfg.cacheControlTtl !== undefined) {
+    return `(inherit -> ${describeTtl(globalCfg.cacheControlTtl as TtlValue)})`;
+  }
+  return '(inherit)';
+}
+
 export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
   const cc = cfg.cacheControl ?? DEFAULTS.cacheControl;
   const sid = cfg.sessionId ?? DEFAULTS.sessionId;
@@ -27,7 +40,7 @@ export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
     'Three settings shape the request so cache survives.',
     '',
     `  cacheControl            = ${cc}    (activate cache)`,
-    `  cacheControlTtl         = ${ttlLabel(cfg.cacheControlTtl as TtlValue)}`,
+    `  cacheControlTtl         = ${describeTtl(cfg.cacheControlTtl as TtlValue)}`,
     `  sessionId               = ${sid}    (pin provider)`,
     `  normalizeVolatileSystem = ${nvs}     (stable prefix)`,
     '',
@@ -45,11 +58,7 @@ export function formatPerModelCachingSummary(
   const gNvs = globalCfg.normalizeVolatileSystem ?? DEFAULTS.normalizeVolatileSystem;
 
   const cc = current.cacheControl ?? `(inherit -> ${gCc})`;
-  const ttl =
-    current.cacheControlTtl ??
-    (globalCfg.cacheControlTtl
-      ? `(inherit -> ${globalCfg.cacheControlTtl})`
-      : '(inherit)');
+  const ttl = perModelTtl(current, globalCfg);
   const sid = current.sessionId ?? `(inherit -> ${gSid})`;
   const nvs = nvsLabel(current.normalizeVolatileSystem, gNvs);
 

@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeTtl,
   formatGlobalCachingSummary,
   formatPerModelCachingSummary,
 } from '../../src/commands/config/caching-summary.js';
 import type { ModelOverride, ProxyConfig } from '../../src/config-schema.js';
 
 const asConfig = (o: Partial<ProxyConfig>) => o;
+
+describe('describeTtl', () => {
+  it('maps enum values to friendly labels and undefined to (default)', () => {
+    expect(describeTtl(undefined)).toBe('(default)');
+    expect(describeTtl('5m')).toBe('5m');
+    expect(describeTtl('1h')).toBe('1h');
+    expect(describeTtl('omit')).toBe('strip');
+    expect(describeTtl('skip')).toBe('passthrough');
+  });
+});
 
 describe('formatGlobalCachingSummary', () => {
   it('shows resolved defaults when fields are absent', () => {
@@ -38,6 +49,13 @@ describe('formatGlobalCachingSummary', () => {
     expect(out).toContain('cacheControlTtl         = 1h');
     expect(out).toContain('sessionId               = skip');
     expect(out).toContain('normalizeVolatileSystem = on');
+  });
+
+  it('shows friendly labels for omit/skip TTL', () => {
+    const strip = formatGlobalCachingSummary(asConfig({ cacheControlTtl: 'omit' }));
+    expect(strip).toContain('cacheControlTtl         = strip');
+    const passthrough = formatGlobalCachingSummary(asConfig({ cacheControlTtl: 'skip' }));
+    expect(passthrough).toContain('cacheControlTtl         = passthrough');
   });
 });
 
@@ -77,5 +95,21 @@ describe('formatPerModelCachingSummary', () => {
       asConfig({ cacheControlTtl: '1h' }),
     );
     expect(out).toContain('cacheControlTtl         = (inherit -> 1h)');
+  });
+
+  it('shows friendly labels for explicit + inherited omit/skip TTL', () => {
+    const explicit = formatPerModelCachingSummary(
+      'm',
+      { cacheControlTtl: 'omit' },
+      globalCfg,
+    );
+    expect(explicit).toContain('cacheControlTtl         = strip');
+
+    const inherited = formatPerModelCachingSummary(
+      'm',
+      {},
+      asConfig({ cacheControlTtl: 'skip' }),
+    );
+    expect(inherited).toContain('cacheControlTtl         = (inherit -> passthrough)');
   });
 });

@@ -4,7 +4,9 @@ import { readConfigFile } from '../../config.js';
 import type { ModelOverride, TriState } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { perModelCachingMenu } from './caching-menu.js';
+import { describeTtl } from './caching-summary.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
+import { overridesEqual } from './equality.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
@@ -41,9 +43,10 @@ function formatOverrideHint(override: ModelOverride | undefined): string {
 
 function formatCachingHint(current: ModelOverride): string {
   const cc = current.cacheControl ?? 'inherit';
+  const ttl = current.cacheControlTtl ? describeTtl(current.cacheControlTtl) : 'inherit';
   const sid = current.sessionId ?? 'inherit';
   const nvs = nvsHint(current.normalizeVolatileSystem);
-  return `cc ${cc} · sid ${sid} · nvs ${nvs}`;
+  return `cc ${cc} · ttl ${ttl} · sid ${sid} · nvs ${nvs}`;
 }
 
 function readGlobalTtl(
@@ -59,26 +62,6 @@ function readGlobalTtl(
       | undefined;
   } catch {
     return undefined;
-  }
-}
-
-function showCurrentConfig(modelKey: string, current: ModelOverride): void {
-  clack.log.info(`Current config for "${modelKey}":`);
-  if (current.provider) {
-    for (const [field, value] of Object.entries(current.provider)) {
-      clack.log.info(`  provider.${field}: ${JSON.stringify(value)}`);
-    }
-  }
-  if (current.sessionId) clack.log.info(`  sessionId: ${current.sessionId}`);
-  if (current.cacheControl) clack.log.info(`  cacheControl: ${current.cacheControl}`);
-  if (current.cacheControlTtl)
-    clack.log.info(`  cacheControlTtl: ${current.cacheControlTtl}`);
-  if (current.normalizeVolatileSystem !== undefined)
-    clack.log.info(`  normalizeVolatileSystem: ${current.normalizeVolatileSystem}`);
-  if (current.headers) {
-    for (const [name, value] of Object.entries(current.headers)) {
-      clack.log.info(`  headers.${name}: ${value}`);
-    }
   }
 }
 
@@ -147,18 +130,6 @@ export async function editNormalizeVolatileSystem(
   return next as ModelOverride;
 }
 
-async function applyFieldEdit(
-  field: EditField,
-  modelKey: string,
-  current: ModelOverride,
-  client: OpenRouterDataClient,
-): Promise<ModelOverride> {
-  if (field === 'provider') {
-    return editProvider(modelKey, current, client);
-  }
-  return current;
-}
-
 /** Run the interactive "Edit model override" flow. */
 export async function editOverrideCommand(
   client: OpenRouterDataClient,
@@ -189,8 +160,6 @@ export async function editOverrideCommand(
   const modelKey = selected as string;
   let current: ModelOverride = overrides[modelKey] ?? {};
 
-  showCurrentConfig(modelKey, current);
-
   for (;;) {
     const field = await clack.select<EditField>({
       message: 'Edit which field?',
@@ -220,9 +189,10 @@ export async function editOverrideCommand(
       continue;
     }
 
+    // field === 'provider' (caching + done handled above)
     const before = current;
-    current = await applyFieldEdit(field, modelKey, current, client);
-    if (current !== before) {
+    current = await editProvider(modelKey, current, client);
+    if (!overridesEqual(current, before)) {
       setModelOverride(resolvedConfigPath, modelKey, current);
     }
   }
