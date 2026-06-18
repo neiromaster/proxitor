@@ -28,22 +28,20 @@ function fmt(value: unknown): string {
   return String(value);
 }
 
-const SCALAR_KEYS = [
+/** Cache-lever keys shared by global config and per-model overrides — single source of truth. */
+const CACHE_LEVER_KEYS = [
   'cacheControl',
   'cacheControlTtl',
   'sessionId',
   'normalizeVolatileSystem',
+] as const;
+
+const SCALAR_KEYS = [
+  ...CACHE_LEVER_KEYS,
   'authType',
   'verbose',
   'bodyLimit',
   'openrouterBaseUrl',
-] as const;
-
-const OVERRIDE_SCALAR_KEYS = [
-  'cacheControl',
-  'cacheControlTtl',
-  'sessionId',
-  'normalizeVolatileSystem',
 ] as const;
 
 function canonicalEntries(record: Record<string, unknown> | undefined): string {
@@ -61,7 +59,7 @@ function overrideFieldDiff(
   next: ModelOverride | undefined,
 ): string {
   const parts: string[] = [];
-  for (const key of OVERRIDE_SCALAR_KEYS) {
+  for (const key of CACHE_LEVER_KEYS) {
     if (prev?.[key] !== next?.[key]) {
       parts.push(`${key}: ${fmt(prev?.[key])}→${fmt(next?.[key])}`);
     }
@@ -87,16 +85,17 @@ function summarizeModelOverridesDiff(
   const nextKeys = new Set(Object.keys(next ?? {}));
   const parts: string[] = [];
 
-  for (const key of [...nextKeys].sort()) {
-    if (!prevKeys.has(key)) {
+  for (const key of [...new Set([...prevKeys, ...nextKeys])].sort()) {
+    const inPrev = prevKeys.has(key);
+    const inNext = nextKeys.has(key);
+    if (inPrev && inNext) {
+      const fields = overrideFieldDiff(prev?.[key], next?.[key]);
+      if (fields) parts.push(`${key} (${fields})`);
+    } else if (inNext) {
       parts.push(`+${key}`);
-      continue;
+    } else {
+      parts.push(`-${key}`);
     }
-    const fields = overrideFieldDiff(prev?.[key], next?.[key]);
-    if (fields) parts.push(`${key} (${fields})`);
-  }
-  for (const key of [...prevKeys].sort()) {
-    if (!nextKeys.has(key)) parts.push(`-${key}`);
   }
   return parts.join(', ');
 }

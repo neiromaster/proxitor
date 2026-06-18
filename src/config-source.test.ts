@@ -125,6 +125,20 @@ describe('summarizeChanges', () => {
     );
   });
 
+  it('reports a cacheControlTtl change within an override (locks CACHE_LEVER_KEYS coverage)', () => {
+    const prev: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControlTtl: '5m' } },
+    };
+    const next: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControlTtl: '1h' } },
+    };
+    expect(summarizeChanges(prev, next)).toBe(
+      'modelOverrides: claude-* (cacheControlTtl: 5m→1h)',
+    );
+  });
+
   it('does not report headers change when only key order differs', () => {
     const prev: ProxyConfig = { ...base(), headers: { 'X-A': '1', 'X-B': '2' } };
     const next: ProxyConfig = { ...base(), headers: { 'X-B': '2', 'X-A': '1' } };
