@@ -34,13 +34,22 @@ describe('summarizeChanges', () => {
     expect(summarizeChanges(prev, next)).toBe('provider routing');
   });
 
-  it('reports modelOverrides count change', () => {
+  it('reports an added model override', () => {
     const prev = base();
     const next: ProxyConfig = {
       ...base(),
       modelOverrides: { 'claude-*': { cacheControl: 'always' } },
     };
-    expect(summarizeChanges(prev, next)).toBe('modelOverrides: 0→1');
+    expect(summarizeChanges(prev, next)).toBe('modelOverrides: +claude-*');
+  });
+
+  it('reports a removed model override', () => {
+    const prev: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControl: 'always' } },
+    };
+    const next = base();
+    expect(summarizeChanges(prev, next)).toBe('modelOverrides: -claude-*');
   });
 
   it('reports headers change', () => {
@@ -49,7 +58,7 @@ describe('summarizeChanges', () => {
     expect(summarizeChanges(prev, next)).toBe('headers');
   });
 
-  it('reports modelOverrides value change when the key set is unchanged', () => {
+  it('reports the changed field when an override is edited in place', () => {
     const prev: ProxyConfig = {
       ...base(),
       modelOverrides: { 'claude-*': { cacheControl: 'auto' } },
@@ -58,7 +67,76 @@ describe('summarizeChanges', () => {
       ...base(),
       modelOverrides: { 'claude-*': { cacheControl: 'always' } },
     };
-    expect(summarizeChanges(prev, next)).toBe('modelOverrides: 1→1');
+    expect(summarizeChanges(prev, next)).toBe(
+      'modelOverrides: claude-* (cacheControl: auto→always)',
+    );
+  });
+
+  it('reports multiple changed fields within one override', () => {
+    const prev: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControl: 'auto', sessionId: 'auto' } },
+    };
+    const next: ProxyConfig = {
+      ...base(),
+      modelOverrides: {
+        'claude-*': {
+          cacheControl: 'always',
+          sessionId: 'always',
+          normalizeVolatileSystem: true,
+        },
+      },
+    };
+    expect(summarizeChanges(prev, next)).toBe(
+      'modelOverrides: claude-* (cacheControl: auto→always, sessionId: auto→always, normalizeVolatileSystem: unset→on)',
+    );
+  });
+
+  it('reports provider routing and headers changes within an override', () => {
+    const prev: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { provider: { only: 'anthropic' } } },
+    };
+    const next: ProxyConfig = {
+      ...base(),
+      modelOverrides: {
+        'claude-*': { provider: { only: 'deepinfra' }, headers: { 'X-T': '1' } },
+      },
+    };
+    expect(summarizeChanges(prev, next)).toBe(
+      'modelOverrides: claude-* (provider routing, headers)',
+    );
+  });
+
+  it('reports several overrides at once', () => {
+    const prev: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControl: 'auto' } },
+    };
+    const next: ProxyConfig = {
+      ...base(),
+      modelOverrides: {
+        'claude-*': { cacheControl: 'always' },
+        'gpt-*': { sessionId: 'always' },
+      },
+    };
+    expect(summarizeChanges(prev, next)).toBe(
+      'modelOverrides: claude-* (cacheControl: auto→always), +gpt-*',
+    );
+  });
+
+  it('reports a cacheControlTtl change within an override (locks CACHE_LEVER_KEYS coverage)', () => {
+    const prev: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControlTtl: '5m' } },
+    };
+    const next: ProxyConfig = {
+      ...base(),
+      modelOverrides: { 'claude-*': { cacheControlTtl: '1h' } },
+    };
+    expect(summarizeChanges(prev, next)).toBe(
+      'modelOverrides: claude-* (cacheControlTtl: 5m→1h)',
+    );
   });
 
   it('does not report headers change when only key order differs', () => {

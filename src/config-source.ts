@@ -3,6 +3,7 @@ import {
   buildProviderRouting,
   type LoadConfigOptions,
   loadConfig,
+  type ModelOverride,
   type ProxyConfig,
   tryFindConfigFile,
 } from './config.js';
@@ -27,11 +28,16 @@ function fmt(value: unknown): string {
   return String(value);
 }
 
-const SCALAR_KEYS = [
+/** Cache-lever keys shared by global config + per-model overrides. */
+const CACHE_LEVER_KEYS = [
   'cacheControl',
   'cacheControlTtl',
   'sessionId',
   'normalizeVolatileSystem',
+] as const;
+
+const SCALAR_KEYS = [
+  ...CACHE_LEVER_KEYS,
   'authType',
   'verbose',
   'bodyLimit',
@@ -45,6 +51,53 @@ function canonicalEntries(record: Record<string, unknown> | undefined): string {
       .sort()
       .map(key => [key, record[key]]),
   );
+}
+
+/** Field-level diff for a single model override; '' if nothing changed. */
+function overrideFieldDiff(
+  prev: ModelOverride | undefined,
+  next: ModelOverride | undefined,
+): string {
+  const parts: string[] = [];
+  for (const key of CACHE_LEVER_KEYS) {
+    if (prev?.[key] !== next?.[key]) {
+      parts.push(`${key}: ${fmt(prev?.[key])}→${fmt(next?.[key])}`);
+    }
+  }
+  if (
+    JSON.stringify(buildProviderRouting(prev?.provider)) !==
+    JSON.stringify(buildProviderRouting(next?.provider))
+  ) {
+    parts.push('provider routing');
+  }
+  if (canonicalEntries(prev?.headers) !== canonicalEntries(next?.headers)) {
+    parts.push('headers');
+  }
+  return parts.join(', ');
+}
+
+/** Per-override diff: +added, -removed, `key (fields)` for modified; '' if unchanged. */
+function summarizeModelOverridesDiff(
+  prev: ProxyConfig['modelOverrides'],
+  next: ProxyConfig['modelOverrides'],
+): string {
+  const prevKeys = new Set(Object.keys(prev ?? {}));
+  const nextKeys = new Set(Object.keys(next ?? {}));
+  const parts: string[] = [];
+
+  for (const key of [...new Set([...prevKeys, ...nextKeys])].sort()) {
+    const inPrev = prevKeys.has(key);
+    const inNext = nextKeys.has(key);
+    if (inPrev && inNext) {
+      const fields = overrideFieldDiff(prev?.[key], next?.[key]);
+      if (fields) parts.push(`${key} (${fields})`);
+    } else if (inNext) {
+      parts.push(`+${key}`);
+    } else {
+      parts.push(`-${key}`);
+    }
+  }
+  return parts.join(', ');
 }
 
 /** Diff of cache-relevant fields; '' if nothing changed. */
@@ -61,11 +114,11 @@ export function summarizeChanges(prev: ProxyConfig, next: ProxyConfig): string {
   const nextRouting = JSON.stringify(buildProviderRouting(next.provider));
   if (prevRouting !== nextRouting) parts.push('provider routing');
 
-  if (canonicalEntries(prev.modelOverrides) !== canonicalEntries(next.modelOverrides)) {
-    const prevCount = prev.modelOverrides ? Object.keys(prev.modelOverrides).length : 0;
-    const nextCount = next.modelOverrides ? Object.keys(next.modelOverrides).length : 0;
-    parts.push(`modelOverrides: ${prevCount}→${nextCount}`);
-  }
+  const overridesDiff = summarizeModelOverridesDiff(
+    prev.modelOverrides,
+    next.modelOverrides,
+  );
+  if (overridesDiff) parts.push(`modelOverrides: ${overridesDiff}`);
 
   if (canonicalEntries(prev.headers) !== canonicalEntries(next.headers)) {
     parts.push('headers');

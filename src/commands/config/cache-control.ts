@@ -1,19 +1,21 @@
 import * as clack from '@clack/prompts';
-import { DEFAULTS, readConfigFile } from '../../config.js';
-import type { TriState } from '../../config-schema.js';
+import { DEFAULTS, readConfigFileRaw } from '../../config.js';
 import { requireConfigPath, setGlobalConfigFields } from './config.js';
 import { askCacheControlTtl, askTriState, CACHE_HINTS } from './prompts.js';
 
 export async function cacheControlCommand(opts?: { configPath?: string }): Promise<void> {
   const configPath = requireConfigPath(opts?.configPath);
-  const cfg = readConfigFile(configPath);
-  const currentCc = cfg.cacheControl ?? DEFAULTS.cacheControl;
-  const currentTtl = cfg.cacheControlTtl;
+  const cfg = readConfigFileRaw(configPath);
+  const rawCc = cfg.cacheControl;
+  const rawTtl = cfg.cacheControlTtl;
+  const effectiveCc = rawCc ?? DEFAULTS.cacheControl;
 
-  clack.log.info(`Current: cacheControl = ${currentCc}`);
-  if (currentTtl) clack.log.info(`Current: cacheControlTtl = ${currentTtl}`);
+  clack.log.info(
+    `Current: cacheControl = ${rawCc === undefined ? `(default -> ${effectiveCc})` : effectiveCc}`,
+  );
+  if (rawTtl) clack.log.info(`Current: cacheControlTtl = ${rawTtl}`);
 
-  const cc = await askTriState('Cache control mode', currentCc as TriState, CACHE_HINTS, {
+  const cc = await askTriState('Cache control mode', rawCc, CACHE_HINTS, {
     removable: true,
   });
   if (typeof cc === 'symbol') return;
@@ -21,10 +23,9 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   const fields: Record<string, unknown> = {};
   fields.cacheControl = cc === 'reset' ? undefined : cc;
 
-  const ttlResult = await askCacheControlTtl(
-    currentTtl as '5m' | '1h' | 'omit' | 'skip' | undefined,
-    { removable: true },
-  );
+  const ttlResult = await askCacheControlTtl(rawTtl, {
+    removable: true,
+  });
   if (typeof ttlResult === 'symbol') {
     // TTL cancelled — apply cacheControl only.
     setGlobalConfigFields(configPath, fields);

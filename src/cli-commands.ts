@@ -15,6 +15,7 @@ import {
 } from 'cmd-ts';
 import { addOverrideCommand } from './commands/config/add.js';
 import { browseModelsCommand } from './commands/config/browse.js';
+import { cachingCommand } from './commands/config/caching-menu.js';
 import { editOverrideCommand } from './commands/config/edit.js';
 import { listOverridesCommand } from './commands/config/list.js';
 import { removeOverrideCommand } from './commands/config/remove.js';
@@ -165,6 +166,14 @@ export const configCli = subcommands({
       handler: async args => {
         const client = await makeClient(args);
         await addOverrideCommand({ client, configPath: args.configPath });
+      },
+    }),
+    cache: command({
+      name: 'cache',
+      description: 'Tune prompt-caching settings (interactive)',
+      args: { ...configArgs },
+      handler: async args => {
+        await cachingCommand({ configPath: args.configPath });
       },
     }),
     edit: command({

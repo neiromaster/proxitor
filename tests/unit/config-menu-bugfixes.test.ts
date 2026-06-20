@@ -82,8 +82,9 @@ vi.mock('../../src/openrouter/models.js', () => ({
 }));
 
 // Import AFTER mocks are set up
+const { editOverrideCommand } = await import('../../src/commands/config/edit.js');
 const { editCacheControl, editNormalizeVolatileSystem } = await import(
-  '../../src/commands/config/edit.js'
+  '../../src/commands/config/override-levers.js'
 );
 const { cacheControlCommand } = await import(
   '../../src/commands/config/cache-control.js'
@@ -91,6 +92,9 @@ const { cacheControlCommand } = await import(
 const { connectionMenuCommand } = await import('../../src/commands/config/connection.js');
 const { sessionRoutingCommand } = await import(
   '../../src/commands/config/session-routing.js'
+);
+const { normalizeVolatileSystemCommand } = await import(
+  '../../src/commands/config/normalize-system.js'
 );
 
 // Real (un-mocked) config utilities for file-level tests
@@ -264,6 +268,149 @@ describe('editNormalizeVolatileSystem (per-model)', () => {
     const result = await editNormalizeVolatileSystem(current);
 
     expect(result).toEqual(current);
+  });
+});
+
+// ===========================================================================
+// Global NVS — absent config → highlight "Reset / inherit"
+// ===========================================================================
+
+describe('normalizeVolatileSystemCommand (global): absent → Reset/inherit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    // Prior describes don't clear mocks — wipe stale calls before asserting.
+    mockAskNvs.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined current (→ Reset/inherit highlighted) when NVS absent', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskNvs.mockResolvedValueOnce(Symbol.for('clack:cancel')); // cancel
+
+    await normalizeVolatileSystemCommand({ configPath });
+
+    expect(mockAskNvs).toHaveBeenCalledTimes(1);
+    expect(mockAskNvs).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the explicit value when NVS is set in config', async () => {
+    writeFileSync(configPath, 'normalizeVolatileSystem: true\nport: 8828\n');
+    mockAskNvs.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await normalizeVolatileSystemCommand({ configPath });
+
+    expect(mockAskNvs).toHaveBeenCalledTimes(1);
+    expect(mockAskNvs).toHaveBeenCalledWith(
+      expect.any(String),
+      true,
+      expect.objectContaining({ removable: true }),
+    );
+  });
+});
+
+// ===========================================================================
+// Global cacheControl / sessionId — absent → highlight "Reset / inherit"
+// ===========================================================================
+
+describe('cacheControlCommand (global): absent → Reset/inherit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockAskTriState.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined cacheControl (→ Reset/inherit) when absent', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel')); // cancel
+
+    await cacheControlCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledTimes(1);
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the explicit cacheControl when set', async () => {
+    writeFileSync(configPath, 'cacheControl: always\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await cacheControlCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      'always',
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+});
+
+describe('sessionRoutingCommand (global): absent → Reset/inherit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockAskTriState.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined sessionId (→ Reset/inherit) when absent', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await sessionRoutingCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledTimes(1);
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the explicit sessionId when set', async () => {
+    writeFileSync(configPath, 'sessionId: always\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await sessionRoutingCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      'always',
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
   });
 });
 
@@ -582,5 +729,63 @@ describe('Bug #6: Skip short-circuit in add override', () => {
     const savedOverride = mockSetModelOverride.mock.calls[0]![2];
     expect(savedOverride.sessionId).toBeUndefined();
     expect(savedOverride.cacheControl).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// Instant-save model-edit: each changed field persists; no "Save changes?"
+// ===========================================================================
+
+describe('editOverrideCommand: instant-save', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    writeFileSync(
+      configPath,
+      'modelOverrides:\n  claude-*:\n    provider:\n      only: anthropic\n',
+    );
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockGetModelOverrides.mockReturnValue({
+      'claude-*': { provider: { only: 'anthropic' } },
+    });
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('persists a provider change immediately and skips the Save prompt', async () => {
+    const { select: mockSelect, confirm: mockConfirm } = await import('@clack/prompts');
+    const select = mockSelect as ReturnType<typeof vi.fn>;
+    // 1) pick the override, 2) pick "provider", 3) pick "Done"
+    select
+      .mockResolvedValueOnce('claude-*')
+      .mockResolvedValueOnce('provider')
+      .mockResolvedValueOnce('done');
+    // provider edit → user drops routing ("skip")
+    mockSelectRoutingMode.mockResolvedValueOnce('skip');
+
+    await editOverrideCommand({} as any, configPath);
+
+    expect(mockSetModelOverride).toHaveBeenCalled();
+    const confirmMessages = (mockConfirm as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: any[]) => c[0]?.message ?? '',
+    );
+    expect(confirmMessages).not.toContainEqual(expect.stringContaining('Save changes'));
+  });
+
+  it('writes nothing when the field-select is cancelled', async () => {
+    const { select: mockSelect } = await import('@clack/prompts');
+    const select = mockSelect as ReturnType<typeof vi.fn>;
+    select
+      .mockResolvedValueOnce('claude-*')
+      .mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await editOverrideCommand({} as any, configPath);
+
+    expect(mockSetModelOverride).not.toHaveBeenCalled();
   });
 });

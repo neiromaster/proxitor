@@ -1,27 +1,18 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
-import { readConfigFile } from '../../config.js';
-import type { ModelOverride, TriState } from '../../config-schema.js';
+import type { ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
+import { perModelCachingMenu } from './caching-menu.js';
+import { describeTtl } from './caching-summary.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
+import { overridesEqual } from './equality.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
-import {
-  applyField,
-  collectCacheTriState,
-  collectNormalizeVolatileSystem,
-  collectSessionTriState,
-} from './tri-state.js';
 
-type EditField =
-  | 'provider'
-  | 'sessionId'
-  | 'cacheControl'
-  | 'normalizeVolatileSystem'
-  | 'done';
+type EditField = 'provider' | 'caching' | 'done';
 
 function nvsHint(value: boolean | undefined): string {
   if (value === undefined) return '(inherit)';
@@ -43,50 +34,12 @@ function formatOverrideHint(override: ModelOverride | undefined): string {
   return parts.join(', ') || '(empty)';
 }
 
-function formatCacheHint(
-  cc: TriState | undefined,
-  ttl: '5m' | '1h' | 'omit' | 'skip' | undefined,
-): string {
-  let ttlLabel = ttl ?? '';
-  if (ttl === 'omit') ttlLabel = 'ttl strip';
-  else if (ttl === 'skip') ttlLabel = 'ttl passthrough';
-  return [cc, ttlLabel].filter(Boolean).join(', ') || '(inherit)';
-}
-
-function readGlobalTtl(
-  configPath: string | undefined,
-): '5m' | '1h' | 'omit' | 'skip' | undefined {
-  if (!configPath) return undefined;
-  try {
-    return readConfigFile(configPath).cacheControlTtl as
-      | '5m'
-      | '1h'
-      | 'omit'
-      | 'skip'
-      | undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function showCurrentConfig(modelKey: string, current: ModelOverride): void {
-  clack.log.info(`Current config for "${modelKey}":`);
-  if (current.provider) {
-    for (const [field, value] of Object.entries(current.provider)) {
-      clack.log.info(`  provider.${field}: ${JSON.stringify(value)}`);
-    }
-  }
-  if (current.sessionId) clack.log.info(`  sessionId: ${current.sessionId}`);
-  if (current.cacheControl) clack.log.info(`  cacheControl: ${current.cacheControl}`);
-  if (current.cacheControlTtl)
-    clack.log.info(`  cacheControlTtl: ${current.cacheControlTtl}`);
-  if (current.normalizeVolatileSystem !== undefined)
-    clack.log.info(`  normalizeVolatileSystem: ${current.normalizeVolatileSystem}`);
-  if (current.headers) {
-    for (const [name, value] of Object.entries(current.headers)) {
-      clack.log.info(`  headers.${name}: ${value}`);
-    }
-  }
+function formatCachingHint(current: ModelOverride): string {
+  const cc = current.cacheControl ?? 'inherit';
+  const ttl = current.cacheControlTtl ? describeTtl(current.cacheControlTtl) : 'inherit';
+  const sid = current.sessionId ?? 'inherit';
+  const nvs = nvsHint(current.normalizeVolatileSystem);
+  return `cc ${cc} · ttl ${ttl} · sid ${sid} · nvs ${nvs}`;
 }
 
 async function editProvider(
@@ -111,67 +64,6 @@ async function editProvider(
   if (!result) return current;
 
   return { ...current, provider: (result as ModelOverride).provider };
-}
-
-async function editSessionId(current: ModelOverride): Promise<ModelOverride> {
-  const result = await collectSessionTriState(current.sessionId as TriState | undefined);
-  if (result === null) return current;
-
-  const next: Record<string, unknown> = { ...current };
-  applyField(next, 'sessionId', result.sessionId);
-  return next as ModelOverride;
-}
-
-/** @internal */
-export async function editCacheControl(
-  current: ModelOverride,
-  configPath?: string,
-): Promise<ModelOverride> {
-  const globalTtl = readGlobalTtl(configPath);
-  const result = await collectCacheTriState(
-    current.cacheControl as TriState | undefined,
-    current.cacheControlTtl as '5m' | '1h' | 'omit' | 'skip' | undefined,
-    globalTtl,
-  );
-  if (result === null) return current;
-
-  const next: Record<string, unknown> = { ...current };
-  applyField(next, 'cacheControl', result.cacheControl);
-  applyField(next, 'cacheControlTtl', result.cacheControlTtl);
-  return next as ModelOverride;
-}
-
-/** @internal */
-export async function editNormalizeVolatileSystem(
-  current: ModelOverride,
-): Promise<ModelOverride> {
-  const result = await collectNormalizeVolatileSystem(current.normalizeVolatileSystem);
-  if (result === null) return current;
-
-  const next: Record<string, unknown> = { ...current };
-  applyField(next, 'normalizeVolatileSystem', result.normalizeVolatileSystem);
-  return next as ModelOverride;
-}
-
-async function applyFieldEdit(
-  field: EditField,
-  modelKey: string,
-  current: ModelOverride,
-  client: OpenRouterDataClient,
-  configPath: string,
-): Promise<ModelOverride> {
-  switch (field) {
-    case 'provider':
-      return editProvider(modelKey, current, client);
-    case 'sessionId':
-      return editSessionId(current);
-    case 'cacheControl':
-      return editCacheControl(current, configPath);
-    case 'normalizeVolatileSystem':
-      return editNormalizeVolatileSystem(current);
-    default:
-      return current;
-  }
 }
 
 /** Run the interactive "Edit model override" flow. */
@@ -204,8 +96,6 @@ export async function editOverrideCommand(
   const modelKey = selected as string;
   let current: ModelOverride = overrides[modelKey] ?? {};
 
-  showCurrentConfig(modelKey, current);
-
   for (;;) {
     const field = await clack.select<EditField>({
       message: 'Edit which field?',
@@ -216,34 +106,32 @@ export async function editOverrideCommand(
           hint: formatOverrideHint({ provider: current.provider }),
         },
         {
-          value: 'sessionId',
-          label: 'Session ID',
-          hint: current.sessionId ?? '(inherit)',
-        },
-        {
-          value: 'cacheControl',
-          label: 'Cache control',
-          hint: formatCacheHint(current.cacheControl, current.cacheControlTtl),
-        },
-        {
-          value: 'normalizeVolatileSystem',
-          label: 'Normalize volatile system',
-          hint: nvsHint(current.normalizeVolatileSystem),
+          value: 'caching',
+          label: '💾 Caching',
+          hint: formatCachingHint(current),
         },
         { value: 'done', label: '✓ Done' },
       ],
     });
     if (isCancel(field) || field === 'done') break;
 
-    current = await applyFieldEdit(field, modelKey, current, client, resolvedConfigPath);
+    if (field === 'caching') {
+      // Submenu self-persists; just refresh the local ref (no extra write).
+      current = await perModelCachingMenu({
+        modelKey,
+        current,
+        configPath: resolvedConfigPath,
+      });
+      continue;
+    }
+
+    // field === 'provider' (caching + done handled above)
+    const before = current;
+    current = await editProvider(modelKey, current, client);
+    if (!overridesEqual(current, before)) {
+      setModelOverride(resolvedConfigPath, modelKey, current);
+    }
   }
 
-  const save = await clack.confirm({ message: 'Save changes?' });
-  if (isCancel(save) || !save) {
-    clack.outro('Cancelled');
-    return;
-  }
-
-  setModelOverride(resolvedConfigPath, modelKey, current);
-  clack.outro('✓ Override updated');
+  clack.outro('✓ Done');
 }

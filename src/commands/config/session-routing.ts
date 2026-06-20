@@ -1,6 +1,5 @@
 import * as clack from '@clack/prompts';
-import { DEFAULTS, readConfigFile } from '../../config.js';
-import type { TriState } from '../../config-schema.js';
+import { DEFAULTS, readConfigFileRaw } from '../../config.js';
 import { requireConfigPath, setGlobalConfigField } from './config.js';
 import { askTriState, SESSION_HINTS } from './prompts.js';
 
@@ -8,19 +7,17 @@ export async function sessionRoutingCommand(opts?: {
   configPath?: string;
 }): Promise<void> {
   const configPath = requireConfigPath(opts?.configPath);
-  const cfg = readConfigFile(configPath);
-  const current = cfg.sessionId ?? DEFAULTS.sessionId;
+  const cfg = readConfigFileRaw(configPath);
+  const raw = cfg.sessionId;
+  const effective = raw ?? DEFAULTS.sessionId;
 
-  clack.log.info(`Current: sessionId = ${current}`);
-
-  const result = await askTriState(
-    'Session routing mode',
-    current as TriState,
-    SESSION_HINTS,
-    {
-      removable: true,
-    },
+  clack.log.info(
+    `Current: sessionId = ${raw === undefined ? `(default -> ${effective})` : effective}`,
   );
+
+  const result = await askTriState('Session routing mode', raw, SESSION_HINTS, {
+    removable: true,
+  });
 
   if (typeof result === 'symbol') return;
 
