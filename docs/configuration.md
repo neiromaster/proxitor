@@ -174,6 +174,28 @@ Prompt caching is **provider-scoped**: a cache built on Anthropic doesn't help w
 
 **`cacheControlTtl`** (`5m` / `1h` / `omit` / `skip`, default absent = passthrough) — controls the `ttl` field on injected `cache_control` (Anthropic endpoints only). TTL only has effect when caching is active (`cacheControl` is `auto`/`always`); it is set independently of the cache mode in the editor.
 
+**`rewriteBlockTtl`** (`auto` / `always` / `skip`, default `skip`) — normalizes the `ttl` on the **block-level** `cache_control` breakpoints the client already placed (in `system`, `tools`, `messages[].content`) so they match `cacheControlTtl`. Claude Code sends these blocks mostly without a `ttl` (Anthropic then treats them as `5m`); if you set `cacheControlTtl: 1h`, the request leaves the proxy with a `1h` root and `5m` blocks — mixed TTLs that Anthropic rejects. `rewriteBlockTtl` fixes that.
+
+| Mode | Behavior |
+| --- | --- |
+| `skip` (default) | Leave the client's block `ttl` untouched. The mismatch can still occur — set this only if you want the client to own block TTLs. |
+| `auto` | Rewrite block TTLs to `cacheControlTtl` on Anthropic-native endpoints (when caching is active). |
+| `always` | Rewrite block TTLs on all endpoints. |
+
+It reuses the value of `cacheControlTtl` (`5m` / `1h` / `omit`) and only touches **existing** breakpoints — it adds none, so Anthropic's ≤4-breakpoint limit and the client's placement are respected. Set it from `proxitor config` → **💾 Caching** → Activate caching → *Rewrite block TTLs* (the third step: mode → TTL → rewrite), or per-model in the override editor.
+
+> **Note:** setting `cacheControlTtl: 1h` alone does **not** fix the mismatch — `rewriteBlockTtl` must also be `auto` or `always`.
+
+```yaml
+cacheControl: auto
+cacheControlTtl: 1h
+rewriteBlockTtl: auto   # normalize block breakpoints to 1h (fixes Anthropic mixed-ttl rejection)
+
+modelOverrides:
+  "claude-opus-*":
+    rewriteBlockTtl: skip   # leave Opus block TTLs as the client sends them
+```
+
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
 Both `cacheControl` and `sessionId` support `auto` / `always` / `skip` modes:
