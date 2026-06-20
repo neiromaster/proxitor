@@ -63,6 +63,7 @@ const modelOverrideSchema = z
     headers: z.record(z.string(), z.string()).optional(),
     cacheControl: triStateSchema.optional(),
     cacheControlTtl: ttlSchema.optional(),
+    rewriteBlockTtl: triStateSchema.optional(),
     sessionId: triStateSchema.optional(),
     normalizeVolatileSystem: z.boolean().optional(),
   })
@@ -87,6 +88,7 @@ export const proxyConfigSchema = z
     headers: z.record(z.string(), z.string()).optional(),
     cacheControl: triStateSchema.default('auto'),
     cacheControlTtl: ttlSchema.optional(),
+    rewriteBlockTtl: triStateSchema.default('skip'),
     sessionId: triStateSchema.default('auto'),
     normalizeVolatileSystem: z.boolean().default(false),
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
