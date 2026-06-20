@@ -656,6 +656,83 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
   });
 
+  // --- rewriteBlockTtl integration ---
+
+  it('rewrites block-level cache_control TTLs when rewriteBlockTtl is active', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '1h', rewriteBlockTtl: 'auto' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'msg_test', content: [] });
+        });
+      },
+    );
+
+    const res = await fetch(`${env.proxyUrl}/v1/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        system: [
+          { type: 'text', text: 'stable', cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: 'more', cache_control: { type: 'ephemeral', ttl: '5m' } },
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }],
+          },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    // Root gets the configured 1h TTL.
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    // Every client block breakpoint is normalized to 1h — no mismatch.
+    const system = capturedBody.system as Array<{ cache_control?: { ttl?: string } }>;
+    expect(system[0]?.cache_control?.ttl).toBe('1h');
+    expect(system[1]?.cache_control?.ttl).toBe('1h');
+    const messages = capturedBody.messages as Array<{
+      content: Array<{ cache_control?: { ttl?: string } }>;
+    }>;
+    expect(messages[0]?.content[0]?.cache_control?.ttl).toBe('1h');
+  });
+
+  it('leaves block TTLs untouched when rewriteBlockTtl is skip (default)', async () => {
+    let capturedBody: Record<string, unknown> = {};
+
+    env = await createTestEnv(
+      { cacheControl: 'auto', cacheControlTtl: '1h', rewriteBlockTtl: 'skip' },
+      upstream => {
+        catchAll(upstream, async c => {
+          capturedBody = await c.req.json().catch(() => ({}));
+          return c.json({ id: 'msg_test', content: [] });
+        });
+      },
+    );
+
+    await fetch(`${env.proxyUrl}/v1/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        system: [{ type: 'text', text: 's', cache_control: { type: 'ephemeral' } }],
+        messages: [],
+      }),
+    });
+
+    // Root still 1h, but the block keeps its (no-ttl → default) state.
+    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    const system = capturedBody.system as Array<{
+      cache_control?: Record<string, unknown>;
+    }>;
+    expect(system[0]?.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
   // --- session_id integration ---
 
   it('derives session_id from X-Claude-Code-Session-Id header with auto mode', async () => {
