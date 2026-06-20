@@ -155,9 +155,10 @@ export async function askNormalizeVolatileSystem(
       hint: opts.resetHint ?? 'Remove override',
     });
   }
+  // Unset (inheriting) → highlight "Reset / inherit".
   const result = await clack.select({
     message,
-    initialValue: current ?? false,
+    initialValue: current ?? (opts?.removable ? 'reset' : false),
     options,
   });
   return result as boolean | 'reset' | symbol; // symbol = clack cancel
@@ -181,9 +182,10 @@ export async function askTriState(
       hint: 'Remove override',
     });
   }
+  // Unset (inheriting) → highlight "Reset / inherit".
   const result = await clack.select({
     message,
-    initialValue: current ?? 'auto',
+    initialValue: current ?? (opts?.removable ? 'reset' : 'auto'),
     options,
   });
   return result as TriState | 'reset' | symbol; // symbol = clack cancel
@@ -223,9 +225,10 @@ export async function askCacheControlTtl(
     options.push({ value: 'reset', label: 'Reset / inherit', hint: inherit });
   }
 
+  // Unset (inheriting) → highlight "Reset / inherit".
   const result = await clack.select({
     message: 'Cache TTL',
-    initialValue: current ?? '5m',
+    initialValue: current ?? (opts?.removable ? 'reset' : '5m'),
     options,
   });
   return result as '5m' | '1h' | 'omit' | 'skip' | 'reset' | symbol;

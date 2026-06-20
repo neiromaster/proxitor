@@ -24,12 +24,9 @@ export function applyField<T>(
 export async function collectSessionTriState(
   currentSid?: TriState,
 ): Promise<{ sessionId: ResolvedField<TriState> } | null> {
-  const sid = await askTriState(
-    'Session ID mode',
-    (currentSid ?? 'auto') as TriState,
-    SESSION_HINTS,
-    { removable: true },
-  );
+  const sid = await askTriState('Session ID mode', currentSid, SESSION_HINTS, {
+    removable: true,
+  });
   if (typeof sid === 'symbol') return null; // cancelled
   if (sid === 'reset') return { sessionId: { remove: true } };
   return { sessionId: { value: sid } };
@@ -44,12 +41,9 @@ export async function collectCacheTriState(
   cacheControl: ResolvedField<TriState>;
   cacheControlTtl?: ResolvedField<'5m' | '1h' | 'omit' | 'skip'>;
 } | null> {
-  const cc = await askTriState(
-    'Cache control mode',
-    (currentCc ?? 'auto') as TriState,
-    CACHE_HINTS,
-    { removable: true },
-  );
+  const cc = await askTriState('Cache control mode', currentCc, CACHE_HINTS, {
+    removable: true,
+  });
   if (typeof cc === 'symbol') return null;
 
   let cacheControl: ResolvedField<TriState>;
