@@ -1000,4 +1000,9 @@ describe('rewriteBlockTtl', () => {
     const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
     expect(resolved.rewriteBlockTtl).toBe('always');
   });
+
+  it('rejects an invalid rewriteBlockTtl value', () => {
+    const result = proxyConfigFileSchema.safeParse({ rewriteBlockTtl: 'sometimes' });
+    expect(result.success).toBe(false);
+  });
 });
