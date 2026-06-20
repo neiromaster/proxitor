@@ -28,10 +28,10 @@ describe('formatGlobalCachingSummary', () => {
         normalizeVolatileSystem: undefined,
       }),
     );
-    expect(out).toContain('cacheControl            = auto');
+    expect(out).toContain('cacheControl            = (default -> auto)');
     expect(out).toContain('cacheControlTtl         = (default)');
-    expect(out).toContain('sessionId               = auto');
-    expect(out).toContain('normalizeVolatileSystem = off');
+    expect(out).toContain('sessionId               = (default -> auto)');
+    expect(out).toContain('normalizeVolatileSystem = (default -> off)');
     expect(out).toContain('Anthropic');
     expect(out).toContain('all 3');
   });
@@ -49,6 +49,12 @@ describe('formatGlobalCachingSummary', () => {
     expect(out).toContain('cacheControlTtl         = 1h');
     expect(out).toContain('sessionId               = skip');
     expect(out).toContain('normalizeVolatileSystem = on');
+  });
+
+  it('shows bare on/off only when normalizeVolatileSystem is explicitly set', () => {
+    const off = formatGlobalCachingSummary(asConfig({ normalizeVolatileSystem: false }));
+    expect(off).toContain('normalizeVolatileSystem = off');
+    expect(off).not.toContain('default -> off');
   });
 
   it('shows friendly labels for omit/skip TTL', () => {

@@ -93,6 +93,9 @@ const { connectionMenuCommand } = await import('../../src/commands/config/connec
 const { sessionRoutingCommand } = await import(
   '../../src/commands/config/session-routing.js'
 );
+const { normalizeVolatileSystemCommand } = await import(
+  '../../src/commands/config/normalize-system.js'
+);
 
 // Real (un-mocked) config utilities for file-level tests
 const { setGlobalConfigFields, readConfigRaw } = await import(
@@ -265,6 +268,149 @@ describe('editNormalizeVolatileSystem (per-model)', () => {
     const result = await editNormalizeVolatileSystem(current);
 
     expect(result).toEqual(current);
+  });
+});
+
+// ===========================================================================
+// Global NVS — absent config → highlight "Reset / inherit"
+// ===========================================================================
+
+describe('normalizeVolatileSystemCommand (global): absent → Reset/inherit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    // Prior describes don't clear mocks — wipe stale calls before asserting.
+    mockAskNvs.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined current (→ Reset/inherit highlighted) when NVS absent', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskNvs.mockResolvedValueOnce(Symbol.for('clack:cancel')); // cancel
+
+    await normalizeVolatileSystemCommand({ configPath });
+
+    expect(mockAskNvs).toHaveBeenCalledTimes(1);
+    expect(mockAskNvs).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the explicit value when NVS is set in config', async () => {
+    writeFileSync(configPath, 'normalizeVolatileSystem: true\nport: 8828\n');
+    mockAskNvs.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await normalizeVolatileSystemCommand({ configPath });
+
+    expect(mockAskNvs).toHaveBeenCalledTimes(1);
+    expect(mockAskNvs).toHaveBeenCalledWith(
+      expect.any(String),
+      true,
+      expect.objectContaining({ removable: true }),
+    );
+  });
+});
+
+// ===========================================================================
+// Global cacheControl / sessionId — absent → highlight "Reset / inherit"
+// ===========================================================================
+
+describe('cacheControlCommand (global): absent → Reset/inherit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockAskTriState.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined cacheControl (→ Reset/inherit) when absent', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel')); // cancel
+
+    await cacheControlCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledTimes(1);
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the explicit cacheControl when set', async () => {
+    writeFileSync(configPath, 'cacheControl: always\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await cacheControlCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      'always',
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+});
+
+describe('sessionRoutingCommand (global): absent → Reset/inherit', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockAskTriState.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined sessionId (→ Reset/inherit) when absent', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await sessionRoutingCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledTimes(1);
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the explicit sessionId when set', async () => {
+    writeFileSync(configPath, 'sessionId: always\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await sessionRoutingCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      'always',
+      expect.any(Object),
+      expect.objectContaining({ removable: true }),
+    );
   });
 });
 

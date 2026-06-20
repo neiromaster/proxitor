@@ -1,5 +1,5 @@
 import { DEFAULTS } from '../../config.js';
-import type { ModelOverride, ProxyConfig } from '../../config-schema.js';
+import type { ModelOverride, ProxyConfig, TriState } from '../../config-schema.js';
 
 type TtlValue = '5m' | '1h' | 'omit' | 'skip' | undefined;
 
@@ -11,8 +11,17 @@ export function describeTtl(value: TtlValue): string {
   return value;
 }
 
-function boolLabel(value: boolean | undefined, fallback: boolean): string {
-  return (value ?? fallback) ? 'on' : 'off';
+/** Global NVS: distinguish absent (default-origin) from an explicit on/off. */
+function globalNvsLabel(value: boolean | undefined): string {
+  if (value === undefined) {
+    return `(default -> ${DEFAULTS.normalizeVolatileSystem ? 'on' : 'off'})`;
+  }
+  return value ? 'on' : 'off';
+}
+
+/** Global tri-state: distinguish absent (default-origin) from an explicit mode. */
+function globalTriStateLabel(value: TriState | undefined, fallback: TriState): string {
+  return value === undefined ? `(default -> ${fallback})` : value;
 }
 
 function nvsLabel(value: boolean | undefined, globalValue: boolean): string {
@@ -31,9 +40,9 @@ function perModelTtl(current: ModelOverride, globalCfg: Partial<ProxyConfig>): s
 }
 
 export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
-  const cc = cfg.cacheControl ?? DEFAULTS.cacheControl;
-  const sid = cfg.sessionId ?? DEFAULTS.sessionId;
-  const nvs = boolLabel(cfg.normalizeVolatileSystem, DEFAULTS.normalizeVolatileSystem);
+  const cc = globalTriStateLabel(cfg.cacheControl, DEFAULTS.cacheControl);
+  const sid = globalTriStateLabel(cfg.sessionId, DEFAULTS.sessionId);
+  const nvs = globalNvsLabel(cfg.normalizeVolatileSystem);
 
   return [
     'Three settings shape the request so cache survives.',

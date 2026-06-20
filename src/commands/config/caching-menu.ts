@@ -1,6 +1,6 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
-import { readConfigFile } from '../../config.js';
+import { readConfigFile, readConfigFileRaw } from '../../config.js';
 import type { ModelOverride } from '../../config-schema.js';
 import { cacheControlCommand } from './cache-control.js';
 import {
@@ -75,7 +75,7 @@ export async function globalCachingMenu(opts?: { configPath?: string }): Promise
   await runCachingLeverMenu({
     noteTitle: 'Prompt caching',
     backLabel: '← Back',
-    renderNote: () => formatGlobalCachingSummary(readConfigFile(configPath)),
+    renderNote: () => formatGlobalCachingSummary(readConfigFileRaw(configPath)),
     onLever: lever => lever.global(configPath),
   });
 }

@@ -255,21 +255,35 @@ export function findConfigFile(explicitPath?: string): string {
   throw new MissingConfigError(getConfigSearchPaths());
 }
 
-export function readConfigFile(filePath: string): Partial<ProxyConfig> {
+function parseConfigFile(filePath: string): unknown {
   const content = readFileSync(filePath, 'utf-8');
-  let raw: unknown;
-
   try {
-    raw = filePath.endsWith('.json') ? JSON.parse(content) : parseYaml(content);
+    return filePath.endsWith('.json') ? JSON.parse(content) : parseYaml(content);
   } catch (err) {
     // biome-ignore lint/style/useErrorCause: cause is propagated inside ConfigParseError
     throw new ConfigParseError(filePath, err instanceof Error ? err : undefined);
   }
+}
 
-  const result = proxyConfigFileSchema.safeParse(raw);
+export function readConfigFile(filePath: string): Partial<ProxyConfig> {
+  const result = proxyConfigFileSchema.safeParse(parseConfigFile(filePath));
   if (!result.success) {
     throw new ConfigValidationError(filePath, result.error);
   }
 
   return result.data;
+}
+
+/**
+ * Validated like readConfigFile, but schema defaults are NOT applied, so absent
+ * keys stay undefined — use when "absent" must differ from "explicit default".
+ */
+export function readConfigFileRaw(filePath: string): Partial<ProxyConfig> {
+  const raw = parseConfigFile(filePath);
+  const result = proxyConfigFileSchema.safeParse(raw);
+  if (!result.success) {
+    throw new ConfigValidationError(filePath, result.error);
+  }
+
+  return (raw ?? {}) as Partial<ProxyConfig>;
 }

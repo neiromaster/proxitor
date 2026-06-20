@@ -12,6 +12,8 @@ import {
   MissingConfigError,
   matchScore,
   type ProxyConfig,
+  readConfigFile,
+  readConfigFileRaw,
   resolveModelConfig,
   tryFindConfigFile,
 } from './config.js';
@@ -631,6 +633,42 @@ describe('config file validation', () => {
       expect(err).toBeInstanceOf(ConfigValidationError);
       expect((err as Error).message).toContain('dataCollection');
     }
+  });
+});
+
+describe('readConfigFileRaw', () => {
+  let dir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'proxitor-raw-'));
+    configPath = join(dir, 'proxitor.config.yaml');
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('preserves absent keys as undefined (does not apply schema defaults)', () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    const raw = readConfigFileRaw(configPath);
+    expect(raw.normalizeVolatileSystem).toBeUndefined();
+    expect(raw.cacheControl).toBeUndefined();
+    expect(raw.sessionId).toBeUndefined();
+    // readConfigFile, by contrast, collapses absent → schema default:
+    expect(readConfigFile(configPath).normalizeVolatileSystem).toBe(false);
+    expect(readConfigFile(configPath).cacheControl).toBe('auto');
+  });
+
+  it('returns explicitly set values unchanged', () => {
+    writeFileSync(configPath, 'normalizeVolatileSystem: true\ncacheControl: always\n');
+    const raw = readConfigFileRaw(configPath);
+    expect(raw.normalizeVolatileSystem).toBe(true);
+    expect(raw.cacheControl).toBe('always');
+  });
+
+  it('still rejects invalid configs with ConfigValidationError', () => {
+    writeFileSync(configPath, 'normalizeVolatileSystem: "not-a-bool"\n');
+    expect(() => readConfigFileRaw(configPath)).toThrow(ConfigValidationError);
   });
 });
 
