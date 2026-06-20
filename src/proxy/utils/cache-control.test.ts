@@ -293,4 +293,49 @@ describe('rewriteBlockTtls', () => {
   it('handles missing system/tools/messages without throwing', () => {
     expect(rewriteBlockTtls({}, '1h', true)).toBe(false);
   });
+
+  it('normalizes cache_control on nested tool_result content blocks', () => {
+    const body = {
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              content: [
+                { type: 'text', text: 'nested', cache_control: { type: 'ephemeral' } },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const mutated = rewriteBlockTtls(body, '1h', true);
+    expect(mutated).toBe(true);
+    expect(
+      (
+        body.messages[0]!.content as Array<{
+          content: Array<{ cache_control?: { ttl?: string } }>;
+        }>
+      )[0]!.content[0]!.cache_control?.ttl,
+    ).toBe('1h');
+  });
+
+  it('does not touch a cache_control key nested inside a tool input_schema', () => {
+    const schemaFragment = { cache_control: { type: 'string', description: 'x' } };
+    const body = {
+      tools: [
+        {
+          name: 't',
+          input_schema: { type: 'object', properties: schemaFragment },
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    };
+    rewriteBlockTtls(body, '1h', true);
+    // The tool's own breakpoint is normalized...
+    expect(body.tools[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    // ...but the nested schema fragment is left untouched (would be corrupted by a general walk).
+    expect(schemaFragment.cache_control).toEqual({ type: 'string', description: 'x' });
+  });
 });

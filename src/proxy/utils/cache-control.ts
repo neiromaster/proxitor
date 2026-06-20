@@ -85,31 +85,35 @@ export function rewriteBlockTtls(
 ): boolean {
   let mutated = false;
 
+  // Rewrite the cache_control on a single block object (if it has one).
   const rewriteNode = (obj: Record<string, unknown>): void => {
     const cc = obj.cache_control;
-    if (cc === null || typeof cc !== 'object' || Array.isArray(cc)) return;
-    const next = buildCacheControl(cc, ttl, isAnthropic);
-    if (!sameCacheControl(cc as Record<string, unknown>, next)) {
-      obj.cache_control = next;
-      mutated = true;
+    if (cc !== null && typeof cc === 'object' && !Array.isArray(cc)) {
+      const next = buildCacheControl(cc, ttl, isAnthropic);
+      if (!sameCacheControl(cc as Record<string, unknown>, next)) {
+        obj.cache_control = next;
+        mutated = true;
+      }
     }
   };
 
-  const visit = (node: unknown): void => {
-    if (Array.isArray(node)) {
-      for (const item of node) visit(item);
-      return;
+  // Visit an array of blocks: rewrite each, and descend only into a block's
+  // `content` (covers nested tool_result content blocks). Do NOT recurse into
+  // arbitrary nested values (e.g. a tool's input_schema).
+  const visitBlocks = (arr: unknown): void => {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) continue;
+      const obj = item as Record<string, unknown>;
+      rewriteNode(obj);
+      visitBlocks(obj.content);
     }
-    if (node === null || typeof node !== 'object') return;
-    const obj = node as Record<string, unknown>;
-    rewriteNode(obj);
-    for (const v of Object.values(obj)) visit(v);
   };
 
-  visit(body.system);
-  visit(body.tools);
+  visitBlocks(body.system);
+  visitBlocks(body.tools);
   const messages = body.messages as Array<{ content?: unknown }> | undefined;
-  for (const m of messages ?? []) visit(m?.content);
+  for (const m of messages ?? []) visitBlocks(m?.content);
 
   return mutated;
 }
