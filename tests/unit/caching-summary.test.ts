@@ -30,6 +30,7 @@ describe('formatGlobalCachingSummary', () => {
     );
     expect(out).toContain('cacheControl            = (default -> auto)');
     expect(out).toContain('cacheControlTtl         = (default)');
+    expect(out).toContain('rewriteBlockTtl         = (default -> skip)');
     expect(out).toContain('sessionId               = (default -> auto)');
     expect(out).toContain('normalizeVolatileSystem = (default -> off)');
     expect(out).toContain('Anthropic');
@@ -41,12 +42,14 @@ describe('formatGlobalCachingSummary', () => {
       asConfig({
         cacheControl: 'always',
         cacheControlTtl: '1h',
+        rewriteBlockTtl: 'auto',
         sessionId: 'skip',
         normalizeVolatileSystem: true,
       }),
     );
     expect(out).toContain('cacheControl            = always');
     expect(out).toContain('cacheControlTtl         = 1h');
+    expect(out).toContain('rewriteBlockTtl         = auto');
     expect(out).toContain('sessionId               = skip');
     expect(out).toContain('normalizeVolatileSystem = on');
   });
@@ -78,6 +81,7 @@ describe('formatPerModelCachingSummary', () => {
     expect(out).toContain('Caching for "claude-*"');
     expect(out).toContain('cacheControl            = (inherit -> auto)');
     expect(out).toContain('cacheControlTtl         = (inherit)');
+    expect(out).toContain('rewriteBlockTtl         = (inherit -> skip)');
     expect(out).toContain('sessionId               = (inherit -> auto)');
     expect(out).toContain('normalizeVolatileSystem = (inherit -> off)');
   });
@@ -92,6 +96,15 @@ describe('formatPerModelCachingSummary', () => {
     expect(out).toContain('cacheControl            = always');
     expect(out).toContain('sessionId               = skip');
     expect(out).toContain('normalizeVolatileSystem = on');
+  });
+
+  it('shows explicit rewriteBlockTtl override', () => {
+    const out = formatPerModelCachingSummary(
+      'm',
+      { rewriteBlockTtl: 'always' } as ModelOverride,
+      globalCfg,
+    );
+    expect(out).toContain('rewriteBlockTtl         = always');
   });
 
   it('inherits TTL from a set global TTL', () => {
