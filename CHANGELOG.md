@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.0
+
+### Minor Changes
+
+- 19ed589: Unified Caching screen: `proxitor config cache` and a single 💾 Caching entry in
+  the menu group the three caching levers (`cacheControl` + TTL, `sessionId`,
+  `normalizeVolatileSystem`) on one screen with a live summary. Model-override
+  editing is now instant-save and gains a per-model 💾 Caching submenu.
+  `normalizeVolatileSystem` is now documented in the configuration reference.
+
 ## 0.11.0
 
 ### Minor Changes
