@@ -4,6 +4,7 @@ import {
   askNormalizeVolatileSystem,
   askTriState,
   CACHE_HINTS,
+  REWRITE_HINTS,
   SESSION_HINTS,
 } from './prompts.js';
 
@@ -32,14 +33,19 @@ export async function collectSessionTriState(
   return { sessionId: { value: sid } };
 }
 
-/** TTL is independent of cache mode. Mode-cancel aborts; TTL-cancel keeps existing TTL. */
+/**
+ * Collects cacheControl mode, TTL, and rewriteBlockTtl.
+ * Mode-cancel aborts; TTL-cancel keeps existing TTL; rewrite-cancel keeps existing rewrite.
+ */
 export async function collectCacheTriState(
   currentCc?: TriState,
   currentTtl?: '5m' | '1h' | 'omit' | 'skip',
   globalTtl?: '5m' | '1h' | 'omit' | 'skip',
+  currentRewrite?: TriState,
 ): Promise<{
   cacheControl: ResolvedField<TriState>;
   cacheControlTtl?: ResolvedField<'5m' | '1h' | 'omit' | 'skip'>;
+  rewriteBlockTtl?: ResolvedField<TriState>;
 } | null> {
   const cc = await askTriState('Cache control mode', currentCc, CACHE_HINTS, {
     removable: true,
@@ -54,14 +60,28 @@ export async function collectCacheTriState(
   }
 
   const ttl = await askCacheControlTtl(currentTtl, { removable: true, globalTtl });
+  let cacheControlTtl: ResolvedField<'5m' | '1h' | 'omit' | 'skip'> | undefined;
   if (typeof ttl === 'symbol') {
-    // cancel → keep existing TTL
-    return { cacheControl };
+    cacheControlTtl = undefined; // cancel → keep existing TTL
+  } else if (ttl === 'reset') {
+    cacheControlTtl = { remove: true };
+  } else {
+    cacheControlTtl = { value: ttl };
   }
-  if (ttl === 'reset') {
-    return { cacheControl, cacheControlTtl: { remove: true } };
+
+  const rewrite = await askTriState('Rewrite block TTLs', currentRewrite, REWRITE_HINTS, {
+    removable: true,
+  });
+  let rewriteBlockTtl: ResolvedField<TriState> | undefined;
+  if (typeof rewrite === 'symbol') {
+    rewriteBlockTtl = undefined; // cancel → keep existing
+  } else if (rewrite === 'reset') {
+    rewriteBlockTtl = { remove: true };
+  } else {
+    rewriteBlockTtl = { value: rewrite };
   }
-  return { cacheControl, cacheControlTtl: { value: ttl } };
+
+  return { cacheControl, cacheControlTtl, rewriteBlockTtl };
 }
 
 export async function collectNormalizeVolatileSystem(
