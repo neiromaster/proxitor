@@ -134,6 +134,13 @@ export const CACHE_HINTS: Record<TriState, string> = {
   skip: 'Passthrough — leave client cache_control headers as-is',
 };
 
+/** Shared hint texts for the rewrite-block-ttl tri-state — used in cache-control command + override editor. */
+export const REWRITE_HINTS: Record<TriState, string> = {
+  auto: 'Anthropic models only — normalize blocks to match root',
+  always: 'All models',
+  skip: 'Leave client block ttl as-is (may mismatch root)',
+};
+
 export const NORMALIZE_HINTS = {
   on: 'Rewrite cch → stable prefix cache',
   off: 'Passthrough — rewrite nothing',

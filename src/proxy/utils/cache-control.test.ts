@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCacheControl,
   isAnthropicEndpoint,
+  rewriteBlockTtls,
   shouldInjectCacheControl,
+  shouldRewriteBlockTtl,
 } from './cache-control.js';
 
 // ---------------------------------------------------------------------------
@@ -162,5 +164,178 @@ describe('buildCacheControl', () => {
     const result = buildCacheControl(undefined, 'skip', true);
     expect(result).toEqual({ type: 'ephemeral' });
     expect(result).not.toHaveProperty('ttl');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldRewriteBlockTtl
+// ---------------------------------------------------------------------------
+
+describe('shouldRewriteBlockTtl', () => {
+  it('returns false for "skip"', () => {
+    expect(
+      shouldRewriteBlockTtl('skip', 'auto', 'claude-sonnet-4-6', '/v1/messages'),
+    ).toBe(false);
+  });
+
+  it('returns true for "always" regardless of endpoint', () => {
+    expect(
+      shouldRewriteBlockTtl('always', 'auto', 'gpt-4o', '/v1/chat/completions'),
+    ).toBe(true);
+  });
+
+  it('returns true for "auto" on an Anthropic endpoint with active injection', () => {
+    expect(
+      shouldRewriteBlockTtl('auto', 'auto', 'claude-sonnet-4-6', '/v1/messages'),
+    ).toBe(true);
+  });
+
+  it('returns false for "auto" on a non-Anthropic endpoint', () => {
+    expect(shouldRewriteBlockTtl('auto', 'auto', 'gpt-4o', '/v1/chat/completions')).toBe(
+      false,
+    );
+  });
+
+  it('returns false for "auto" when cacheControl is skip (no injection)', () => {
+    expect(
+      shouldRewriteBlockTtl('auto', 'skip', 'claude-sonnet-4-6', '/v1/messages'),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rewriteBlockTtls
+// ---------------------------------------------------------------------------
+
+describe('rewriteBlockTtls', () => {
+  it('sets ttl on every existing block breakpoint to the configured TTL (Anthropic)', () => {
+    const body = {
+      system: [
+        { type: 'text', text: 's1', cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: 's2', cache_control: { type: 'ephemeral', ttl: '5m' } },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }],
+        },
+      ],
+    };
+    const mutated = rewriteBlockTtls(body, '1h', true);
+    expect(mutated).toBe(true);
+    expect(body.system[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(body.system[1]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(body.messages[0]!.content[0]!.cache_control).toEqual({
+      type: 'ephemeral',
+      ttl: '1h',
+    });
+  });
+
+  it('walks tools blocks too', () => {
+    const body = {
+      tools: [{ name: 't', cache_control: { type: 'ephemeral' } }],
+    };
+    rewriteBlockTtls(body, '1h', true);
+    expect(body.tools[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+
+  it('does not add new breakpoints — only touches existing cache_control', () => {
+    const body = {
+      system: [
+        { type: 'text', text: 'no-cc-here' },
+        { type: 'text', text: 'has-cc', cache_control: { type: 'ephemeral' } },
+      ],
+    };
+    rewriteBlockTtls(body, '1h', true);
+    expect(body.system[0]).not.toHaveProperty('cache_control');
+    expect(body.system[1]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+
+  it('strips ttl from all blocks when TTL is omit', () => {
+    const body = {
+      system: [
+        { type: 'text', text: 's', cache_control: { type: 'ephemeral', ttl: '1h' } },
+      ],
+    };
+    const mutated = rewriteBlockTtls(body, 'omit', true);
+    expect(mutated).toBe(true);
+    expect(body.system[0]!.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('is a no-op and reports no mutation when TTL is skip (passthrough)', () => {
+    const block = { type: 'ephemeral', ttl: '5m' };
+    const body = { system: [{ type: 'text', text: 's', cache_control: block }] };
+    const mutated = rewriteBlockTtls(body, 'skip', true);
+    expect(mutated).toBe(false);
+    expect(body.system[0]!.cache_control).toBe(block);
+  });
+
+  it('is a no-op when TTL is undefined', () => {
+    const body = {
+      system: [{ type: 'text', text: 's', cache_control: { type: 'ephemeral' } }],
+    };
+    expect(rewriteBlockTtls(body, undefined, true)).toBe(false);
+  });
+
+  it('does not add ttl on non-Anthropic endpoints', () => {
+    const body = {
+      system: [{ type: 'text', text: 's', cache_control: { type: 'ephemeral' } }],
+    };
+    rewriteBlockTtls(body, '1h', false);
+    expect(body.system[0]!.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('handles string system prompt (no blocks) without throwing', () => {
+    const body = { system: 'just a string' };
+    expect(rewriteBlockTtls(body, '1h', true)).toBe(false);
+  });
+
+  it('handles missing system/tools/messages without throwing', () => {
+    expect(rewriteBlockTtls({}, '1h', true)).toBe(false);
+  });
+
+  it('normalizes cache_control on nested tool_result content blocks', () => {
+    const body = {
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              content: [
+                { type: 'text', text: 'nested', cache_control: { type: 'ephemeral' } },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const mutated = rewriteBlockTtls(body, '1h', true);
+    expect(mutated).toBe(true);
+    expect(
+      (
+        body.messages[0]!.content as Array<{
+          content: Array<{ cache_control?: { ttl?: string } }>;
+        }>
+      )[0]!.content[0]!.cache_control?.ttl,
+    ).toBe('1h');
+  });
+
+  it('does not touch a cache_control key nested inside a tool input_schema', () => {
+    const schemaFragment = { cache_control: { type: 'string', description: 'x' } };
+    const body = {
+      tools: [
+        {
+          name: 't',
+          input_schema: { type: 'object', properties: schemaFragment },
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    };
+    rewriteBlockTtls(body, '1h', true);
+    // The tool's own breakpoint is normalized...
+    expect(body.tools[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    // ...but the nested schema fragment is left untouched (would be corrupted by a general walk).
+    expect(schemaFragment.cache_control).toEqual({ type: 'string', description: 'x' });
   });
 });

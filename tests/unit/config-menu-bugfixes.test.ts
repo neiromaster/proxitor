@@ -530,6 +530,9 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     // User picks 'auto' (different from current 'always'), then cancels TTL
     mockAskTriState.mockResolvedValueOnce('auto');
     mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+    // collectCacheTriState continues to the rewrite prompt after a TTL-cancel;
+    // the (now consistent) global flow still asks for rewriteBlockTtl.
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
 
     await cacheControlCommand({ configPath });
 
@@ -537,6 +540,38 @@ describe('Bug #1b: TTL loss on cancel in cacheControlCommand (global)', () => {
     // cacheControl is applied; TTL is preserved (untouched)
     expect(raw).toContain('cacheControl: auto');
     expect(raw).toContain('cacheControlTtl: 1h');
+  });
+
+  // Regression: rewriteBlockTtl is the 3rd lever collected by
+  // collectCacheTriState. Verifies the delegated flow writes it when chosen,
+  // and preserves it when the user cancels the TTL (or rewrite) prompt.
+  it('writes rewriteBlockTtl when the user picks a value', async () => {
+    // mode → always, TTL → 1h, rewrite → always
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce('1h');
+    mockAskTriState.mockResolvedValueOnce('always');
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('rewriteBlockTtl: always');
+  });
+
+  it('preserves existing rewriteBlockTtl when the user cancels TTL', async () => {
+    writeFileSync(
+      configPath,
+      'cacheControl: always\ncacheControlTtl: 1h\nrewriteBlockTtl: always\nport: 8828\n',
+    );
+    // mode → always, TTL → cancel, rewrite → cancel (keep existing on both)
+    mockAskTriState.mockResolvedValueOnce('always');
+    mockAskCacheControlTtl.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await cacheControlCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('rewriteBlockTtl: always'); // NOT clobbered
+    expect(raw).toContain('cacheControlTtl: 1h'); // TTL preserved too
   });
 });
 

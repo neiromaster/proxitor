@@ -118,6 +118,7 @@ If the cache hit looks low, three levers fix it — tune them from `proxitor con
 - **`cacheControl`** — inject `cache_control` to activate caching (Anthropic-native).
 - **`sessionId`** — inject `session_id` so the provider pins from the first request.
 - **`normalizeVolatileSystem`** — strip Claude Code's volatile `cch` hash so the prefix cache warms on non-Anthropic providers (qwen/glm/…).
+- **`rewriteBlockTtl`** — normalize the TTL on Claude Code's block `cache_control` breakpoints to match your `cacheControlTtl`. Enable it (`auto`/`always`) if Anthropic rejects requests where the root `ttl` is `1h` but the block breakpoints stay at `5m`.
 
 See the [configuration reference](./docs/configuration.md#prompt-caching) for the full detail.
 

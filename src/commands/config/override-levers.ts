@@ -41,12 +41,14 @@ export async function editCacheControl(
     current.cacheControl as TriState | undefined,
     current.cacheControlTtl as '5m' | '1h' | 'omit' | 'skip' | undefined,
     globalTtl,
+    current.rewriteBlockTtl as TriState | undefined,
   );
   if (result === null) return current;
 
   const next: Record<string, unknown> = { ...current };
   applyField(next, 'cacheControl', result.cacheControl);
   applyField(next, 'cacheControlTtl', result.cacheControlTtl);
+  applyField(next, 'rewriteBlockTtl', result.rewriteBlockTtl);
   return next as ModelOverride;
 }
 

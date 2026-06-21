@@ -107,6 +107,7 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 # "skip" = passthrough (preserve client ttl, ignore inherited). Default: absent = passthrough.
 # Only has effect when caching is active (cacheControl is "auto"/"always").
 # cacheControlTtl: '1h'
+# rewriteBlockTtl: skip   # auto | always | skip — normalize block cache_control ttl to cacheControlTtl
 
 # Session sticky routing: inject session_id for provider stickiness from the first request.
 # "auto" = passthrough client session ID, generate only if missing

@@ -6,6 +6,7 @@ import {
   buildProviderRouting,
   ConfigParseError,
   ConfigValidationError,
+  DEFAULTS,
   findConfigFile,
   getConfigSearchPaths,
   loadConfig,
@@ -326,6 +327,7 @@ describe('resolveModelConfig', () => {
     attributionTitle: 'proxitor',
     cacheControl: 'auto',
     sessionId: 'auto',
+    rewriteBlockTtl: 'skip',
     normalizeVolatileSystem: false,
     provider: { only: 'deepinfra' },
     headers: { 'X-Global': 'global-value' },
@@ -685,6 +687,7 @@ describe('cacheControl and sessionId config', () => {
     attributionTitle: 'proxitor',
     cacheControl: 'auto',
     sessionId: 'auto',
+    rewriteBlockTtl: 'skip',
     normalizeVolatileSystem: false,
   };
 
@@ -962,5 +965,44 @@ describe('throwIfV1Suffix (via loadConfig)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('rewriteBlockTtl', () => {
+  it('defaults to "skip" globally', () => {
+    expect(DEFAULTS.rewriteBlockTtl).toBe('skip');
+  });
+
+  it('is resolved from global config', () => {
+    const resolved = resolveModelConfig(
+      { ...DEFAULTS, rewriteBlockTtl: 'always' } satisfies ProxyConfig,
+      undefined,
+    );
+    expect(resolved.rewriteBlockTtl).toBe('always');
+  });
+
+  it('per-model override wins over global', () => {
+    const config = {
+      ...DEFAULTS,
+      rewriteBlockTtl: 'skip',
+      modelOverrides: { 'claude-*': { rewriteBlockTtl: 'auto' } },
+    } satisfies ProxyConfig;
+    const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+    expect(resolved.rewriteBlockTtl).toBe('auto');
+  });
+
+  it('inherits global when per-model is absent', () => {
+    const config = {
+      ...DEFAULTS,
+      rewriteBlockTtl: 'always',
+      modelOverrides: { 'claude-*': { cacheControl: 'skip' } },
+    } satisfies ProxyConfig;
+    const resolved = resolveModelConfig(config, 'claude-sonnet-4-6');
+    expect(resolved.rewriteBlockTtl).toBe('always');
+  });
+
+  it('rejects an invalid rewriteBlockTtl value', () => {
+    const result = proxyConfigFileSchema.safeParse({ rewriteBlockTtl: 'sometimes' });
+    expect(result.success).toBe(false);
   });
 });
