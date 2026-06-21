@@ -30,9 +30,7 @@ Type "proxitor config"
 Enter
 Sleep 1500ms
 
-# move to "Add model override" (4 selects down from "Show current config")
-Down
-Sleep 250ms
+# move to "Add model override" (3 selects down from "Show current config")
 Down
 Sleep 250ms
 Down
@@ -79,13 +77,15 @@ Sleep 900ms
 Enter
 Sleep 1300ms
 
+# normalizeVolatileSystem for this model? (confirm, default No)
+Enter
+Sleep 900ms
+
 # What next? (select, default "Save to config")
 Enter
 Sleep 1700ms
 
-# back at the menu — scroll down to Exit (10 selects)
-Down
-Sleep 230ms
+# back at the menu — scroll down to Exit (9 selects)
 Down
 Sleep 230ms
 Down
