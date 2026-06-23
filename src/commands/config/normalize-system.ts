@@ -16,7 +16,7 @@ export async function normalizeVolatileSystemCommand(opts?: {
   );
 
   const choice = await askNormalizeVolatileSystem(
-    "Normalize Claude Code's volatile cch hash in the system prompt? Stabilizes the prefix cache for non-Anthropic providers (qwen/glm/etc.).",
+    "Normalize Claude Code's volatile cch and cc_version hashes in the system prompt? Stabilizes the prefix cache for non-Anthropic providers (qwen/glm/etc.).",
     raw,
     {
       removable: true,

@@ -68,6 +68,40 @@ describe('normalizeVolatileSystemBlocks', () => {
     expect(value).toBe('a cch=00000 b cch=00000 c');
   });
 
+  it('normalizes the cc_version trailing hash (preserving the semver) in a string system', () => {
+    // Arrange — the billing header drifts both the cc_version trailing hash
+    // and the cch hash every turn; both must collapse to a constant prefix.
+    const system =
+      'x-anthropic-billing-header: cc_version=2.1.177.06f; cc_entrypoint=cli; cch=4bec5;';
+
+    // Act
+    const { changed, value } = normalizeVolatileSystemBlocks(system);
+
+    // Assert
+    expect(changed).toBe(true);
+    expect(value).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.177.0; cc_entrypoint=cli; cch=00000;',
+    );
+  });
+
+  it('normalizes the cc_version trailing hash inside a text block of a system array', () => {
+    // Arrange
+    const system = [
+      { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.177.c7c;' },
+      { type: 'text', text: 'You are Claude Code.' },
+    ];
+
+    // Act
+    const { changed, value } = normalizeVolatileSystemBlocks(system);
+
+    // Assert
+    expect(changed).toBe(true);
+    expect(value).toEqual([
+      { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.177.0;' },
+      { type: 'text', text: 'You are Claude Code.' },
+    ]);
+  });
+
   it('passes through undefined / non-string-non-array system unchanged', () => {
     // Arrange & Act & Assert
     expect(normalizeVolatileSystemBlocks(undefined)).toEqual({
