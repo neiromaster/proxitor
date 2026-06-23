@@ -1,14 +1,20 @@
 import { createMiddleware } from 'hono/factory';
 import type { ParsedRequestBody, ProxyEnv } from '../context.js';
 
-/** Normalize Claude Code's per-request `cch=…` hash in system[0] to a constant; it drifts every turn and breaks prefix-cache for non-Anthropic providers. */
+/** Normalize Claude Code's per-request volatile hashes in system[0] to constants; they drift every turn and break prefix-cache for non-Anthropic providers:
+ *  - `cch=…` per-turn hash
+ *  - `cc_version=<semver>.<hash>` — the trailing build hash drifts; the readable semver is preserved. */
 const CCH_PATTERN = /cch=[0-9a-f]+/g;
 const CCH_REPLACEMENT = 'cch=00000';
+const CC_VERSION_PATTERN = /cc_version=(\d+\.\d+\.\d+)\.[0-9a-f]+/g;
+const CC_VERSION_REPLACEMENT = 'cc_version=$1.0';
 
 type TextBlock = Record<string, unknown> & { text?: unknown };
 
 function normalizeText(text: string): string {
-  return text.replace(CCH_PATTERN, CCH_REPLACEMENT);
+  return text
+    .replace(CCH_PATTERN, CCH_REPLACEMENT)
+    .replace(CC_VERSION_PATTERN, CC_VERSION_REPLACEMENT);
 }
 
 function textOf(block: unknown): string | undefined {

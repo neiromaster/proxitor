@@ -117,7 +117,7 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 
 - **`cacheControl`** — внедряет `cache_control`, чтобы включить кэширование (нативно для Anthropic).
 - **`sessionId`** — внедряет `session_id`, чтобы провайдер зафиксировался с первого запроса.
-- **`normalizeVolatileSystem`** — убирает волатильный `cch`-хэш Claude Code, чтобы префиксный кэш прогревался на не-Anthropic провайдерах (qwen/glm/…).
+- **`normalizeVolatileSystem`** — убирает волатильные `cch`/`cc_version` хэши Claude Code, чтобы префиксный кэш прогревался на не-Anthropic провайдерах (qwen/glm/…).
 - **`rewriteBlockTtl`** — приводит TTL блочных `cache_control`-брейкпойнтов Claude Code к вашему `cacheControlTtl`. Включите (`auto`/`always`), если Anthropic отклоняет запросы, где у корня `ttl: 1h`, а у блочных брейкпойнтов осталось `5m`.
 
 Подробности — в [справочнике по конфигурации](./configuration.ru.md#кэширование-подсказок).

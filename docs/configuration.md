@@ -164,7 +164,7 @@ Prompt caching is **provider-scoped**: a cache built on Anthropic doesn't help w
 | --- | --- | --- | --- |
 | **Activate caching** | `cacheControl` | `auto` | Injects `cache_control` so the upstream caches the prompt (Anthropic-native providers) |
 | **Pin the provider** | `sessionId` | `auto` | Injects `session_id` so routing sticks from the first request — no provider flip-flop that resets the cache |
-| **Stabilize the prefix** | `normalizeVolatileSystem` | `false` | Strips Claude Code's volatile `cch` hash from the system prompt so the prefix stops churning (non-Anthropic providers) |
+| **Stabilize the prefix** | `normalizeVolatileSystem` | `false` | Strips Claude Code's volatile `cch` and `cc_version` hashes from the system prompt so the prefix stops churning (non-Anthropic providers) |
 
 **Rule of thumb:** Anthropic models need levers **1+2**; non-Anthropic providers (qwen / glm / etc. behind Claude Code) need **all three**.
 
@@ -241,7 +241,7 @@ modelOverrides:
 
 - **Anthropic models** — lever 1 (`cache_control`) activates caching, `cacheControlTtl` extends it beyond 5 min, lever 2 (`session_id`) prevents the provider flip-flop that would invalidate it.
 - **OpenAI models** — caching is automatic (no lever 1 needed), but lever 2 (`session_id`) ensures sticky routing from request #1 instead of waiting for a cache hit.
-- **Non-Anthropic models behind Claude Code (qwen / glm / …)** — lever 3 (`normalizeVolatileSystem`) stabilizes the prefix; without it the churned `cch` hash prevents the prefix cache from ever warming.
+- **Non-Anthropic models behind Claude Code (qwen / glm / …)** — lever 3 (`normalizeVolatileSystem`) stabilizes the prefix; without it the churned `cch`/`cc_version` hashes prevent the prefix cache from ever warming.
 - **All models** — lever 2 (`session_id`) prevents the provider switch that silently resets the cache.
 
 ## Cache usage logging
@@ -266,12 +266,12 @@ When both formats are present (e.g., OpenRouter relaying an Anthropic response),
 
 ## normalizeVolatileSystem (stable prefix for non-Anthropic providers)
 
-Claude Code embeds a volatile `cch=…` hash in the system prompt that changes on (almost) every turn. For **Anthropic-native** providers this is harmless — the cache key absorbs it. But for **non-Anthropic** providers (qwen, glm, and others routed through OpenRouter), those churned bytes sit inside the cached prefix, so the prefix cache never warms and every turn re-pays full price.
+Claude Code embeds volatile `cch=…` (per-turn) and `cc_version=<semver>.<hash>` (per-build) hashes in the system prompt that change on (almost) every turn. For **Anthropic-native** providers this is harmless — the cache key absorbs it. But for **non-Anthropic** providers (qwen, glm, and others routed through OpenRouter), those churned bytes sit inside the cached prefix, so the prefix cache never warms and every turn re-pays full price.
 
-`normalizeVolatileSystem` rewrites that volatile hash out of `messages[0]` (the system block) so the prefix bytes stay stable turn-to-turn.
+`normalizeVolatileSystem` rewrites those volatile hashes out of `messages[0]` (the system block) so the prefix bytes stay stable turn-to-turn. The readable `cc_version` semver is preserved; only the drifting build hash is collapsed.
 
 ```yaml
-normalizeVolatileSystem: true   # strip the volatile cch hash from the system prompt
+normalizeVolatileSystem: true   # strip the volatile cch/cc_version hashes from the system prompt
 ```
 
 - **Enable when:** you route Claude Code through a non-Anthropic provider and the cache-read log stays near zero.

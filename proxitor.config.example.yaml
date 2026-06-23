@@ -115,10 +115,12 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 # "skip" = passthrough (leave client session headers untouched)
 # sessionId: auto
 
-# Normalize Claude Code's volatile cch=… hash in the system prompt to a constant.
-# The hash drifts every turn and invalidates the prefix cache for non-Anthropic
-# providers (qwen/glm/etc.); normalizing it keeps the cached prefix stable.
-# true = rewrite cch (default false), also settable per-model in modelOverrides.
+# Normalize Claude Code's volatile hashes in the system prompt to constants:
+# the per-turn `cch=…` hash and the per-build `cc_version=<semver>.<hash>` hash
+# (the readable semver is kept). Both drift every turn and invalidate the prefix
+# cache for non-Anthropic providers (qwen/glm/etc.); normalizing them keeps the
+# cached prefix stable.
+# true = rewrite the hashes (default false), also settable per-model in modelOverrides.
 # normalizeVolatileSystem: false
 
 # Enable verbose logging

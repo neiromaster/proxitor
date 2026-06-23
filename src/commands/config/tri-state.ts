@@ -88,7 +88,7 @@ export async function collectNormalizeVolatileSystem(
   currentNvs?: boolean,
 ): Promise<{ normalizeVolatileSystem: ResolvedField<boolean> } | null> {
   const nvs = await askNormalizeVolatileSystem(
-    'Normalize volatile system (cch hash)',
+    'Normalize volatile system (cch/cc_version hashes)',
     currentNvs,
     { removable: true },
   );
