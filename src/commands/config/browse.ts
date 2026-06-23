@@ -1,6 +1,7 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
+import { rankModels } from '../../openrouter/fuzzy.js';
 import {
   fetchModels,
   getUniqueProviders,
@@ -65,13 +66,7 @@ export async function browseModelsCommand(client: OpenRouterDataClient): Promise
     placeholder: 'Type to search...',
     maxItems: 15,
     options(this: { userInput: string }) {
-      const query = this.userInput.trim().toLowerCase();
-      if (!query) return models.slice(0, 15).map(toOption);
-
-      return models
-        .filter(m => `${m.id} ${m.name}`.toLowerCase().includes(query))
-        .slice(0, 15)
-        .map(toOption);
+      return rankModels(models, this.userInput).slice(0, 15).map(toOption);
     },
     filter: (_search: string, _option: { value: string }) => true,
   });

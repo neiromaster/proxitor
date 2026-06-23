@@ -89,7 +89,7 @@ proxitor config wizard  # (re)run guided setup
 proxitor config browse  # explore models + pricing
 ```
 
-From the menu you can set your API key and connection, pick routing per model (with live provider pricing), tune caching, and add or edit model overrides. It pulls live data from OpenRouter, so you browse real models and providers with up-to-date prices.
+From the menu you can set your API key and connection, pick routing per model (with live provider pricing), tune caching, and add or edit model overrides. It pulls live data from OpenRouter, so you browse real models and providers with up-to-date prices. The model picker is **fuzzy** — type `claudops` to land on `anthropic/claude-opus`, `gpt4o` for `openai/gpt-4o`; matches rank by relevance so the best fit surfaces first.
 
 <p align="center"><img src="./docs/assets/proxitor-add.gif" alt="proxitor: add a model override" width="640"></p>
 
