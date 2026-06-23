@@ -3,6 +3,7 @@ import { isCancel } from '@clack/prompts';
 import { matchesPattern, resolveModelConfig } from '../../config.js';
 import { DEFAULTS, type ModelOverride } from '../../config-schema.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
+import { rankModels } from '../../openrouter/fuzzy.js';
 import { fetchModels } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
@@ -104,11 +105,7 @@ async function searchModel(models: OpenRouterModel[]): Promise<string | null> {
         ];
       }
 
-      const filtered = models
-        .filter(m => {
-          const text = `${m.id} ${m.name}`.toLowerCase();
-          return text.includes(query);
-        })
+      const filtered = rankModels(models, query)
         .slice(0, 14)
         .map(m => ({
           value: m.id,
