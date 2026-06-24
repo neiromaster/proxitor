@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/proxitor"><img src="https://img.shields.io/npm/v/proxitor?color=6366f1&labelColor=1e2327&label=npm" alt="npm version"></a>
+  <a href="https://github.com/neiromaster/proxitor/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/neiromaster/proxitor/ci.yml?branch=main&color=22c55e&labelColor=1e2327&label=CI" alt="CI status"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?labelColor=1e2327" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22-3b82f6?labelColor=1e2327" alt="Node.js ≥ 22">
   <a href="https://github.com/neiromaster/proxitor/issues"><img src="https://img.shields.io/github/issues/neiromaster/proxitor?color=f59e0b&labelColor=1e2327&label=issues" alt="GitHub issues"></a>
@@ -19,9 +20,34 @@
 
 ---
 
+## Contents
+
+- [Why proxitor](#why-proxitor)
+- [How it works](#how-it-works)
+- [The caching problem](#the-caching-problem)
+- [Features](#features)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Minimal config](#minimal-config)
+- [Configuration](#configuration)
+- [Diagnostics](#diagnostics)
+- [Commands](#commands)
+- [Common pitfalls](#common-pitfalls)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Why proxitor
+
+AI CLIs already speak Anthropic or OpenAI APIs. proxitor keeps that interface intact and fixes the expensive parts in the middle:
+
+- **Provider pinning** keeps OpenRouter from bouncing the same conversation between upstreams.
+- **Prompt-cache shaping** adds sticky sessions, cache breakpoints, TTL fixes, and volatile-prefix normalization where needed.
+- **Per-model routing** lets Claude, GPT, Qwen, GLM, and other model families use different providers and policies.
+- **Operational checks** (`doctor`, `/health`, config validation, hot reload) make the proxy safe to leave running during long coding sessions.
+
 ## How it works
 
-```
+```text
 your AI CLI  →  proxitor  →  OpenRouter  →  the provider you picked
 ```
 
@@ -32,6 +58,8 @@ Proxitor sits between Claude Code, Codex, or any Anthropic/OpenAI-compatible CLI
 OpenRouter load-balances across providers, and **prompt caching is provider-scoped**: a cache built on Anthropic doesn't help when the next request lands on DeepInfra. Claude Code sends a big system prompt on every request, so without a pinned provider you pay full price every time.
 
 Pin `claude-*` to `anthropic`, and that system prompt gets cached after the first hit. Subsequent requests cost a fraction.
+
+A typical 50k-token Claude Code system prompt at $3/M input costs **$0.15 per turn** with no cache. After a warm Anthropic cache, the same prefix costs ~10% of input price — about **$0.015 per turn**. The cache amortizes in 1-2 turns and pays for itself the rest of the session.
 
 ## Features
 
@@ -48,6 +76,7 @@ Requires **Node.js 22+**.
 
 ```sh
 npm install -g proxitor
+# or:  pnpm install -g proxitor
 # or:  bun install -g proxitor
 # or run it once, no install:  npx proxitor
 ```
@@ -63,8 +92,9 @@ proxitor config wizard
 **2. Run it**
 
 ```sh
-proxitor
-# Listening on http://0.0.0.0:8828
+proxitor                  # default: http://0.0.0.0:8828
+proxitor --port 9000      # or pick a custom port
+proxitor up               # aliases: up, run
 ```
 
 **3. Point your tool at it**
@@ -78,6 +108,18 @@ OPENAI_BASE_URL=http://localhost:8828/v1 codex
 ```
 
 That's the whole setup. Requests flow through proxitor; streaming responses pass through untouched.
+
+## Minimal config
+
+The wizard writes a full config; the minimum is just an API key and a routing rule. Drop this into `proxitor.config.yaml` (or `.yaml`/`.yml`/`.json`, also accepted as `.proxitor.yaml`/`.proxitor.json` in the project root):
+
+```yaml
+openrouterKey: sk-or-v1-...   # or set OPENROUTER_API_KEY in your shell
+provider:
+  order: "anthropic"           # pin everything to Anthropic for stable caching
+```
+
+Run `proxitor config validate` to check it, then `proxitor` to start.
 
 ## Configuration
 
@@ -95,6 +137,10 @@ From the menu you can set your API key and connection, pick routing per model (w
 
 Prefer to edit a file? The full **[configuration reference](./docs/configuration.md)** covers provider routing, per-model overrides, headers, caching modes, and every option. [`proxitor.config.example.yaml`](./proxitor.config.example.yaml) is a commented template.
 
+**Hot-reload** — proxitor watches the config file and reloads on save; no restart needed. Bad edits fall back to the last valid config and the proxy keeps running. `proxitor config validate` shows the current state.
+
+**Environment variables** — `OPENROUTER_API_KEY` is used when the config key is empty; `XDG_CONFIG_HOME` overrides the user-config directory on Linux/macOS. CLI flags take precedence over both.
+
 ## Diagnostics
 
 ```sh
@@ -105,7 +151,7 @@ It prints a clear report and exits non-zero if anything fails — handy from CI 
 
 While proxitor runs, it logs cache usage from upstream so you can see whether caching is actually helping:
 
-```
+```text
 [abc123] Cache read: 50000, write: 25000 tokens (99.6% hit)
 ```
 
@@ -113,7 +159,7 @@ Quick health poke: `curl http://localhost:8828/health`.
 
 ### Tuning the cache
 
-If the cache hit looks low, three levers fix it — tune them from `proxitor config` → **💾 Caching** (or `proxitor config cache`):
+If the cache hit looks low, four levers fix it — tune them from `proxitor config` → **💾 Caching** (or `proxitor config cache`):
 
 - **`cacheControl`** — inject `cache_control` to activate caching (Anthropic-native).
 - **`sessionId`** — inject `session_id` so the provider pins from the first request.
@@ -125,15 +171,33 @@ See the [configuration reference](./docs/configuration.md#prompt-caching) for th
 ## Commands
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `proxitor` | Start the proxy (default command) |
 | `proxitor config` | Interactive config menu |
 | `proxitor config wizard` | Guided setup |
 | `proxitor config browse` | Explore models + pricing |
+| `proxitor config add` | Add a model override |
+| `proxitor config edit` | Edit an existing model override |
+| `proxitor config remove` | Remove a model override |
+| `proxitor config list` | List all model overrides (also `--json`) |
+| `proxitor config cache` | Tune prompt-caching settings |
+| `proxitor config show` | Print the resolved config |
+| `proxitor config validate` | Check the config (exit 0 ok, 1 invalid — CI-friendly) |
 | `proxitor doctor` | Diagnose everything |
+| `proxitor --version` | Print version |
 | `proxitor --help` | Full list of flags |
 
-Common flags: `--port`, `--host`, `--config <path>`, `--openrouter-key <key>`.
+Common flags: `--port`, `--host`, `--config <path>`, `--openrouter-key <key>` / `-k <key>`, `--verbose`, `--no-config`.
+
+## Common pitfalls
+
+**Cache reads stay at 0 even after several requests.** The prefix usually churns every turn (Claude Code's `cch`/`cc_version` hashes) — enable `normalizeVolatileSystem: true` and confirm the request actually lands on the same provider. `proxitor doctor` reports the loaded config; the cache-read log in the proxy console reports hits.
+
+**Anthropic returns `400` about mixed TTLs when `cacheControlTtl: 1h`.** Set `rewriteBlockTtl: auto` (or `always`) to normalize the client's block-level `cache_control` breakpoints to the same TTL — see the [configuration reference](./docs/configuration.md#prompt-caching).
+
+**The provider keeps switching between requests.** Make sure `sessionId` is not `skip` — both `auto` (default) and `always` inject a sticky session ID; without it OpenRouter only pins after the first cache hit.
+
+**Config edits don't take effect.** They should — proxitor hot-reloads on save. If the file is invalid the proxy keeps the last valid config; `proxitor config validate` shows what was rejected.
 
 ## Contributing
 
