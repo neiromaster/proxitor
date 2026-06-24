@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-// checkSlugCollisions is not exported; verify via the public doctor path is heavy,
-// so assert the underlying detection used by doctor instead.
+// checkSlugCollisions is private; assert the detection it uses instead.
 import { detectSlugCollisions, formatSlugCollisionWarning } from '../config.js';
 import type { ProxyConfig } from '../config-schema.js';
 import { DEFAULTS } from '../config-schema.js';

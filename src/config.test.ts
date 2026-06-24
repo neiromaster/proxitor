@@ -543,11 +543,9 @@ describe('resolveModelConfig', () => {
       ...baseConfig,
       modelOverrides: { 'moonshotai/kimi-k2.6': { provider: { only: 'baidu/fp4' } } },
     } as unknown as ProxyConfig;
-    // bare incoming matches the prefixed key
     expect(resolveModelConfig(config, 'kimi-k2.6').matchedOverride).toBe(
       'moonshotai/kimi-k2.6',
     );
-    // no match
     expect(resolveModelConfig(config, 'unrelated-model').matchedOverride).toBeUndefined();
   });
 });

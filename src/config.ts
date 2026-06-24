@@ -87,12 +87,9 @@ export function buildProviderRouting(
 }
 
 /**
- * The slug of a model id/pattern: everything after the first `/`, or the whole
- * string when there is no `/`. Differs from `parseModelSlug`
- * (`src/openrouter/models.ts`) on no-`/` inputs — `parseModelSlug('glm*')` returns
- * `''`, which would collapse every bare key into the same empty slug; this returns
- * `'glm*'` so bare keys still match. Verified identical to `parseModelSlug` on all
- * 339 real prefixed OR catalog ids (incl. `:variant`).
+ * Everything after the first `/`, or the whole string when there is none. Unlike
+ * `parseModelSlug`, bare keys keep their text (not `''`) so they still match —
+ * equal to `parseModelSlug` on all 339 prefixed OR catalog ids.
  */
 function modelSlug(s: string): string {
   const slash = s.indexOf('/');
@@ -100,17 +97,16 @@ function modelSlug(s: string): string {
 }
 
 export function matchScore(pattern: string, modelName: string): number {
-  // Full plane (preferred): whole pattern vs whole model name.
-  if (pattern === modelName) return 3000 + pattern.length; // tier 1: full exact
+  // Four priority tiers (length breaks ties within a tier): full exact (3000) >
+  // full prefix* (2000) > slug exact (1000, bare name ↔ vendor-prefixed) > slug prefix*.
+  if (pattern === modelName) return 3000 + pattern.length;
   if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
-    return 2000 + pattern.length; // tier 2: full prefix
+    return 2000 + pattern.length;
   }
-  // Slug plane: compare after the first '/' (or the whole bare name), so a bare
-  // incoming name matches a vendor-prefixed key and vice-versa.
   const sp = modelSlug(pattern);
   const sm = modelSlug(modelName);
-  if (sp === sm) return 1000 + sp.length; // tier 3: slug exact
-  if (sp.endsWith('*') && sm.startsWith(sp.slice(0, -1))) return sp.length; // tier 4: slug prefix
+  if (sp === sm) return 1000 + sp.length;
+  if (sp.endsWith('*') && sm.startsWith(sp.slice(0, -1))) return sp.length;
   return -1;
 }
 
@@ -121,8 +117,8 @@ export function matchesPattern(pattern: string, modelName: string): boolean {
 export type SlugCollision = { slug: string; keys: string[] };
 
 /**
- * Groups model-override keys that share a slug, so a bare incoming name can't
- * silently resolve to the wrong vendor. Pure — callers (config load, doctor) log it.
+ * Override keys sharing a slug — a bare name would resolve to the wrong vendor.
+ * Pure; callers (load, doctor) log it.
  */
 export function detectSlugCollisions(
   overrides: Record<string, unknown> | undefined,
