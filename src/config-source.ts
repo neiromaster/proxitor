@@ -129,12 +129,6 @@ export function summarizeChanges(prev: ProxyConfig, next: ProxyConfig): string {
   return parts.join(', ');
 }
 
-function warnSlugCollisions(overrides: ProxyConfig['modelOverrides']): void {
-  for (const collision of detectSlugCollisions(overrides ?? undefined)) {
-    logger.warn(formatSlugCollisionWarning(collision));
-  }
-}
-
 export type ReloadResult = { ok: true } | { ok: false; error: string };
 
 export type ConfigSource = {
@@ -183,10 +177,11 @@ class FileWatchingConfigSource implements ConfigSource {
   private loading: boolean = false;
   private pending: boolean = false;
   private watching: boolean = false;
+  private lastCollisionSig = '';
 
   constructor(options: ConfigSourceOptions) {
     this.current = options.initial;
-    warnSlugCollisions(options.initial.modelOverrides);
+    this.warnSlugCollisions(options.initial.modelOverrides);
     this.loadOptions = options.loadOptions;
     this.load = options.load ?? loadConfig;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
@@ -200,6 +195,20 @@ class FileWatchingConfigSource implements ConfigSource {
 
   get(): ProxyConfig {
     return this.current;
+  }
+
+  /** Warn only when the collision set changes, so reloading an unchanged config doesn't re-log. */
+  private warnSlugCollisions(overrides: ProxyConfig['modelOverrides']): void {
+    const collisions = detectSlugCollisions(overrides ?? undefined);
+    const sig = collisions
+      .map(c => `${c.slug}=${c.keys.join(',')}`)
+      .sort((a, b) => a.localeCompare(b))
+      .join('|');
+    if (sig === this.lastCollisionSig) return;
+    this.lastCollisionSig = sig;
+    for (const collision of collisions) {
+      logger.warn(formatSlugCollisionWarning(collision));
+    }
   }
 
   async reload(): Promise<ReloadResult> {
@@ -218,7 +227,7 @@ class FileWatchingConfigSource implements ConfigSource {
         diff = '';
       }
       this.current = next;
-      warnSlugCollisions(next.modelOverrides);
+      this.warnSlugCollisions(next.modelOverrides);
       if (restartNeeded) {
         logger.warn(
           'host/port changed — restart proxitor to apply (live reload does not re-bind the socket)',

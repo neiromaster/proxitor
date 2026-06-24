@@ -245,4 +245,59 @@ describe('FileWatchingConfigSource.reload', () => {
     );
     spy.mockRestore();
   });
+
+  it('does not re-warn unchanged slug collisions on reload', async () => {
+    const cfg = {
+      ...DEFAULTS,
+      openrouterKey: 'sk-test',
+      modelOverrides: { 'openai/gpt-4o': {}, 'azure/gpt-4o': {} },
+    } as unknown as ProxyConfig;
+    const load = vi.fn(async () => cfg);
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const source = createConfigSource({
+      initial: cfg,
+      loadOptions: { noConfig: true },
+      load,
+    });
+    spy.mockClear(); // ignore the construction-time warning
+
+    await source.reload(); // same collisions → signature unchanged → no re-warn
+
+    expect(spy).not.toHaveBeenCalledWith(expect.stringContaining('share model slug'));
+    spy.mockRestore();
+  });
+
+  it('re-warns when slug collisions change on reload', async () => {
+    const first = {
+      ...DEFAULTS,
+      openrouterKey: 'sk-test',
+      modelOverrides: { 'openai/gpt-4o': {}, 'azure/gpt-4o': {} },
+    } as unknown as ProxyConfig;
+    const load = vi
+      .fn<(opts: LoadConfigOptions) => Promise<ProxyConfig>>()
+      .mockResolvedValue({
+        ...DEFAULTS,
+        openrouterKey: 'sk-test',
+        modelOverrides: {
+          'openai/gpt-4o': {},
+          'azure/gpt-4o': {},
+          'anthropic/claude-4': {},
+          'bedrock/claude-4': {},
+        },
+      } as unknown as ProxyConfig);
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const source = createConfigSource({
+      initial: first,
+      loadOptions: { noConfig: true },
+      load,
+    });
+    spy.mockClear();
+
+    await source.reload(); // new collision (claude-4) → signature changed → re-warn
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('share model slug "claude-4"'),
+    );
+    spy.mockRestore();
+  });
 });
