@@ -2,6 +2,8 @@ import { createServer } from 'node:net';
 import * as clack from '@clack/prompts';
 import {
   DEFAULTS,
+  detectSlugCollisions,
+  formatSlugCollisionWarning,
   getConfigSearchPaths,
   readConfigFile,
   tryFindConfigFile,
@@ -110,6 +112,21 @@ function checkConfigValidity(path: string | null): {
       config: null,
     };
   }
+}
+
+function checkSlugCollisions(cfg: ProxyConfig | null): Check {
+  if (!cfg?.modelOverrides) {
+    return { name: 'override-collisions', status: 'ok', message: 'no model overrides' };
+  }
+  const collisions = detectSlugCollisions(cfg.modelOverrides);
+  if (collisions.length === 0) {
+    return { name: 'override-collisions', status: 'ok', message: 'no slug collisions' };
+  }
+  return {
+    name: 'override-collisions',
+    status: 'warn',
+    message: collisions.map(formatSlugCollisionWarning).join(' | '),
+  };
 }
 
 function checkApiKey(cfg: ProxyConfig | null): Check {
@@ -224,7 +241,11 @@ export async function doctorCommand(opts: DoctorOptions = {}): Promise<number> {
   // 2. Config — sync (checkConfigValidity returns the parsed config too)
   const configPath = tryFindConfigFile();
   const { check: validityCheck, config: cfg } = checkConfigValidity(configPath);
-  const configChecks: Check[] = [checkConfigDiscovery(), validityCheck];
+  const configChecks: Check[] = [
+    checkConfigDiscovery(),
+    validityCheck,
+    checkSlugCollisions(cfg),
+  ];
 
   // 4. API key
   const apiKeyCheck = checkApiKey(cfg);
