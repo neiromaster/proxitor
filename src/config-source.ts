@@ -1,6 +1,8 @@
 import { type Stats, unwatchFile, watchFile } from 'node:fs';
 import {
   buildProviderRouting,
+  detectSlugCollisions,
+  formatSlugCollisionWarning,
   type LoadConfigOptions,
   loadConfig,
   type ModelOverride,
@@ -127,6 +129,12 @@ export function summarizeChanges(prev: ProxyConfig, next: ProxyConfig): string {
   return parts.join(', ');
 }
 
+function warnSlugCollisions(overrides: ProxyConfig['modelOverrides']): void {
+  for (const collision of detectSlugCollisions(overrides ?? undefined)) {
+    logger.warn(formatSlugCollisionWarning(collision));
+  }
+}
+
 export type ReloadResult = { ok: true } | { ok: false; error: string };
 
 export type ConfigSource = {
@@ -178,6 +186,7 @@ class FileWatchingConfigSource implements ConfigSource {
 
   constructor(options: ConfigSourceOptions) {
     this.current = options.initial;
+    warnSlugCollisions(options.initial.modelOverrides);
     this.loadOptions = options.loadOptions;
     this.load = options.load ?? loadConfig;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
@@ -209,6 +218,7 @@ class FileWatchingConfigSource implements ConfigSource {
         diff = '';
       }
       this.current = next;
+      warnSlugCollisions(next.modelOverrides);
       if (restartNeeded) {
         logger.warn(
           'host/port changed — restart proxitor to apply (live reload does not re-bind the socket)',

@@ -228,4 +228,21 @@ describe('FileWatchingConfigSource.reload', () => {
     );
     warn.mockRestore();
   });
+
+  it('warns once per slug collision at construction', () => {
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    createConfigSource({
+      initial: {
+        host: '127.0.0.1',
+        port: 8828,
+        openrouterKey: 'sk-test',
+        modelOverrides: { 'openai/gpt-4o': {}, 'azure/gpt-4o': {} },
+      } as unknown as ProxyConfig,
+      loadOptions: { noConfig: true },
+    });
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('share model slug "gpt-4o"'),
+    );
+    spy.mockRestore();
+  });
 });
