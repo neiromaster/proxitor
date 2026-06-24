@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/proxitor"><img src="https://img.shields.io/npm/v/proxitor?color=6366f1&labelColor=1e2327&label=npm" alt="npm version"></a>
+  <a href="https://github.com/neiromaster/proxitor/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/neiromaster/proxitor/ci.yml?branch=main&color=22c55e&labelColor=1e2327&label=CI" alt="CI status"></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?labelColor=1e2327" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22-3b82f6?labelColor=1e2327" alt="Node.js ≥ 22">
   <a href="https://github.com/neiromaster/proxitor/issues"><img src="https://img.shields.io/github/issues/neiromaster/proxitor?color=f59e0b&labelColor=1e2327&label=issues" alt="GitHub issues"></a>
@@ -19,9 +20,34 @@
 
 ---
 
+## Содержание
+
+- [Зачем proxitor](#зачем-proxitor)
+- [Как это работает](#как-это-работает)
+- [Проблема кэширования](#проблема-кэширования)
+- [Возможности](#возможности)
+- [Установка](#установка)
+- [Быстрый старт](#быстрый-старт)
+- [Минимальный конфиг](#минимальный-конфиг)
+- [Конфигурация](#конфигурация)
+- [Диагностика](#диагностика)
+- [Команды](#команды)
+- [Частые проблемы](#частые-проблемы)
+- [Разработка](#разработка)
+- [Лицензия](#лицензия)
+
+## Зачем proxitor
+
+AI CLI уже умеют говорить с Anthropic- или OpenAI-совместимыми API. proxitor сохраняет этот интерфейс и чинит дорогие места посередине:
+
+- **Фиксация провайдера** не даёт OpenRouter перекидывать одну сессию между апстримами.
+- **Подготовка prompt cache** добавляет липкие сессии, cache breakpoints, исправление TTL и нормализацию волатильного префикса там, где это нужно.
+- **Маршрутизация по моделям** позволяет Claude, GPT, Qwen, GLM и другим семействам использовать разные провайдеры и политики.
+- **Операционные проверки** (`doctor`, `/health`, валидация конфига, hot reload) делают прокси безопасным для долгих coding-сессий.
+
 ## Как это работает
 
-```
+```text
 ваш AI-инструмент  →  proxitor  →  OpenRouter  →  выбранный вами провайдер
 ```
 
@@ -32,6 +58,8 @@ Proxitor встаёт между Claude Code, Codex или любым CLI, со�
 OpenRouter балансирует нагрузку между провайдерами, а **кэш подсказок привязан к провайдеру**: кэш, собранный на Anthropic, не поможет, когда следующий запрос улетит на DeepInfra. Claude Code отправляет большой системный промпт в каждом запросе, поэтому без зафиксированного провайдера вы каждый раз платите по полной.
 
 Закрепите `claude-*` за `anthropic` — и системный промпт закэшируется после первого попадания. Последующие запросы стоят крохи.
+
+Типичный системный промпт Claude Code на 50k токенов при $3/M стоит **$0.15 за ход** без кэша. С прогретым Anthropic-кэшом тот же префикс стоит ~10% от цены входа — около **$0.015 за ход**. Кэш окупается за 1-2 хода и окупает себя до конца сессии.
 
 ## Возможности
 
@@ -48,6 +76,7 @@ OpenRouter балансирует нагрузку между провайдер
 
 ```sh
 npm install -g proxitor
+# или:  pnpm install -g proxitor
 # или:  bun install -g proxitor
 # или запустить без установки:  npx proxitor
 ```
@@ -63,8 +92,9 @@ proxitor config wizard
 **2. Запустите**
 
 ```sh
-proxitor
-# Listening on http://0.0.0.0:8828
+proxitor                  # по умолчанию: http://0.0.0.0:8828
+proxitor --port 9000      # или укажите свой порт
+proxitor up               # алиасы: up, run
 ```
 
 **3. Натравите на него инструмент**
@@ -78,6 +108,18 @@ OPENAI_BASE_URL=http://localhost:8828/v1 codex
 ```
 
 Это вся настройка. Запросы идут через proxitor; стримящиеся ответы проходят без изменений.
+
+## Минимальный конфиг
+
+Мастер пишет полный конфиг, но минимум — это API-ключ и одно правило маршрутизации. Положите это в `proxitor.config.yaml` (также принимаются `.yaml`/`.yml`/`.json`, либо `.proxitor.yaml`/`.proxitor.json` в корне проекта):
+
+```yaml
+openrouterKey: sk-or-v1-...   # или задайте OPENROUTER_API_KEY в окружении
+provider:
+  order: "anthropic"           # закрепляем всё за Anthropic для стабильного кэша
+```
+
+`proxitor config validate` — проверить, `proxitor` — запустить.
 
 ## Конфигурация
 
@@ -95,6 +137,10 @@ proxitor config browse  # изучить модели + цены
 
 Предпочитаете править файл? Полный **[справочник по конфигурации](./configuration.ru.md)** покрывает маршрутизацию провайдеров, переопределения по моделям, заголовки, режимы кэширования и все опции. [`proxitor.config.example.yaml`](../proxitor.config.example.yaml) — шаблон с комментариями.
 
+**Горячая перезагрузка** — proxitor следит за файлом конфига и подхватывает изменения на лету; перезапуск не нужен. Битые правки откатываются на последний валидный конфиг, и прокси продолжает работать. `proxitor config validate` покажет текущее состояние.
+
+**Переменные окружения** — `OPENROUTER_API_KEY` используется, если ключ в конфиге пустой; `XDG_CONFIG_HOME` переопределяет каталог пользовательского конфига на Linux/macOS. Флаги CLI перекрывают оба.
+
 ## Диагностика
 
 ```sh
@@ -105,7 +151,7 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 
 Пока proxitor работает, он логирует использование кэша из апстрима — видно, помогает ли кэширование на самом деле:
 
-```
+```text
 [abc123] Cache read: 50000, write: 25000 tokens (99.6% hit)
 ```
 
@@ -113,7 +159,7 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 
 ### Настройка кэша
 
-Если попаданий в кэш маловато, три рычага это исправят — настройте их через `proxitor config` → **💾 Caching** (или `proxitor config cache`):
+Если попаданий в кэш маловато, четыре рычага это исправят — настройте их через `proxitor config` → **💾 Caching** (или `proxitor config cache`):
 
 - **`cacheControl`** — внедряет `cache_control`, чтобы включить кэширование (нативно для Anthropic).
 - **`sessionId`** — внедряет `session_id`, чтобы провайдер зафиксировался с первого запроса.
@@ -125,15 +171,33 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 ## Команды
 
 | Команда | Описание |
-|---|---|
+| --- | --- |
 | `proxitor` | Запустить прокси (команда по умолчанию) |
 | `proxitor config` | Интерактивное меню настроек |
 | `proxitor config wizard` | Мастер настройки |
 | `proxitor config browse` | Изучить модели + цены |
+| `proxitor config add` | Добавить переопределение модели |
+| `proxitor config edit` | Редактировать переопределение модели |
+| `proxitor config remove` | Удалить переопределение модели |
+| `proxitor config list` | Список всех переопределений (также `--json`) |
+| `proxitor config cache` | Настроить параметры кэширования |
+| `proxitor config show` | Показать резолвленный конфиг |
+| `proxitor config validate` | Проверить конфиг (exit 0 ok, 1 invalid — удобно для CI) |
 | `proxitor doctor` | Продиагностировать всё |
+| `proxitor --version` | Версия |
 | `proxitor --help` | Полный список флагов |
 
-Частые флаги: `--port`, `--host`, `--config <путь>`, `--openrouter-key <ключ>`.
+Частые флаги: `--port`, `--host`, `--config <путь>`, `--openrouter-key <ключ>` / `-k <ключ>`, `--verbose`, `--no-config`.
+
+## Частые проблемы
+
+**Чтения из кэша остаются на 0 даже после нескольких запросов.** Обычно префикс меняется каждый ход (хэши `cch`/`cc_version` Claude Code) — включите `normalizeVolatileSystem: true` и убедитесь, что запросы реально попадают на того же провайдера. `proxitor doctor` покажет загруженный конфиг; лог чтений кэша в консоли прокси — попадания.
+
+**Anthropic возвращает `400` про смешанные TTL при `cacheControlTtl: 1h`.** Поставьте `rewriteBlockTtl: auto` (или `always`), чтобы привести клиентские блочные `cache_control`-брейкпойнты к тому же TTL — см. [справочник по конфигурации](./configuration.ru.md#кэширование-подсказок).
+
+**Провайдер переключается между запросами.** Убедитесь, что `sessionId` не `skip` — и `auto` (по умолчанию), и `always` инжектят липкий session ID; без него OpenRouter закрепляет провайдера только после первого попадания в кэш.
+
+**Изменения конфига не применяются.** Должны — proxitor подхватывает файл на лету. Если файл битый, прокси держит последний валидный конфиг; `proxitor config validate` покажет, что именно отвергнуто.
 
 ## Разработка
 
