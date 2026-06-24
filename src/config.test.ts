@@ -172,8 +172,8 @@ describe('matchScore', () => {
     expect(matchScore('gpt-4o', 'claude-sonnet-4-6')).toBe(-1);
   });
 
-  it('should return pattern length for prefix wildcard match', () => {
-    expect(matchScore('claude-*', 'claude-sonnet-4-6')).toBe('claude-*'.length);
+  it('should return full-prefix-tier score for prefix wildcard match', () => {
+    expect(matchScore('claude-*', 'claude-sonnet-4-6')).toBe(2000 + 'claude-*'.length);
   });
 
   it('should return -1 when wildcard does not match', () => {
@@ -190,6 +190,37 @@ describe('matchScore', () => {
     const longer = matchScore('claude-sonnet-*', 'claude-sonnet-4-6');
     const shorter = matchScore('claude-*', 'claude-sonnet-4-6');
     expect(longer).toBeGreaterThan(shorter);
+  });
+
+  it('slug exact: bare name matches vendor-prefixed key', () => {
+    expect(matchScore('moonshotai/kimi-k2.6', 'kimi-k2.6')).toBe(
+      1000 + 'kimi-k2.6'.length,
+    );
+  });
+
+  it('strict * isolation: dated slug does not match a non-* key (both directions)', () => {
+    expect(matchScore('moonshotai/kimi-k2.6', 'moonshotai/kimi-k2.6-20260420')).toBe(-1);
+    expect(matchScore('moonshotai/kimi-k2.6-20260420', 'kimi-k2.6')).toBe(-1);
+  });
+
+  it('explicit * matches dated slug (both planes)', () => {
+    expect(matchScore('moonshotai/kimi-k2.6*', 'kimi-k2.6-20260420')).toBe(
+      'kimi-k2.6*'.length,
+    );
+    expect(matchScore('moonshotai/kimi-k2.6*', 'moonshotai/kimi-k2.6-20260420')).toBe(
+      2000 + 'moonshotai/kimi-k2.6*'.length,
+    );
+  });
+
+  it('full match outranks slug match for the same model', () => {
+    const full = matchScore('moonshotai/kimi-k2.6', 'moonshotai/kimi-k2.6');
+    const slug = matchScore('moonshotai/kimi-k2.6', 'kimi-k2.6');
+    expect(full).toBeGreaterThan(slug);
+  });
+
+  it('non-* key does not capture a more-specific model (isolation)', () => {
+    expect(matchScore('gpt-4', 'gpt-4o')).toBe(-1);
+    expect(matchScore('gpt-4', 'gpt-4-turbo')).toBe(-1);
   });
 });
 

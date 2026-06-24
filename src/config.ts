@@ -85,13 +85,31 @@ export function buildProviderRouting(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+/**
+ * The slug of a model id/pattern: everything after the first `/`, or the whole
+ * string when there is no `/`. Differs from `parseModelSlug`
+ * (`src/openrouter/models.ts`) on no-`/` inputs — `parseModelSlug('glm*')` returns
+ * `''`, which would collapse every bare key into the same empty slug; this returns
+ * `'glm*'` so bare keys still match. Verified identical to `parseModelSlug` on all
+ * 339 real prefixed OR catalog ids (incl. `:variant`).
+ */
+function modelSlug(s: string): string {
+  const slash = s.indexOf('/');
+  return slash >= 0 ? s.slice(slash + 1) : s;
+}
+
 export function matchScore(pattern: string, modelName: string): number {
-  if (pattern === modelName) return modelName.length + 1000;
-
+  // Full plane (preferred): whole pattern vs whole model name.
+  if (pattern === modelName) return 3000 + pattern.length; // tier 1: full exact
   if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
-    return pattern.length;
+    return 2000 + pattern.length; // tier 2: full prefix
   }
-
+  // Slug plane: compare after the first '/' (or the whole bare name), so a bare
+  // incoming name matches a vendor-prefixed key and vice-versa.
+  const sp = modelSlug(pattern);
+  const sm = modelSlug(modelName);
+  if (sp === sm) return 1000 + sp.length; // tier 3: slug exact
+  if (sp.endsWith('*') && sm.startsWith(sp.slice(0, -1))) return sp.length; // tier 4: slug prefix
   return -1;
 }
 
