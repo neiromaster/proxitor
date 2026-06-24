@@ -117,6 +117,39 @@ export function matchesPattern(pattern: string, modelName: string): boolean {
   return matchScore(pattern, modelName) >= 0;
 }
 
+export type SlugCollision = { slug: string; keys: string[] };
+
+/**
+ * Groups model-override keys that share a slug, so a bare incoming name can't
+ * silently resolve to the wrong vendor. Pure — callers (config load, doctor) log it.
+ */
+export function detectSlugCollisions(
+  overrides: Record<string, unknown> | undefined,
+): SlugCollision[] {
+  if (!overrides) return [];
+  const groups = new Map<string, string[]>();
+  for (const key of Object.keys(overrides)) {
+    const slug = modelSlug(key);
+    const keys = groups.get(slug);
+    if (keys) keys.push(key);
+    else groups.set(slug, [key]);
+  }
+  const collisions: SlugCollision[] = [];
+  for (const [slug, keys] of groups) {
+    if (keys.length > 1) collisions.push({ slug, keys });
+  }
+  return collisions;
+}
+
+/** One-line warning for a same-slug collision (logged once at load / in doctor). */
+export function formatSlugCollisionWarning(c: SlugCollision): string {
+  return (
+    `Overrides ${c.keys.map(k => `"${k}"`).join(' and ')} share model slug "${c.slug}"; ` +
+    `a bare name resolves to the first-declared ("${c.keys[0]}"). ` +
+    `Use the vendor-prefixed name to pick a specific one.`
+  );
+}
+
 export function resolveModelConfig(
   config: ProxyConfig,
   modelName?: string,

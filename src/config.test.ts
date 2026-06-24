@@ -7,7 +7,9 @@ import {
   ConfigParseError,
   ConfigValidationError,
   DEFAULTS,
+  detectSlugCollisions,
   findConfigFile,
+  formatSlugCollisionWarning,
   getConfigSearchPaths,
   loadConfig,
   MissingConfigError,
@@ -221,6 +223,50 @@ describe('matchScore', () => {
   it('non-* key does not capture a more-specific model (isolation)', () => {
     expect(matchScore('gpt-4', 'gpt-4o')).toBe(-1);
     expect(matchScore('gpt-4', 'gpt-4-turbo')).toBe(-1);
+  });
+});
+
+describe('detectSlugCollisions', () => {
+  it('returns empty for undefined / empty overrides', () => {
+    expect(detectSlugCollisions(undefined)).toEqual([]);
+    expect(detectSlugCollisions({})).toEqual([]);
+  });
+
+  it('returns empty when all slugs are unique', () => {
+    expect(
+      detectSlugCollisions({ 'openai/gpt-4o': {}, 'anthropic/claude-4': {} }),
+    ).toEqual([]);
+  });
+
+  it('groups same-slug vendor keys in declaration order', () => {
+    expect(detectSlugCollisions({ 'openai/gpt-4o': {}, 'azure/gpt-4o': {} })).toEqual([
+      { slug: 'gpt-4o', keys: ['openai/gpt-4o', 'azure/gpt-4o'] },
+    ]);
+  });
+
+  it('treats a bare key and a prefixed key with the same slug as a collision', () => {
+    expect(detectSlugCollisions({ 'gpt-4o': {}, 'openai/gpt-4o': {} })).toEqual([
+      { slug: 'gpt-4o', keys: ['gpt-4o', 'openai/gpt-4o'] },
+    ]);
+  });
+
+  it('does not collide on different slugs or * patterns', () => {
+    expect(
+      detectSlugCollisions({ 'moonshotai/kimi*': {}, 'moonshotai/kimi-k2.6': {} }),
+    ).toEqual([]);
+  });
+});
+
+describe('formatSlugCollisionWarning', () => {
+  it('names both keys, the slug, and the first-declared winner', () => {
+    const msg = formatSlugCollisionWarning({
+      slug: 'gpt-4o',
+      keys: ['openai/gpt-4o', 'azure/gpt-4o'],
+    });
+    expect(msg).toContain('"openai/gpt-4o"');
+    expect(msg).toContain('"azure/gpt-4o"');
+    expect(msg).toContain('"gpt-4o"');
+    expect(msg).toContain('"openai/gpt-4o"');
   });
 });
 
