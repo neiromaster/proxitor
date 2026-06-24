@@ -38,6 +38,7 @@ export type ResolvedModelConfig = {
   rewriteBlockTtl: TriState;
   sessionId: TriState;
   normalizeVolatileSystem: boolean;
+  matchedOverride?: string;
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
@@ -167,7 +168,10 @@ export function resolveModelConfig(
   if (!modelName || !config.modelOverrides) return result;
 
   const bestPattern = findBestMatch(Object.keys(config.modelOverrides), modelName);
-  if (bestPattern) applyOverride(result, config.modelOverrides[bestPattern]);
+  if (bestPattern) {
+    applyOverride(result, config.modelOverrides[bestPattern]);
+    result.matchedOverride = bestPattern;
+  }
 
   return result;
 }
