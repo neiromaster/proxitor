@@ -240,14 +240,26 @@ describe('detectSlugCollisions', () => {
 
   it('groups same-slug vendor keys in declaration order', () => {
     expect(detectSlugCollisions({ 'openai/gpt-4o': {}, 'azure/gpt-4o': {} })).toEqual([
-      { slug: 'gpt-4o', keys: ['openai/gpt-4o', 'azure/gpt-4o'] },
+      {
+        slug: 'gpt-4o',
+        keys: ['openai/gpt-4o', 'azure/gpt-4o'],
+        winner: 'openai/gpt-4o',
+      },
     ]);
   });
 
   it('treats a bare key and a prefixed key with the same slug as a collision', () => {
     expect(detectSlugCollisions({ 'gpt-4o': {}, 'openai/gpt-4o': {} })).toEqual([
-      { slug: 'gpt-4o', keys: ['gpt-4o', 'openai/gpt-4o'] },
+      { slug: 'gpt-4o', keys: ['gpt-4o', 'openai/gpt-4o'], winner: 'gpt-4o' },
     ]);
+  });
+
+  it('winner is the bare key even when it is not first-declared (full-exact beats slug)', () => {
+    // {openai/gpt-4o, gpt-4o}: bare key wins on the full-exact tier (3000+) for a
+    // bare incoming name, so winner is the bare key — not keys[0] 'openai/gpt-4o'.
+    const collisions = detectSlugCollisions({ 'openai/gpt-4o': {}, 'gpt-4o': {} });
+    expect(collisions[0]?.winner).toBe('gpt-4o');
+    expect(collisions[0]?.winner).not.toBe(collisions[0]?.keys[0]);
   });
 
   it('does not collide on different slugs or * patterns', () => {
@@ -258,15 +270,25 @@ describe('detectSlugCollisions', () => {
 });
 
 describe('formatSlugCollisionWarning', () => {
-  it('names both keys, the slug, and the first-declared winner', () => {
+  it('names both keys, the slug, and reports the actual winner', () => {
     const msg = formatSlugCollisionWarning({
       slug: 'gpt-4o',
       keys: ['openai/gpt-4o', 'azure/gpt-4o'],
+      winner: 'openai/gpt-4o',
     });
     expect(msg).toContain('"openai/gpt-4o"');
     expect(msg).toContain('"azure/gpt-4o"');
     expect(msg).toContain('"gpt-4o"');
-    expect(msg).toContain('"openai/gpt-4o"');
+    expect(msg).toContain('a bare name resolves to "openai/gpt-4o"');
+  });
+
+  it('reports the bare key as winner regardless of declaration order', () => {
+    const msg = formatSlugCollisionWarning({
+      slug: 'gpt-4o',
+      keys: ['openai/gpt-4o', 'gpt-4o'],
+      winner: 'gpt-4o',
+    });
+    expect(msg).toContain('a bare name resolves to "gpt-4o"');
   });
 });
 

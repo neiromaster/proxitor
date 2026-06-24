@@ -86,19 +86,14 @@ export function buildProviderRouting(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-/**
- * Everything after the first `/`, or the whole string when there is none. Unlike
- * `parseModelSlug`, bare keys keep their text (not `''`) so they still match —
- * equal to `parseModelSlug` on all 339 prefixed OR catalog ids.
- */
+/** Text after the first `/`, or the whole string when there is none. Bare keys keep their text, unlike `parseModelSlug` (which returns `''`). */
 function modelSlug(s: string): string {
   const slash = s.indexOf('/');
   return slash >= 0 ? s.slice(slash + 1) : s;
 }
 
 export function matchScore(pattern: string, modelName: string): number {
-  // Four priority tiers (length breaks ties within a tier): full exact (3000) >
-  // full prefix* (2000) > slug exact (1000, bare name ↔ vendor-prefixed) > slug prefix*.
+  // Tiers (length breaks ties within a tier): full exact 3000 > full prefix* 2000 > slug exact 1000 > slug prefix*.
   if (pattern === modelName) return 3000 + pattern.length;
   if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
     return 2000 + pattern.length;
@@ -114,12 +109,9 @@ export function matchesPattern(pattern: string, modelName: string): boolean {
   return matchScore(pattern, modelName) >= 0;
 }
 
-export type SlugCollision = { slug: string; keys: string[] };
+export type SlugCollision = { slug: string; keys: string[]; winner: string };
 
-/**
- * Override keys sharing a slug — a bare name would resolve to the wrong vendor.
- * Pure; callers (load, doctor) log it.
- */
+/** Override keys sharing a slug. `winner` is the key a bare name resolves to — not always `keys[0]`, since a bare key wins on the full-exact tier. Pure; callers log it. */
 export function detectSlugCollisions(
   overrides: Record<string, unknown> | undefined,
 ): SlugCollision[] {
@@ -133,16 +125,18 @@ export function detectSlugCollisions(
   }
   const collisions: SlugCollision[] = [];
   for (const [slug, keys] of groups) {
-    if (keys.length > 1) collisions.push({ slug, keys });
+    if (keys.length <= 1) continue;
+    const winner = findBestMatch(keys, slug);
+    if (winner) collisions.push({ slug, keys, winner });
   }
   return collisions;
 }
 
-/** One-line warning for a same-slug collision (logged once at load / in doctor). */
+/** Warning text for a same-slug collision. */
 export function formatSlugCollisionWarning(c: SlugCollision): string {
   return (
     `Overrides ${c.keys.map(k => `"${k}"`).join(' and ')} share model slug "${c.slug}"; ` +
-    `a bare name resolves to the first-declared ("${c.keys[0]}"). ` +
+    `a bare name resolves to "${c.winner}". ` +
     `Use the vendor-prefixed name to pick a specific one.`
   );
 }
