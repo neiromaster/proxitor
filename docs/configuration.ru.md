@@ -248,25 +248,83 @@ modelOverrides:
 - **Не-Anthropic модели за Claude Code (qwen / glm / …)** — рычаг 3 (`normalizeVolatileSystem`) стабилизирует префикс; без него меняющиеся хэши `cch`/`cc_version` не дают префиксному кэшу согреться.
 - **Все модели** — рычаг 2 (`session_id`) предотвращает переключение провайдера, которое молча сбрасывает кэш.
 
-## Логирование использования кэша
+## Наблюдаемость кэша
 
-Proxitor автоматически логирует использование кэш-токенов из ответов апстрима — и для non-streaming JSON, и для стримингового SSE. Никакой настройки не нужно.
+Пока proxitor работает, он печатает **классифицированную строку кэша на каждый запрос** для каждого проксированного ответа (non-streaming JSON и стриминговый SSE), чтобы сразу было видно, помогает ли кэширование. Настройка не нужна — включено по умолчанию.
 
 ```
-[abc123] Cache read: 50000, write: 25000 tokens (99.6% hit)
-[def456] Cache read: 1088 tokens (90.0% hit)
-[ghi789] Cache: no cached tokens
+[a1b2] HIT   99%  read 48640  in 48874  glm-4.5-air  [main]
+[c3d4] PARTIAL  42%  read 1088  in 2600  claude-sonnet-4-6  provider=anthropic  [side]
+[e5f6] MISS   read 0  in 48874  glm-4.5-air  provider=novita  [main]
+[g7h8] COLD   read 0  in 48874  glm-4.5-air  [main]
+[i9j0] NOUSAGE   claude-sonnet-4-6  [main]
 ```
 
-Поддерживаются все три формата провайдеров:
+Каждая строка несёт ID запроса, **метку**, процент попадания (для `HIT`/`PARTIAL`), `read N` / `write N` токенов при наличии, `in N` входных токенов, модель, `provider=…` при наличии метаданных маршрутизации и тип запроса `[main]`/`[side]`.
 
-| Формат провайдера | Поля |
+### Метки
+
+| Метка | Значение |
 | --- | --- |
-| Anthropic | `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` |
-| OpenAI / OpenRouter | `usage.prompt_tokens_details.cached_tokens` / `cache_write_tokens` |
-| Responses API | `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` |
+| `HIT` | Чтение из кэша ≥ `hitThreshold`% от входных токенов — тёплый, полезный кэш. |
+| `PARTIAL` | Часть читается из кэша, но ниже порога. |
+| `MISS` | Нет чтения из кэша на **повторном** запросе в той же сессии — кэш должен был обслужить его, но не сделал. |
+| `COLD` | Нет чтения из кэша на **первом** запросе в сессии — ожидаемая разовая стоимость прогрева. |
+| `NOUSAGE` | Объект usage не наблюдался (нелогируемый content-type, битый ответ и т.п.). |
 
-Если присутствуют оба формата (например, OpenRouter проксирует ответ Anthropic), приоритет у полей Anthropic.
+### Тип запроса
+
+Каждый запрос помечается `[main]` или `[side]`. Запрос помечается `[side]`, только если у него **нет инструментов** и его `max_tokens` не превышает `sideMaxTokens` — правило по двум сигналам, чтобы не помечать мелкие запросы без инструментов как основной ход. Всё остальное — `[main]`.
+
+**Резолв `max_tokens`:** бюджет использует `max_tokens ?? max_completion_tokens`. Если ни того, ни другого нет, запрос по умолчанию помечается `[main]` (безопасное поведение), а не `[side]`.
+
+### Конфигурация
+
+Все опции лежат под `observability:` и опциональны, с разумными значениями по умолчанию.
+
+```yaml
+observability:
+  routerMetadata: true      # отправлять x-openrouter-metadata, чтобы видеть обслуживающего провайдера
+  hitThreshold: 80          # cacheRead/inputTokens % при или выше => HIT
+  sideMaxTokens: 4096       # запрос без инструментов с max_tokens <= этого => [side]
+  sessionMaxEntries: 4096   # ёмкость трекера сессий в памяти (вытеснение FIFO)
+  sessionTtlMs: 600000      # TTL записи трекера сессий (10 минут)
+```
+
+| Опция | По умолчанию | Описание |
+| --- | --- | --- |
+| `routerMetadata` | `true` | Включает `x-openrouter-metadata` от прокси, чтобы ответы показывали, какой провайдер реально обслужил запрос (видно как `provider=…` на промахах и не-попаданиях). Поставьте `false`, чтобы отключить. |
+| `hitThreshold` | `80` | Процент `cacheRead / inputTokens`, при или выше которого запрос помечается `HIT`. |
+| `sideMaxTokens` | `4096` | Запрос **без инструментов** И с `max_tokens` не выше этого бюджета помечается `[side]`. |
+| `sessionMaxEntries` | `4096` | Ограниченная ёмкость трекера сессий в памяти (вытеснение FIFO при превышении). |
+| `sessionTtlMs` | `600000` | Время жизни записи трекера сессий (10 минут). |
+
+### Обогащённые дампы
+
+Установите `PROXITOR_DUMP_BODY=1`, чтобы писать дампы запроса/ответа (в `~/.cache/proxitor/dumps`, переопределяется через `PROXITOR_DUMP_DIR`). При включении объект `response` в каждом дампе обогащается классифицированным наблюдением:
+
+```json
+"response": {
+  "status": 200,
+  "label": "HIT",
+  "requestType": "main",
+  "model": "glm-4.5-air",
+  "sessionId": "8f3e...",
+  "toolsCount": 0,
+  "inputTokens": 48874,
+  "cacheRead": 48640,
+  "cacheCreate": 0,
+  "hitPct": 99.5,
+  "provider": "novita",
+  "strategy": "priority",
+  "region": null,
+  "attempt": 1,
+  "fallback": false,
+  "generationId": "gen-..."
+}
+```
+
+`provider`, `strategy`, `region`, `attempt`, `fallback` и `generationId` заполняются, только если присутствуют метаданные маршрутизации (т.е. `routerMetadata` включён и апстрим их вернул).
 
 ## normalizeVolatileSystem (стабильный префикс для не-Anthropic провайдеров)
 

@@ -149,11 +149,13 @@ proxitor doctor   # checks environment, config, key, network, port, version
 
 It prints a clear report and exits non-zero if anything fails — handy from CI too (`--json`, `--offline`, `--timeout`).
 
-While proxitor runs, it logs cache usage from upstream so you can see whether caching is actually helping:
+While proxitor runs, it prints a classified per-request cache line — `HIT` / `PARTIAL` / `MISS` / `COLD` / `NOUSAGE`, the hit percentage, the provider that served the request, and the request type (`[main]`/`[side]`) — so you can see at a glance whether caching is actually helping:
 
 ```text
-[abc123] Cache read: 50000, write: 25000 tokens (99.6% hit)
+[a1b2] HIT   99%  read 48640  in 48874  glm-4.5-air  [main]
 ```
+
+See **Configuration → [Cache observability](./docs/configuration.md#cache-observability)** for the full label reference, the `observability:` config block, and enriched dumps.
 
 Quick health poke: `curl http://localhost:8828/health`.
 
