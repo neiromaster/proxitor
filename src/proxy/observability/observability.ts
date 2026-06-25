@@ -77,12 +77,15 @@ export class Observability {
     }
   }
 
-  /** Apply a hot-reloaded config: update the hit threshold and rebuild the
-   * session tracker (capacity/TTL). Called by the config-source subscriber. */
+  /** Apply a hot-reloaded config: update the hit threshold and resize the
+   * session tracker (capacity/TTL) in place. Called by the config-source
+   * subscriber on every reload — must not discard remembered sessions, or an
+   * unrelated edit (or a no-op re-save) misclassifies the next active request
+   * as COLD. */
   reconfigure(config: { observability: ObservabilityRuntimeConfig }): void {
     const o = config.observability;
     this.hitThresholdPct = o.hitThreshold;
-    this.tracker = new SessionTracker({
+    this.tracker.applyConfig({
       maxEntries: o.sessionMaxEntries,
       ttlMs: o.sessionTtlMs,
     });

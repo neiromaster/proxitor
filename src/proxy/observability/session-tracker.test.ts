@@ -39,4 +39,29 @@ describe('SessionTracker', () => {
     clock += 200; // past TTL
     expect(t.isFirstAndRemember('s1')).toBe(true);
   });
+  it('applyConfig preserves remembered sessions on a no-op reload', () => {
+    // Arrange — a reload that doesn't change capacity must not wipe the map.
+    const t = new SessionTracker({ maxEntries: 4, ttlMs: 1000 });
+    t.isFirstAndRemember('s1'); // first
+
+    // Act
+    t.applyConfig({ maxEntries: 4, ttlMs: 1000 });
+
+    // Assert — s1 is still remembered.
+    expect(t.isFirstAndRemember('s1')).toBe(false);
+  });
+  it('applyConfig evicts oldest down to a shrunken capacity', () => {
+    // Arrange
+    const t = new SessionTracker({ maxEntries: 4, ttlMs: 1000 });
+    t.isFirstAndRemember('s1');
+    t.isFirstAndRemember('s2');
+    t.isFirstAndRemember('s3'); // insertion order: s1, s2, s3
+
+    // Act — shrink to 1: keeps the most-recently-inserted (s3).
+    t.applyConfig({ maxEntries: 1, ttlMs: 1000 });
+
+    // Assert
+    expect(t.isFirstAndRemember('s3')).toBe(false); // survived
+    expect(t.isFirstAndRemember('s1')).toBe(true); // evicted → first again
+  });
 });

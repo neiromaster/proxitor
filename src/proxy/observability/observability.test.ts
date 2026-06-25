@@ -106,4 +106,28 @@ describe('Observability.reconfigure', () => {
     );
     expect(got?.outcome.label).toBe('PARTIAL');
   });
+  it('preserves remembered sessions across a reload (no spurious COLD)', () => {
+    // Arrange — a reload fires reconfigure for ANY field change; it must not
+    // wipe the tracker or the next repeat request is misclassified COLD.
+    const seen: string[] = [];
+    const o = withFakeSink(x => seen.push(x.outcome.label));
+
+    // Act
+    o.observe(
+      req({ sessionId: 'keep' }),
+      { usage: { present: true, inputTokens: 50, cacheRead: 0, cacheCreate: 0 } },
+      200,
+    ); // first → COLD
+    o.reconfigure({
+      observability: { hitThreshold: 80, sessionMaxEntries: 8, sessionTtlMs: 1000 },
+    });
+    o.observe(
+      req({ sessionId: 'keep' }),
+      { usage: { present: true, inputTokens: 50, cacheRead: 0, cacheCreate: 0 } },
+      200,
+    ); // repeat → MISS, NOT COLD
+
+    // Assert
+    expect(seen).toEqual(['COLD', 'MISS']);
+  });
 });
