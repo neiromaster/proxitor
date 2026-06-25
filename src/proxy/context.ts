@@ -7,6 +7,7 @@ export interface ParsedRequestBody extends Record<string, unknown> {
   input?: unknown;
   instructions?: unknown;
   max_completion_tokens?: number;
+  max_output_tokens?: number;
   max_tokens?: number;
   messages?: Array<{ role?: string; content?: unknown } & Record<string, unknown>>;
   model?: string;

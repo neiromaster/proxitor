@@ -111,20 +111,17 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     c.req.raw.signal.removeEventListener('abort', onClientAbort);
   }
 
-  if (upstream.status >= 400) {
-    return buildUpstreamErrorResponse(upstream, ctx);
-  }
-
-  logger.info(
-    withReq(
-      reqId,
-      `${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`,
-    ),
-  );
-
+  // Request context for observability — computed once and shared by the
+  // success and error paths so every proxied response is observed.
   const parsedBody = c.var.parsedBody;
   const toolsCount = Array.isArray(parsedBody?.tools) ? parsedBody.tools.length : 0;
-  const maxTokens = parsedBody?.max_tokens ?? parsedBody?.max_completion_tokens;
+  // Chat Completions uses max_tokens/max_completion_tokens; the Responses API
+  // uses max_output_tokens — resolve across all three so /v1/responses side
+  // calls classify correctly instead of defaulting to [main].
+  const maxTokens =
+    parsedBody?.max_tokens ??
+    parsedBody?.max_completion_tokens ??
+    parsedBody?.max_output_tokens;
   const requestType = classifyRequestType(
     { toolsCount, maxTokens },
     { sideMaxTokens: c.var.config.observability.sideMaxTokens },
@@ -137,9 +134,23 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     maxTokens,
     requestType,
   };
+  const observability = c.var.observability;
 
-  return buildUpstreamResponseWithLogging(upstream, method, {
-    reqCtx,
-    observability: c.var.observability,
-  });
+  if (upstream.status >= 400) {
+    const response = await buildUpstreamErrorResponse(upstream, ctx);
+    // Observe error responses too: avoids orphaned request dumps (dumpRequest
+    // already ran) and records the failed attempt in the session tracker.
+    // No usage is parsed from error bodies → collapses to NOUSAGE.
+    observability.observe(reqCtx, {}, upstream.status);
+    return response;
+  }
+
+  logger.info(
+    withReq(
+      reqId,
+      `${method} ${path} ← ${upstream.status} (${Date.now() - startedAt}ms)`,
+    ),
+  );
+
+  return buildUpstreamResponseWithLogging(upstream, method, { reqCtx, observability });
 });
