@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatPrice, parseModelAuthor, parseModelSlug } from './models.js';
+import { parseModelAuthor, parseModelSlug } from '../model-id.js';
+import { formatPrice } from './models.js';
 
 describe('formatPrice', () => {
   it('returns "free" for zero price', () => {

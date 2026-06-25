@@ -1,11 +1,8 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
+import { parseModelAuthor, parseModelSlug } from '../../model-id.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
-import {
-  getUniqueProviders,
-  parseModelAuthor,
-  parseModelSlug,
-} from '../../openrouter/models.js';
+import { getUniqueProviders } from '../../openrouter/models.js';
 import { fetchProviders } from '../../openrouter/providers.js';
 import { formatLatency, formatThroughput } from './format.js';
 

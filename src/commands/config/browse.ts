@@ -1,13 +1,9 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
+import { parseModelAuthor, parseModelSlug } from '../../model-id.js';
 import type { OpenRouterDataClient } from '../../openrouter/data-client.js';
 import { rankModels } from '../../openrouter/fuzzy.js';
-import {
-  fetchModels,
-  getUniqueProviders,
-  parseModelAuthor,
-  parseModelSlug,
-} from '../../openrouter/models.js';
+import { fetchModels, getUniqueProviders } from '../../openrouter/models.js';
 import type { OpenRouterModel } from '../../openrouter/types.js';
 import { addOverrideCommand } from './add.js';
 import {

@@ -224,6 +224,11 @@ describe('matchScore', () => {
     expect(matchScore('gpt-4', 'gpt-4o')).toBe(-1);
     expect(matchScore('gpt-4', 'gpt-4-turbo')).toBe(-1);
   });
+
+  it('slug tiers do not bridge two different vendor prefixes', () => {
+    expect(matchScore('openai/gpt-4o', 'azure/gpt-4o')).toBe(-1);
+    expect(matchScore('openai/gpt-4*', 'azure/gpt-4o')).toBe(-1);
+  });
 });
 
 describe('detectSlugCollisions', () => {
@@ -255,9 +260,10 @@ describe('detectSlugCollisions', () => {
   });
 
   it('winner is the bare key even when it is not first-declared (full-exact beats slug)', () => {
-    // {openai/gpt-4o, gpt-4o}: bare key wins on the full-exact tier (3000+) for a
-    // bare incoming name, so winner is the bare key — not keys[0] 'openai/gpt-4o'.
+    // Arrange — bare key wins on full-exact (3000+), so winner ≠ keys[0].
     const collisions = detectSlugCollisions({ 'openai/gpt-4o': {}, 'gpt-4o': {} });
+
+    // Act & Assert
     expect(collisions[0]?.winner).toBe('gpt-4o');
     expect(collisions[0]?.winner).not.toBe(collisions[0]?.keys[0]);
   });
@@ -271,11 +277,14 @@ describe('detectSlugCollisions', () => {
 
 describe('formatSlugCollisionWarning', () => {
   it('names both keys, the slug, and reports the actual winner', () => {
+    // Arrange
     const msg = formatSlugCollisionWarning({
       slug: 'gpt-4o',
       keys: ['openai/gpt-4o', 'azure/gpt-4o'],
       winner: 'openai/gpt-4o',
     });
+
+    // Act & Assert
     expect(msg).toContain('"openai/gpt-4o"');
     expect(msg).toContain('"azure/gpt-4o"');
     expect(msg).toContain('"gpt-4o"');
@@ -283,11 +292,14 @@ describe('formatSlugCollisionWarning', () => {
   });
 
   it('reports the bare key as winner regardless of declaration order', () => {
+    // Arrange
     const msg = formatSlugCollisionWarning({
       slug: 'gpt-4o',
       keys: ['openai/gpt-4o', 'gpt-4o'],
       winner: 'gpt-4o',
     });
+
+    // Act & Assert
     expect(msg).toContain('a bare name resolves to "gpt-4o"');
   });
 });
@@ -569,6 +581,21 @@ describe('resolveModelConfig', () => {
       'moonshotai/kimi-k2.6',
     );
     expect(resolveModelConfig(config, 'unrelated-model').matchedOverride).toBeUndefined();
+  });
+
+  it('does not apply a vendor-prefixed override to a different vendor', () => {
+    // Arrange
+    const config = {
+      ...baseConfig,
+      modelOverrides: { 'openai/gpt-4o': { provider: { only: 'openai' } } },
+    } as unknown as ProxyConfig;
+
+    // Act
+    const resolved = resolveModelConfig(config, 'azure/gpt-4o');
+
+    // Assert — no match; provider stays at the global 'deepinfra', not 'openai'.
+    expect(resolved.matchedOverride).toBeUndefined();
+    expect(resolved.provider?.only).toBe('deepinfra');
   });
 });
 

@@ -6,12 +6,17 @@ import { DEFAULTS } from '../config-schema.js';
 
 describe('doctor slug-collision check (data)', () => {
   it('flags same-slug overrides', () => {
+    // Arrange
     const cfg = {
       ...DEFAULTS,
       openrouterKey: 'sk-test',
       modelOverrides: { 'openai/gpt-4o': {}, 'azure/gpt-4o': {} },
     } as unknown as ProxyConfig;
+
+    // Act
     const collisions = detectSlugCollisions(cfg.modelOverrides);
+
+    // Assert
     expect(collisions).toHaveLength(1);
     expect(formatSlugCollisionWarning(collisions[0]!)).toContain(
       'share model slug "gpt-4o"',
@@ -19,11 +24,14 @@ describe('doctor slug-collision check (data)', () => {
   });
 
   it('passes when slugs are unique', () => {
+    // Arrange
     const cfg = {
       ...DEFAULTS,
       openrouterKey: 'sk-test',
       modelOverrides: { 'openai/gpt-4o': {}, 'anthropic/claude-4': {} },
     } as unknown as ProxyConfig;
+
+    // Act & Assert
     expect(detectSlugCollisions(cfg.modelOverrides)).toEqual([]);
   });
 });

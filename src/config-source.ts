@@ -200,10 +200,16 @@ class FileWatchingConfigSource implements ConfigSource {
   /** Warn only when the collision set changes, so reloading an unchanged config doesn't re-log. */
   private warnSlugCollisions(overrides: ProxyConfig['modelOverrides']): void {
     const collisions = detectSlugCollisions(overrides ?? undefined);
+    // Order-independent identity (slug + winner + sorted keys): a key reorder
+    // re-warns only if it changes which key wins.
     const sig = collisions
-      .map(c => `${c.slug}=${c.keys.join(',')}`)
+      .map(c =>
+        [c.slug, c.winner, [...c.keys].sort((a, b) => a.localeCompare(b)).join(',')].join(
+          '|',
+        ),
+      )
       .sort((a, b) => a.localeCompare(b))
-      .join('|');
+      .join('||');
     if (sig === this.lastCollisionSig) return;
     this.lastCollisionSig = sig;
     for (const collision of collisions) {

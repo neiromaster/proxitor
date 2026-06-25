@@ -230,7 +230,10 @@ describe('FileWatchingConfigSource.reload', () => {
   });
 
   it('warns once per slug collision at construction', () => {
+    // Arrange
     const spy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    // Act
     createConfigSource({
       initial: {
         host: '127.0.0.1',
@@ -240,6 +243,8 @@ describe('FileWatchingConfigSource.reload', () => {
       } as unknown as ProxyConfig,
       loadOptions: { noConfig: true },
     });
+
+    // Assert
     expect(spy).toHaveBeenCalledWith(
       expect.stringContaining('share model slug "gpt-4o"'),
     );
@@ -247,6 +252,7 @@ describe('FileWatchingConfigSource.reload', () => {
   });
 
   it('does not re-warn unchanged slug collisions on reload', async () => {
+    // Arrange
     const cfg = {
       ...DEFAULTS,
       openrouterKey: 'sk-test',
@@ -261,13 +267,44 @@ describe('FileWatchingConfigSource.reload', () => {
     });
     spy.mockClear(); // ignore the construction-time warning
 
-    await source.reload(); // same collisions → signature unchanged → no re-warn
+    // Act — same collisions → signature unchanged → no re-warn
+    await source.reload();
 
+    // Assert
+    expect(spy).not.toHaveBeenCalledWith(expect.stringContaining('share model slug'));
+    spy.mockRestore();
+  });
+
+  it('does not re-warn when collision keys are only reordered on reload', async () => {
+    // Arrange — reorder bare + prefixed key; winner (bare) is order-invariant.
+    const first = {
+      ...DEFAULTS,
+      openrouterKey: 'sk-test',
+      modelOverrides: { 'gpt-4o': {}, 'openai/gpt-4o': {} },
+    } as unknown as ProxyConfig;
+    const load = vi.fn(async () => ({
+      ...DEFAULTS,
+      openrouterKey: 'sk-test',
+      modelOverrides: { 'openai/gpt-4o': {}, 'gpt-4o': {} },
+    })) as unknown as (opts: LoadConfigOptions) => Promise<ProxyConfig>;
+    const spy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const source = createConfigSource({
+      initial: first,
+      loadOptions: { noConfig: true },
+      load,
+    });
+    spy.mockClear();
+
+    // Act — same keys, swapped declaration order
+    await source.reload();
+
+    // Assert
     expect(spy).not.toHaveBeenCalledWith(expect.stringContaining('share model slug'));
     spy.mockRestore();
   });
 
   it('re-warns when slug collisions change on reload', async () => {
+    // Arrange
     const first = {
       ...DEFAULTS,
       openrouterKey: 'sk-test',
@@ -293,8 +330,10 @@ describe('FileWatchingConfigSource.reload', () => {
     });
     spy.mockClear();
 
-    await source.reload(); // new collision (claude-4) → signature changed → re-warn
+    // Act — new collision (claude-4) → signature changed → re-warn
+    await source.reload();
 
+    // Assert
     expect(spy).toHaveBeenCalledWith(
       expect.stringContaining('share model slug "claude-4"'),
     );

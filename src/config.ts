@@ -14,6 +14,7 @@ import {
   proxyConfigSchema,
   type TriState,
 } from './config-schema.js';
+import { parseModelSlug } from './model-id.js';
 import { toArray } from './utils.js';
 
 export type {
@@ -86,10 +87,9 @@ export function buildProviderRouting(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-/** Text after the first `/`, or the whole string when there is none. Bare keys keep their text, unlike `parseModelSlug` (which returns `''`). */
+/** Slug after the vendor prefix; bare ids keep their text. Delegates to parseModelSlug. */
 function modelSlug(s: string): string {
-  const slash = s.indexOf('/');
-  return slash >= 0 ? s.slice(slash + 1) : s;
+  return parseModelSlug(s) || s;
 }
 
 export function matchScore(pattern: string, modelName: string): number {
@@ -98,6 +98,9 @@ export function matchScore(pattern: string, modelName: string): number {
   if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
     return 2000 + pattern.length;
   }
+  // Slug tiers bridge bare <-> vendor-prefixed only — never two different vendor
+  // prefixes, or openai/gpt-4o would capture azure/gpt-4o. Same-vendor is above.
+  if (pattern.includes('/') && modelName.includes('/')) return -1;
   const sp = modelSlug(pattern);
   const sm = modelSlug(modelName);
   if (sp === sm) return 1000 + sp.length;
@@ -126,6 +129,8 @@ export function detectSlugCollisions(
   const collisions: SlugCollision[] = [];
   for (const [slug, keys] of groups) {
     if (keys.length <= 1) continue;
+    // winner is never null here (all keys share the bare slug → slug-exact tier);
+    // the guard narrows string|null → string, since noNonNullAssertion is on.
     const winner = findBestMatch(keys, slug);
     if (winner) collisions.push({ slug, keys, winner });
   }
