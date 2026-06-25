@@ -34,12 +34,14 @@ export function formatLine(obs: CacheObservation, useColor = false): string {
 }
 
 export class LiveLineSink implements ObservationSink {
-  private readonly useColor: boolean;
-  constructor(useColor: boolean = process.stdout.isTTY === true) {
+  // Resolved at emit time, not construction, so a stdout redirection or TTY
+  // attachment after startup is honored (avoids leaking ANSI into piped files).
+  private readonly useColor: () => boolean;
+  constructor(useColor: () => boolean = () => process.stdout.isTTY === true) {
     this.useColor = useColor;
   }
   emit(obs: CacheObservation): void {
-    logger.info(formatLine(obs, this.useColor));
+    logger.info(formatLine(obs, this.useColor()));
   }
 }
 

@@ -54,4 +54,35 @@ describe('buildUpstreamResponseWithLogging', () => {
     expect(got?.routing?.provider).toBe('Novita');
     expect(got?.status).toBe(200);
   });
+
+  it('observes when the client cancels mid-stream (cancel() path, not flush)', async () => {
+    // Arrange — flush() is not called on cancel; the shared cancel() handler
+    // must still emit the (partial) observation to avoid orphaned dumps.
+    let got: CacheObservation | undefined;
+    const obs = new Observability(
+      new SessionTracker({ maxEntries: 8, ttlMs: 1000 }),
+      [
+        {
+          emit: o => {
+            got = o;
+          },
+        },
+      ],
+      80,
+    );
+    const sse = `data: ${JSON.stringify({ usage: { prompt_tokens: 7 } })}\n\ndata: [DONE]\n\n`;
+
+    // Act — read one chunk, then cancel like a client disconnect.
+    const res = buildUpstreamResponseWithLogging(streamResponse(sse), 'POST', {
+      reqCtx,
+      observability: obs,
+    });
+    const reader = res.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+
+    // Assert — the observation was emitted despite no clean flush.
+    expect(got).toBeDefined();
+    expect(got?.usage?.inputTokens).toBe(7);
+  });
 });

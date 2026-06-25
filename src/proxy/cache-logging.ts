@@ -20,30 +20,45 @@ function createLoggingStream(
   const accumulator = isSSE ? new SseUsageAccumulator() : undefined;
   const chunks: Uint8Array[] | null = isSSE ? null : [];
   const decoder = new TextDecoder();
+  let finalized = false;
+
+  // Shared by flush() (clean close) and cancel() (client abort / upstream
+  // error). The runtime guarantees these are mutually exclusive; the flag
+  // guards against a defensive double-call.
+  const finalize = (): void => {
+    if (finalized) return;
+    finalized = true;
+    try {
+      const extracted: Extracted = accumulator
+        ? accumulator.result()
+        : extractFromFullText(
+            `${chunks?.reduce((acc, c) => acc + decoder.decode(c, { stream: true }), '') ?? ''}${decoder.decode()}`,
+            false,
+          );
+      ctx.observability.observe(ctx.reqCtx, extracted, status);
+    } catch (err) {
+      logger.debug(
+        withReq(
+          ctx.reqCtx.reqId,
+          `Cache observability failed: ${err instanceof Error ? err.message : err}`,
+        ),
+      );
+    }
+  };
 
   return new TransformStream({
     transform(chunk, controller) {
       controller.enqueue(chunk);
       if (accumulator) accumulator.feed(chunk);
-      else chunks!.push(chunk);
+      else chunks?.push(chunk);
     },
     flush() {
-      try {
-        const extracted: Extracted = accumulator
-          ? accumulator.result()
-          : extractFromFullText(
-              `${chunks!.reduce((acc, c) => acc + decoder.decode(c, { stream: true }), '')}${decoder.decode()}`,
-              false,
-            );
-        ctx.observability.observe(ctx.reqCtx, extracted, status);
-      } catch (err) {
-        logger.debug(
-          withReq(
-            ctx.reqCtx.reqId,
-            `Cache observability failed: ${err instanceof Error ? err.message : err}`,
-          ),
-        );
-      }
+      finalize();
+    },
+    cancel() {
+      // flush() does not run on abort/cancel — emit the (possibly partial)
+      // observation here so the dump isn't orphaned and the line isn't lost.
+      finalize();
     },
   });
 }
