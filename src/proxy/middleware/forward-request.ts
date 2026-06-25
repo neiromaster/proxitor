@@ -5,7 +5,8 @@ import { buildUpstreamResponseWithLogging } from '../cache-logging.js';
 import type { ProxyEnv } from '../context.js';
 import { buildResponseHeaders } from '../headers.js';
 import { classifyRequestType } from '../observability/classify.js';
-import type { RequestContext } from '../observability/types.js';
+import { extractFromFullText } from '../observability/extract.js';
+import type { Extracted, RequestContext } from '../observability/types.js';
 import { extractErrorDetail } from '../utils/error.js';
 
 const DUPLEX_HALF = { duplex: 'half' as const };
@@ -46,7 +47,7 @@ function buildErrorResponse(
 async function buildUpstreamErrorResponse(
   upstream: Response,
   ctx: Ctx,
-): Promise<Response> {
+): Promise<{ response: Response; extracted: Extracted }> {
   const bodyText = await upstream.text();
   const detail = extractErrorDetail(bodyText);
   const truncated = detail.length > 300 ? `${detail.slice(0, 300)}…` : detail;
@@ -60,10 +61,14 @@ async function buildUpstreamErrorResponse(
   );
 
   const responseHeaders = buildResponseHeaders(upstream.headers);
-  if (ctx.method === 'HEAD') {
-    return new Response(null, { status: upstream.status, headers: responseHeaders });
-  }
-  return new Response(bodyText, { status: upstream.status, headers: responseHeaders });
+  const response =
+    ctx.method === 'HEAD'
+      ? new Response(null, { status: upstream.status, headers: responseHeaders })
+      : new Response(bodyText, { status: upstream.status, headers: responseHeaders });
+  // Some providers return a usage object inside 4xx/5xx error bodies — preserve it
+  // instead of collapsing every error response to NOUSAGE.
+  const extracted = extractFromFullText(bodyText, false);
+  return { response, extracted };
 }
 
 export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
@@ -96,23 +101,9 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     dumpRequest({ reqId, method, path, model: c.var.modelName, forwardBody });
   }
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(upstreamUrl, {
-      method,
-      headers: upstreamHeaders,
-      body: forwardBody,
-      signal: controller.signal,
-      ...(forwardBody ? DUPLEX_HALF : {}),
-    });
-  } catch (err) {
-    return buildErrorResponse(err, ctx);
-  } finally {
-    c.req.raw.signal.removeEventListener('abort', onClientAbort);
-  }
-
-  // Request context for observability — computed once and shared by the
-  // success and error paths so every proxied response is observed.
+  // Request context for observability — computed once, before the fetch, so
+  // every termination path (success, HTTP error, client abort, network
+  // failure) can observe and no request dump is left orphaned.
   const parsedBody = c.var.parsedBody;
   const toolsCount = Array.isArray(parsedBody?.tools) ? parsedBody.tools.length : 0;
   // Chat Completions uses max_tokens/max_completion_tokens; the Responses API
@@ -136,12 +127,31 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   };
   const observability = c.var.observability;
 
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method,
+      headers: upstreamHeaders,
+      body: forwardBody,
+      signal: controller.signal,
+      ...(forwardBody ? DUPLEX_HALF : {}),
+    });
+  } catch (err) {
+    // Pre-response failure (client abort → 499, upstream unreachable → 502):
+    // observe so the dump isn't orphaned and the attempt is recorded. No
+    // response body is available → collapses to NOUSAGE.
+    const response = buildErrorResponse(err, ctx);
+    observability.observe(reqCtx, {}, response.status);
+    return response;
+  } finally {
+    c.req.raw.signal.removeEventListener('abort', onClientAbort);
+  }
+
   if (upstream.status >= 400) {
-    const response = await buildUpstreamErrorResponse(upstream, ctx);
-    // Observe error responses too: avoids orphaned request dumps (dumpRequest
-    // already ran) and records the failed attempt in the session tracker.
-    // No usage is parsed from error bodies → collapses to NOUSAGE.
-    observability.observe(reqCtx, {}, upstream.status);
+    const { response, extracted } = await buildUpstreamErrorResponse(upstream, ctx);
+    // Observe error responses too — extract usage from the error body so a
+    // failed attempt that still reports cache tokens isn't forced to NOUSAGE.
+    observability.observe(reqCtx, extracted, upstream.status);
     return response;
   }
 
