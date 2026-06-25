@@ -27,6 +27,10 @@ export type CacheOutcome = {
 
 /** The single per-request record every sink consumes. */
 export type CacheObservation = {
+  /** Path of the request dump file to enrich, when body dumping is on. Carried
+   * through from the request side so the DumpSink doesn't need a reqId→path
+   * lookup (which was collision-prone: reqId is only 32 bits of entropy). */
+  dumpPath?: string;
   model: string;
   outcome: CacheOutcome;
   reqId: string;
@@ -40,6 +44,7 @@ export type CacheObservation = {
 
 /** Request-side context threaded from the proxy into the response pipeline. */
 export type RequestContext = {
+  dumpPath?: string;
   maxTokens?: number;
   model: string;
   reqId: string;

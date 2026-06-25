@@ -1,7 +1,6 @@
 // src/proxy/observability/observability.ts
 import type { ObservabilityConfig } from '../../config-schema.js';
 import { logger, withReq } from '../../logger.js';
-import { dumpEnabled } from '../body-dump.js';
 import { classifyCacheOutcome } from './classify.js';
 import { SessionTracker } from './session-tracker.js';
 import { DumpSink, LiveLineSink, type ObservationSink } from './sinks.js';
@@ -33,47 +32,61 @@ export class Observability {
     this.hitThresholdPct = hitThresholdPct;
   }
 
+  /** Classify and dispatch one observation to every sink. Never throws — the
+   * response pipeline calls this on multiple termination paths (stream finalize,
+   * HEAD, non-logged content type, error/abort branches), so a classification
+   * failure must degrade to a debug log, never escape to the client. */
   observe(
     req: RequestContext,
     extracted: { usage?: ExtractedUsage; routing?: RoutingMetadata },
     status: number,
   ): void {
-    const usage: ExtractedUsage = extracted.usage ?? {
-      present: false,
-      inputTokens: 0,
-      cacheRead: 0,
-      cacheCreate: 0,
-    };
-    const isFirst = this.tracker.isFirstAndRemember(req.sessionId);
-    const outcome = classifyCacheOutcome(
-      usage,
-      { requestType: req.requestType, isFirstForSession: isFirst },
-      { hitThresholdPct: this.hitThresholdPct },
-    );
-    const obs: CacheObservation = {
-      reqId: req.reqId,
-      status,
-      model: req.model,
-      sessionId: req.sessionId,
-      requestType: req.requestType,
-      toolsCount: req.toolsCount,
-      usage,
-      outcome,
-      routing: extracted.routing,
-    };
-    // Isolate each sink so a throwing sink (e.g. a logger transport failure)
-    // doesn't silently kill the remaining sinks for this observation.
-    for (const sink of this.sinks) {
-      try {
-        sink.emit(obs);
-      } catch (err) {
-        logger.debug(
-          withReq(
-            obs.reqId,
-            `Observability sink failed: ${err instanceof Error ? err.message : err}`,
-          ),
-        );
+    try {
+      const usage: ExtractedUsage = extracted.usage ?? {
+        present: false,
+        inputTokens: 0,
+        cacheRead: 0,
+        cacheCreate: 0,
+      };
+      const isFirst = this.tracker.isFirstAndRemember(req.sessionId);
+      const outcome = classifyCacheOutcome(
+        usage,
+        { requestType: req.requestType, isFirstForSession: isFirst },
+        { hitThresholdPct: this.hitThresholdPct },
+      );
+      const obs: CacheObservation = {
+        dumpPath: req.dumpPath,
+        reqId: req.reqId,
+        status,
+        model: req.model,
+        sessionId: req.sessionId,
+        requestType: req.requestType,
+        toolsCount: req.toolsCount,
+        usage,
+        outcome,
+        routing: extracted.routing,
+      };
+      // Isolate each sink so a throwing sink (e.g. a logger transport failure)
+      // doesn't silently kill the remaining sinks for this observation.
+      for (const sink of this.sinks) {
+        try {
+          sink.emit(obs);
+        } catch (err) {
+          logger.debug(
+            withReq(
+              obs.reqId,
+              `Observability sink failed: ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+        }
       }
+    } catch (err) {
+      logger.debug(
+        withReq(
+          req.reqId,
+          `Observability observe failed: ${err instanceof Error ? err.message : err}`,
+        ),
+      );
     }
   }
 
@@ -101,7 +114,10 @@ export function createObservability(
     maxEntries: o.sessionMaxEntries,
     ttlMs: o.sessionTtlMs,
   });
-  const built: ObservationSink[] = [new LiveLineSink()];
-  if (dumpEnabled()) built.push(new DumpSink());
+  // DumpSink is always wired: dumpResponse re-checks dumpEnabled() per call, so
+  // a flag flip after startup stays consistent with dumpRequest (which also
+  // checks per call) — gating the sink only at construction would orphan every
+  // request dump if PROXITOR_DUMP_BODY were enabled later.
+  const built: ObservationSink[] = [new LiveLineSink(), new DumpSink()];
   return new Observability(tracker, sinks ?? built, o.hitThreshold);
 }

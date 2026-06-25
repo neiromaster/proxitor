@@ -41,20 +41,6 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-/** reqId -> dump filePath, so dumpResponse locates the request record in O(1)
- * without a directory scan (which was O(N) per response and could match a
- * stale file from a recycled 8-hex reqId). Bounded to in-flight dumps. */
-const dumpPaths = new Map<string, string>();
-const DUMP_PATH_CAP = 4096;
-
-function registerDumpPath(reqId: string, path: string): void {
-  dumpPaths.set(reqId, path);
-  if (dumpPaths.size > DUMP_PATH_CAP) {
-    const oldest = dumpPaths.keys().next().value;
-    if (oldest !== undefined) dumpPaths.delete(oldest);
-  }
-}
-
 export type DumpRequestMeta = {
   forwardBody: ArrayBuffer | undefined;
   method: string;
@@ -72,9 +58,11 @@ function parseForwardBody(body: ArrayBuffer | undefined): unknown {
   }
 }
 
-/** `response` is filled later by dumpResponse, once the upstream stream completes. */
-export function dumpRequest(meta: DumpRequestMeta): void {
-  if (!dumpEnabled()) return;
+/** `response` is filled later by dumpResponse, once the upstream stream completes.
+ * Returns the dump file path (threaded through the request context to the
+ * DumpSink) so the response half can locate it without a reqId→path lookup. */
+export function dumpRequest(meta: DumpRequestMeta): string | undefined {
+  if (!dumpEnabled()) return undefined;
   ensureDir(dumpDir());
   const record = {
     reqId: meta.reqId,
@@ -87,17 +75,21 @@ export function dumpRequest(meta: DumpRequestMeta): void {
   };
   const path = filePath(meta.reqId, meta.model);
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
-  registerDumpPath(meta.reqId, path);
+  return path;
 }
 
 export async function dumpResponse(obs: CacheObservation): Promise<void> {
   if (!dumpEnabled()) return;
-  const path = dumpPaths.get(obs.reqId);
+  const path = obs.dumpPath;
   if (path === undefined) return; // request wasn't dumped (e.g. flag flipped mid-flight)
-  dumpPaths.delete(obs.reqId);
 
   try {
     const record = JSON.parse(await readFile(path, 'utf-8')) as Record<string, unknown>;
+    const r = obs.routing;
+    // routing is optional. When present its required fields are non-null, so we
+    // spread them directly; when absent we serialize explicit nulls so the dump
+    // always carries a complete routing block (and stays biome-clean — the
+    // non-optional RoutingMetadata fields can't be guarded with `?? null`).
     record.response = {
       status: obs.status,
       label: obs.outcome.label,
@@ -109,12 +101,23 @@ export async function dumpResponse(obs: CacheObservation): Promise<void> {
       cacheRead: obs.usage.cacheRead,
       cacheCreate: obs.usage.cacheCreate,
       hitPct: obs.outcome.hitPct,
-      provider: obs.routing?.provider ?? null,
-      strategy: obs.routing?.strategy ?? null,
-      region: obs.routing?.region ?? null,
-      attempt: obs.routing?.attempt ?? null,
-      fallback: obs.routing?.fallback ?? false,
-      generationId: obs.routing?.generationId ?? null,
+      ...(r
+        ? {
+            provider: r.provider,
+            strategy: r.strategy,
+            region: r.region ?? null,
+            attempt: r.attempt,
+            fallback: r.fallback,
+            generationId: r.generationId ?? null,
+          }
+        : {
+            provider: null,
+            strategy: null,
+            region: null,
+            attempt: null,
+            fallback: false,
+            generationId: null,
+          }),
     };
     await writeFile(path, `${JSON.stringify(record, null, 2)}\n`);
   } catch {

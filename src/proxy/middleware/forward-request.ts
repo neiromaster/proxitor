@@ -97,9 +97,12 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     ),
   );
 
-  if (dumpEnabled()) {
-    dumpRequest({ reqId, method, path, model: c.var.modelName, forwardBody });
-  }
+  // dumpRequest writes the request half of the dump and returns its file path;
+  // threading it through reqCtx lets the DumpSink enrich that exact file later
+  // without a reqId→path lookup (reqId is only 32 bits, so such a map collides).
+  const dumpPath = dumpEnabled()
+    ? dumpRequest({ reqId, method, path, model: c.var.modelName, forwardBody })
+    : undefined;
 
   // Request context for observability — computed once, before the fetch, so
   // every termination path (success, HTTP error, client abort, network
@@ -124,6 +127,7 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     toolsCount,
     maxTokens,
     requestType,
+    dumpPath,
   };
   const observability = c.var.observability;
 
@@ -148,9 +152,27 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   }
 
   if (upstream.status >= 400) {
-    const { response, extracted } = await buildUpstreamErrorResponse(upstream, ctx);
     // Observe error responses too — extract usage from the error body so a
     // failed attempt that still reports cache tokens isn't forced to NOUSAGE.
+    // The body read is guarded: if it throws (upstream dropped mid-error-body),
+    // we still observe with an empty extraction and return the real upstream
+    // status — never a synthetic proxy 500, never an orphaned dump.
+    let extracted: Extracted = {};
+    let response: Response;
+    try {
+      ({ response, extracted } = await buildUpstreamErrorResponse(upstream, ctx));
+    } catch {
+      logger.debug(
+        withReq(
+          reqId,
+          `upstream ${upstream.status} error body unreadable; observing without detail`,
+        ),
+      );
+      response = new Response(null, {
+        status: upstream.status,
+        headers: buildResponseHeaders(upstream.headers),
+      });
+    }
     observability.observe(reqCtx, extracted, upstream.status);
     return response;
   }

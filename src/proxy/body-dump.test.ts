@@ -208,18 +208,21 @@ describe('dumpResponse', () => {
   });
 
   it('appends enriched response usage and preserves the classified hit percentage', async () => {
-    // Arrange
-    dumpRequest({
+    // Arrange — dumpRequest returns the file path threaded through the observation.
+    const path = dumpRequest({
       reqId: 'r1',
       method: 'POST',
       path: '/v1/messages',
       model: 'x',
       forwardBody: undefined,
     });
+    expect(path).toBeDefined();
 
     // Act — hitPct comes from the classifier (1 decimal), not recomputed here.
     await dumpResponse(
       obs({
+        reqId: 'r1',
+        dumpPath: path,
         usage: { present: true, inputTokens: 10000, cacheRead: 9500, cacheCreate: 500 },
         outcome: { label: 'HIT', type: 'main', hitPct: 95 },
         routing: {
@@ -247,7 +250,7 @@ describe('dumpResponse', () => {
 
   it('records zero hitPct when there are no input tokens', async () => {
     // Arrange
-    dumpRequest({
+    const path = dumpRequest({
       reqId: 'r2',
       method: 'POST',
       path: '/v1/messages',
@@ -259,6 +262,7 @@ describe('dumpResponse', () => {
     await dumpResponse(
       obs({
         reqId: 'r2',
+        dumpPath: path,
         usage: { present: true, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
         outcome: { label: 'MISS', type: 'main', hitPct: 0 },
       }),
@@ -271,7 +275,7 @@ describe('dumpResponse', () => {
 
   it('records status and null routing when usage is absent (NOUSAGE)', async () => {
     // Arrange
-    dumpRequest({
+    const path = dumpRequest({
       reqId: 'r3',
       method: 'POST',
       path: '/v1/messages',
@@ -283,6 +287,7 @@ describe('dumpResponse', () => {
     await dumpResponse(
       obs({
         reqId: 'r3',
+        dumpPath: path,
         status: 504,
         usage: { present: false, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
         outcome: { label: 'NOUSAGE', type: 'main', hitPct: 0 },
@@ -309,5 +314,56 @@ describe('dumpResponse', () => {
 
     // Assert
     expect(readdirSync(dir)).toHaveLength(0);
+  });
+
+  it('enriches each file by its own dumpPath — no cross-talk on a reqId collision', async () => {
+    // Arrange — two requests reuse the same 8-hex reqId (birthday collision).
+    // Each carries its OWN dumpPath (threaded from dumpRequest), so a response
+    // must enrich its own file, never the other request's, regardless of reqId.
+    const pathA = dumpRequest({
+      reqId: 'dup',
+      method: 'POST',
+      path: '/v1/messages',
+      model: 'A',
+      forwardBody: undefined,
+    });
+    const pathB = dumpRequest({
+      reqId: 'dup',
+      method: 'POST',
+      path: '/v1/messages',
+      model: 'B',
+      forwardBody: undefined,
+    });
+    expect(pathA).toBeDefined();
+    expect(pathB).toBeDefined();
+    expect(pathA).not.toBe(pathB);
+
+    // Act — A's response (HIT) then B's response (MISS), same reqId.
+    await dumpResponse(
+      obs({
+        reqId: 'dup',
+        dumpPath: pathA,
+        usage: { present: true, inputTokens: 100, cacheRead: 90, cacheCreate: 0 },
+        outcome: { label: 'HIT', type: 'main', hitPct: 90 },
+      }),
+    );
+    await dumpResponse(
+      obs({
+        reqId: 'dup',
+        dumpPath: pathB,
+        usage: { present: true, inputTokens: 100, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'MISS', type: 'main', hitPct: 0 },
+      }),
+    );
+
+    // Assert — each file carries its own response; no contamination.
+    const recA = JSON.parse(readFileSync(pathA as string, 'utf-8')) as {
+      response: { label: string };
+    };
+    const recB = JSON.parse(readFileSync(pathB as string, 'utf-8')) as {
+      response: { label: string };
+    };
+    expect(recA.response.label).toBe('HIT');
+    expect(recB.response.label).toBe('MISS');
   });
 });
