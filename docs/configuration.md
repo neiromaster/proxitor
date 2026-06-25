@@ -254,13 +254,13 @@ While proxitor runs, it prints a **classified per-request cache line** for every
 
 ```
 [a1b2] HIT   99%  read 48640  in 48874  glm-4.5-air  [main]
-[c3d4] PARTIAL  42%  read 1088  in 2600  claude-sonnet-4-6  provider=anthropic  [side]
-[e5f6] MISS   read 0  in 48874  glm-4.5-air  provider=novita  [main]
-[g7h8] COLD   read 0  in 48874  glm-4.5-air  [main]
+[c3d4] PARTIAL  42%  read 1088  in 2600  provider=anthropic  claude-sonnet-4-6  [side]
+[e5f6] MISS   in 48874  provider=novita  glm-4.5-air  [main]
+[g7h8] COLD   in 48874  glm-4.5-air  [main]
 [i9j0] NOUSAGE   claude-sonnet-4-6  [main]
 ```
 
-Each line carries the request ID, the **label**, the hit percentage (for `HIT`/`PARTIAL`), `read N` / `write N` tokens where present, `in N` input tokens, the model, `provider=…` when routing metadata is available, and the request type `[main]`/`[side]`.
+Each line carries the request ID, the **label**, the hit percentage (for `HIT`/`PARTIAL`), `read N` / `write N` tokens where present, `in N` input tokens, `provider=…` when routing metadata is available, the model, and the request type `[main]`/`[side]`. (`read N` only appears when there is a non-zero cache read, so `MISS`/`COLD` lines omit it.)
 
 ### Labels
 

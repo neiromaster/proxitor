@@ -254,13 +254,13 @@ modelOverrides:
 
 ```
 [a1b2] HIT   99%  read 48640  in 48874  glm-4.5-air  [main]
-[c3d4] PARTIAL  42%  read 1088  in 2600  claude-sonnet-4-6  provider=anthropic  [side]
-[e5f6] MISS   read 0  in 48874  glm-4.5-air  provider=novita  [main]
-[g7h8] COLD   read 0  in 48874  glm-4.5-air  [main]
+[c3d4] PARTIAL  42%  read 1088  in 2600  provider=anthropic  claude-sonnet-4-6  [side]
+[e5f6] MISS   in 48874  provider=novita  glm-4.5-air  [main]
+[g7h8] COLD   in 48874  glm-4.5-air  [main]
 [i9j0] NOUSAGE   claude-sonnet-4-6  [main]
 ```
 
-Каждая строка несёт ID запроса, **метку**, процент попадания (для `HIT`/`PARTIAL`), `read N` / `write N` токенов при наличии, `in N` входных токенов, модель, `provider=…` при наличии метаданных маршрутизации и тип запроса `[main]`/`[side]`.
+Каждая строка несёт ID запроса, **метку**, процент попадания (для `HIT`/`PARTIAL`), `read N` / `write N` токенов при наличии, `in N` входных токенов, `provider=…` при наличии метаданных маршрутизации, модель и тип запроса `[main]`/`[side]`. (`read N` появляется только при ненулевом чтении из кэша, поэтому в строках `MISS`/`COLD` его нет.)
 
 ### Метки
 
