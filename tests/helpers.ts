@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ServerType, serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { DEFAULTS } from '../src/config-schema.js';
 import { createProxyServer, type ProxyConfig, staticConfigSource } from '../src/index.js';
 
 /** Get a random available port (used by cli.test.ts for CLI flag tests). */
@@ -67,13 +68,7 @@ export async function createTestEnv(
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
     normalizeVolatileSystem: false,
-    observability: {
-      routerMetadata: true,
-      hitThreshold: 80,
-      sideMaxTokens: 4096,
-      sessionMaxEntries: 4096,
-      sessionTtlMs: 600000,
-    },
+    observability: { ...DEFAULTS.observability },
     verbose: false,
     bodyLimit: '50mb',
     attributionReferer: 'https://github.com/neiromaster/proxitor',

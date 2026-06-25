@@ -71,7 +71,7 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
     | undefined;
   const avail = endpoints?.available;
   if (Array.isArray(avail))
-    provider = avail.find(e => e?.selected === true)?.provider ?? avail[0]?.provider;
+    provider = avail.find(e => e.selected === true)?.provider ?? avail[0]?.provider;
   const attempts = meta.attempts as Array<{ provider?: string }> | undefined;
   if (provider === undefined && Array.isArray(attempts) && attempts.length > 0)
     provider = attempts[attempts.length - 1]?.provider;
