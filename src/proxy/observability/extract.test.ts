@@ -56,6 +56,20 @@ describe('parseUsage', () => {
   it('returns undefined when no usage object', () => {
     expect(parseUsage({ choices: [] })).toBeUndefined();
   });
+  it('routes to OpenAI when cache_read_input_tokens is present but non-numeric', () => {
+    // Arrange — a relay garbles the Anthropic field to null; the OpenAI
+    // cached_tokens path must still be used, not silently dropped.
+    const u = parseUsage({
+      usage: {
+        prompt_tokens: 500,
+        cache_read_input_tokens: null,
+        prompt_tokens_details: { cached_tokens: 400 },
+      },
+    });
+    // Act & Assert
+    expect(u?.cacheRead).toBe(400);
+    expect(u?.inputTokens).toBe(500);
+  });
 });
 
 describe('parseRouting', () => {
@@ -104,6 +118,34 @@ describe('parseRouting', () => {
         attempts: [{ provider: 'Novita' }],
       },
     });
+    expect(r?.provider).toBe('Novita');
+  });
+  it('reads metadata nested under response (Responses-API shape)', () => {
+    // Arrange — /v1/responses wraps the payload in `response`, mirroring usage.
+    const r = parseRouting({
+      type: 'response.completed',
+      response: {
+        openrouter_metadata: {
+          strategy: 'direct',
+          attempt: 1,
+          endpoints: { available: [{ provider: 'Novita', selected: true }] },
+        },
+      },
+    });
+    // Act & Assert
+    expect(r?.provider).toBe('Novita');
+    expect(r?.strategy).toBe('direct');
+  });
+  it('falls back to attempts when the selected endpoint has an empty provider', () => {
+    // Arrange — provider:'' is not a real value; defer to the attempts array.
+    const r = parseRouting({
+      openrouter_metadata: {
+        attempt: 1,
+        endpoints: { available: [{ provider: '', selected: true }] },
+        attempts: [{ provider: 'Novita' }],
+      },
+    });
+    // Act & Assert
     expect(r?.provider).toBe('Novita');
   });
 });

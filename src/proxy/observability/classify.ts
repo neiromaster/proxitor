@@ -5,7 +5,13 @@ export function classifyRequestType(
   ctx: { toolsCount: number; maxTokens?: number },
   opts: { sideMaxTokens: number },
 ): RequestType {
-  const budget = ctx.maxTokens ?? Number.POSITIVE_INFINITY;
+  // A missing OR non-positive budget (max_tokens: 0 / negative) carries no
+  // meaningful side-call signal — treat it as unbounded so a degenerate main
+  // turn isn't bucketed as [side]. Only a real positive small budget counts.
+  const budget =
+    ctx.maxTokens === undefined || ctx.maxTokens <= 0
+      ? Number.POSITIVE_INFINITY
+      : ctx.maxTokens;
   return ctx.toolsCount === 0 && budget <= opts.sideMaxTokens ? 'side' : 'main';
 }
 

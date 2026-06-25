@@ -30,6 +30,17 @@ describe('classifyRequestType', () => {
   it('is main when max_tokens missing (Infinity fail-safe)', () => {
     expect(classifyRequestType({ toolsCount: 0 }, { sideMaxTokens: 4096 })).toBe('main');
   });
+  it('is main when max_tokens is 0 (a degenerate budget is not a side call)', () => {
+    // Arrange & Act — 0 must not satisfy budget <= sideMaxTokens.
+    expect(
+      classifyRequestType({ toolsCount: 0, maxTokens: 0 }, { sideMaxTokens: 4096 }),
+    ).toBe('main');
+  });
+  it('is main when max_tokens is negative', () => {
+    expect(
+      classifyRequestType({ toolsCount: 0, maxTokens: -1 }, { sideMaxTokens: 4096 }),
+    ).toBe('main');
+  });
 });
 
 describe('classifyCacheOutcome', () => {

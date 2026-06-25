@@ -5,9 +5,12 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function applyAnthropic(usage: Record<string, unknown>, r: ExtractedUsage): void {
-  const cr = num(usage.cache_read_input_tokens);
-  const cc = num(usage.cache_creation_input_tokens);
+function applyAnthropic(
+  usage: Record<string, unknown>,
+  r: ExtractedUsage,
+  cr: number | undefined,
+  cc: number | undefined,
+): void {
   if (cr !== undefined) r.cacheRead = cr;
   if (cc !== undefined) r.cacheCreate = cc;
   const inp = num(usage.input_tokens);
@@ -51,36 +54,48 @@ export function parseUsage(parsed: unknown): ExtractedUsage | undefined {
     cacheRead: 0,
     cacheCreate: 0,
   };
-  if ('cache_read_input_tokens' in usage || 'cache_creation_input_tokens' in usage)
-    applyAnthropic(usage, r);
+  // Route by NUMERIC Anthropic fields, not mere key presence: a key set to
+  // null/string would otherwise take the Anthropic branch (which then no-ops)
+  // and skip the OpenAI cached_tokens path — losing a real cache hit.
+  const cr = num(usage.cache_read_input_tokens);
+  const cc = num(usage.cache_creation_input_tokens);
+  if (cr !== undefined || cc !== undefined) applyAnthropic(usage, r, cr, cc);
   else applyOpenAI(usage, r);
   return r;
 }
 
-export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
-  if (!parsed || typeof parsed !== 'object') return undefined;
-  const root = parsed as Record<string, unknown>;
-  const meta = (root.openrouter_metadata ??
-    (root.message as Record<string, unknown> | undefined)?.openrouter_metadata) as
-    | Record<string, unknown>
-    | undefined;
-  if (!meta || typeof meta !== 'object') return undefined;
-  let provider: string | undefined;
+/** Resolve the provider from endpoints[].available (selected first) then the
+ * last attempts[] entry. An empty/absent provider string defers to the next
+ * source — '' is treated as absent, not a real value. */
+function resolveProvider(meta: Record<string, unknown>): string | undefined {
   const endpoints = meta.endpoints as
     | { available?: Array<{ provider?: string; selected?: boolean }> }
     | undefined;
   const avail = endpoints?.available;
   if (Array.isArray(avail)) {
     const selected = avail.find(e => e.selected === true);
-    // Use the selected endpoint's provider; only fall back to the first
-    // available entry when nothing is selected. A selected endpoint that
-    // omits `provider` yields undefined and defers to the attempts array.
-    provider = selected ? selected.provider : avail[0]?.provider;
+    const selProvider = selected ? selected.provider : avail[0]?.provider;
+    if (selProvider) return selProvider;
   }
   const attempts = meta.attempts as Array<{ provider?: string }> | undefined;
-  if (provider === undefined && Array.isArray(attempts) && attempts.length > 0)
-    provider = attempts[attempts.length - 1]?.provider;
-  if (provider === undefined) return undefined;
+  if (Array.isArray(attempts)) {
+    const last = attempts.at(-1)?.provider;
+    if (last) return last;
+  }
+  return undefined;
+}
+
+export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  const root = parsed as Record<string, unknown>;
+  const meta = (root.openrouter_metadata ??
+    (root.message as Record<string, unknown> | undefined)?.openrouter_metadata ??
+    (root.response as Record<string, unknown> | undefined)?.openrouter_metadata) as
+    | Record<string, unknown>
+    | undefined;
+  if (!meta || typeof meta !== 'object') return undefined;
+  const provider = resolveProvider(meta);
+  if (!provider) return undefined;
   const attempt = num(meta.attempt) ?? 1;
   const generationId = typeof root.id === 'string' ? root.id : undefined;
   return {
@@ -148,23 +163,32 @@ export function extractFromFullText(text: string, isSSE: boolean): Extracted {
 /** Stateful fold over an SSE byte stream — O(1) memory, fragmentation-safe. */
 export class SseUsageAccumulator {
   private buffer = '';
+  private offset = 0;
   private readonly decoder = new TextDecoder();
   private readonly acc: Extracted = {};
 
   feed(chunk: Uint8Array): void {
     this.buffer += this.decoder.decode(chunk, { stream: true });
-    let nl = this.buffer.indexOf('\n');
+    let nl = this.buffer.indexOf('\n', this.offset);
     while (nl !== -1) {
-      this.process(this.buffer.slice(0, nl));
-      this.buffer = this.buffer.slice(nl + 1);
-      nl = this.buffer.indexOf('\n');
+      this.process(this.buffer.slice(this.offset, nl));
+      this.offset = nl + 1;
+      nl = this.buffer.indexOf('\n', this.offset);
+    }
+    // Drop the processed prefix once per chunk so the buffer holds only the
+    // trailing partial line. Without this, slice(nl + 1) in the loop would
+    // rebuild the whole tail on every newline — O(n*lines) per chunk.
+    if (this.offset > 0) {
+      this.buffer = this.buffer.slice(this.offset);
+      this.offset = 0;
     }
   }
 
   result(): Extracted {
     this.buffer += this.decoder.decode(); // flush decoder
-    if (this.buffer.length > 0) this.process(this.buffer);
+    if (this.buffer.length > 0) this.process(this.buffer.slice(this.offset));
     this.buffer = '';
+    this.offset = 0;
     return this.acc;
   }
 
