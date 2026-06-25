@@ -57,6 +57,41 @@ const providerConfigSchema = z
 const triStateSchema = z.enum(['auto', 'always', 'skip']);
 const ttlSchema = z.enum(['5m', '1h', 'omit', 'skip']);
 
+const OBSERVABILITY_DEFAULTS = {
+  routerMetadata: true,
+  hitThreshold: 80,
+  sideMaxTokens: 4096,
+  sessionMaxEntries: 4096,
+  sessionTtlMs: 600000,
+} as const;
+
+const observabilityConfigSchema = z
+  .object({
+    routerMetadata: z.boolean().default(OBSERVABILITY_DEFAULTS.routerMetadata),
+    hitThreshold: z
+      .number()
+      .int()
+      .min(0)
+      .max(100)
+      .default(OBSERVABILITY_DEFAULTS.hitThreshold),
+    sideMaxTokens: z
+      .number()
+      .int()
+      .positive()
+      .default(OBSERVABILITY_DEFAULTS.sideMaxTokens),
+    sessionMaxEntries: z
+      .number()
+      .int()
+      .positive()
+      .default(OBSERVABILITY_DEFAULTS.sessionMaxEntries),
+    sessionTtlMs: z
+      .number()
+      .int()
+      .positive()
+      .default(OBSERVABILITY_DEFAULTS.sessionTtlMs),
+  })
+  .default(OBSERVABILITY_DEFAULTS);
+
 const modelOverrideSchema = z
   .object({
     provider: providerConfigSchema.optional(),
@@ -91,6 +126,7 @@ export const proxyConfigSchema = z
     rewriteBlockTtl: triStateSchema.default('skip'),
     sessionId: triStateSchema.default('auto'),
     normalizeVolatileSystem: z.boolean().default(false),
+    observability: observabilityConfigSchema,
     modelOverrides: z.record(z.string().min(1), modelOverrideSchema).optional(),
   })
   .strict();
@@ -102,6 +138,7 @@ export const proxyConfigFileSchema = proxyConfigSchema.partial();
 export type ProxyConfig = z.infer<typeof proxyConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type ModelOverride = z.infer<typeof modelOverrideSchema>;
+export type ObservabilityConfig = z.infer<typeof observabilityConfigSchema>;
 export type AuthType = z.infer<typeof proxyConfigSchema>['authType'];
 export type TriState = 'auto' | 'always' | 'skip';
 

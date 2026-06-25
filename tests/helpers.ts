@@ -67,6 +67,13 @@ export async function createTestEnv(
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
     normalizeVolatileSystem: false,
+    observability: {
+      routerMetadata: true,
+      hitThreshold: 80,
+      sideMaxTokens: 4096,
+      sessionMaxEntries: 4096,
+      sessionTtlMs: 600000,
+    },
     verbose: false,
     bodyLimit: '50mb',
     attributionReferer: 'https://github.com/neiromaster/proxitor',
