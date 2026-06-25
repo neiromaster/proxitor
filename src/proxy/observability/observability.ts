@@ -1,4 +1,6 @@
 // src/proxy/observability/observability.ts
+import type { ObservabilityConfig } from '../../config-schema.js';
+import { logger, withReq } from '../../logger.js';
 import { dumpEnabled } from '../body-dump.js';
 import { classifyCacheOutcome } from './classify.js';
 import { SessionTracker } from './session-tracker.js';
@@ -10,16 +12,16 @@ import type {
   RoutingMetadata,
 } from './types.js';
 
-export type ObservabilityConfig = {
-  hitThreshold: number;
-  sessionMaxEntries: number;
-  sessionTtlMs: number;
-};
+/** Runtime subset of the schema-derived ObservabilityConfig this module consumes. */
+export type ObservabilityRuntimeConfig = Pick<
+  ObservabilityConfig,
+  'hitThreshold' | 'sessionMaxEntries' | 'sessionTtlMs'
+>;
 
 export class Observability {
-  private readonly tracker: SessionTracker;
+  private tracker: SessionTracker;
   private readonly sinks: ObservationSink[];
-  private readonly hitThresholdPct: number;
+  private hitThresholdPct: number;
 
   constructor(
     tracker: SessionTracker,
@@ -59,12 +61,36 @@ export class Observability {
       outcome,
       routing: extracted.routing,
     };
-    for (const sink of this.sinks) sink.emit(obs);
+    // Isolate each sink so a throwing sink (e.g. a logger transport failure)
+    // doesn't silently kill the remaining sinks for this observation.
+    for (const sink of this.sinks) {
+      try {
+        sink.emit(obs);
+      } catch (err) {
+        logger.debug(
+          withReq(
+            obs.reqId,
+            `Observability sink failed: ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+      }
+    }
+  }
+
+  /** Apply a hot-reloaded config: update the hit threshold and rebuild the
+   * session tracker (capacity/TTL). Called by the config-source subscriber. */
+  reconfigure(config: { observability: ObservabilityRuntimeConfig }): void {
+    const o = config.observability;
+    this.hitThresholdPct = o.hitThreshold;
+    this.tracker = new SessionTracker({
+      maxEntries: o.sessionMaxEntries,
+      ttlMs: o.sessionTtlMs,
+    });
   }
 }
 
 export function createObservability(
-  config: { observability: ObservabilityConfig },
+  config: { observability: ObservabilityRuntimeConfig },
   sinks?: ObservationSink[],
 ): Observability {
   const o = config.observability;

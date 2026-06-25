@@ -136,6 +136,8 @@ export type ConfigSource = {
   reload(): Promise<ReloadResult>;
   start(): void;
   stop(): void;
+  /** Register a listener fired after a successful reload. Returns an unsubscribe. */
+  subscribe(listener: (config: ProxyConfig) => void): () => void;
   readonly resolvedPath: string | null;
 };
 
@@ -156,6 +158,7 @@ export function staticConfigSource(config: ProxyConfig): ConfigSource {
     reload: async () => ({ ok: true }),
     start: () => {},
     stop: () => {},
+    subscribe: () => () => {},
     resolvedPath: null,
   };
 }
@@ -178,6 +181,7 @@ class FileWatchingConfigSource implements ConfigSource {
   private pending: boolean = false;
   private watching: boolean = false;
   private lastCollisionSig = '';
+  private readonly listeners: Array<(config: ProxyConfig) => void> = [];
 
   constructor(options: ConfigSourceOptions) {
     this.current = options.initial;
@@ -195,6 +199,26 @@ class FileWatchingConfigSource implements ConfigSource {
 
   get(): ProxyConfig {
     return this.current;
+  }
+
+  subscribe(listener: (config: ProxyConfig) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      const i = this.listeners.indexOf(listener);
+      if (i !== -1) this.listeners.splice(i, 1);
+    };
+  }
+
+  /** Notify subscribers after a successful reload. A throwing subscriber
+   * must not abort the reload or skip the remaining subscribers. */
+  private notify(config: ProxyConfig): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(config);
+      } catch {
+        /* never leak subscriber errors to the reload path */
+      }
+    }
   }
 
   /** Warn only when the collision set changes, so reloading an unchanged config doesn't re-log. */
@@ -240,6 +264,7 @@ class FileWatchingConfigSource implements ConfigSource {
         );
       }
       logger.info(`Config reloaded${diff ? ` — ${diff}` : ' (no material changes)'}`);
+      this.notify(next);
       return { ok: true };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

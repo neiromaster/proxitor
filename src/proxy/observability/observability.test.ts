@@ -60,4 +60,50 @@ describe('Observability.observe', () => {
     o.observe(req(), {}, 200);
     expect(got?.outcome.label).toBe('NOUSAGE');
   });
+  it('isolates a throwing sink from the remaining sinks', () => {
+    let secondCalled = false;
+    const o = new Observability(
+      new SessionTracker({ maxEntries: 8, ttlMs: 1000 }),
+      [
+        {
+          emit: () => {
+            throw new Error('boom');
+          },
+        },
+        {
+          emit: () => {
+            secondCalled = true;
+          },
+        },
+      ],
+      80,
+    );
+    expect(() => o.observe(req(), {}, 200)).not.toThrow();
+    expect(secondCalled).toBe(true);
+  });
+});
+
+describe('Observability.reconfigure', () => {
+  it('applies a hot-reloaded hit threshold', () => {
+    let got: CacheObservation | undefined;
+    const o = withFakeSink(x => {
+      got = x;
+    });
+    // 90% read → HIT at threshold 80, PARTIAL at threshold 95.
+    o.observe(
+      req(),
+      { usage: { present: true, inputTokens: 100, cacheRead: 90, cacheCreate: 0 } },
+      200,
+    );
+    expect(got?.outcome.label).toBe('HIT');
+    o.reconfigure({
+      observability: { hitThreshold: 95, sessionMaxEntries: 8, sessionTtlMs: 1000 },
+    });
+    o.observe(
+      req({ sessionId: 's2' }),
+      { usage: { present: true, inputTokens: 100, cacheRead: 90, cacheCreate: 0 } },
+      200,
+    );
+    expect(got?.outcome.label).toBe('PARTIAL');
+  });
 });

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULTS, type ProxyConfig } from './config.js';
-import { createConfigSource } from './config-source.js';
+import { createConfigSource, staticConfigSource } from './config-source.js';
 import { logger } from './logger.js';
 
 const initial: ProxyConfig = { ...DEFAULTS };
@@ -92,5 +92,43 @@ describe('FileWatchingConfigSource file watching', () => {
     source.start();
     source.stop();
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies subscribers after a reload, and unsubscribe stops them', async () => {
+    const { watch, fire } = fakeWatcher();
+    const load = vi.fn(
+      async (): Promise<ProxyConfig> => ({ ...initial, cacheControl: 'always' }),
+    );
+    const source = createConfigSource({
+      loadOptions: { configPath: tempConfigPath() },
+      initial,
+      load,
+      watch,
+    });
+    const listener = vi.fn();
+    const unsubscribe = source.subscribe(listener);
+
+    source.start();
+    fire(stat(2), stat(1)); // mtime changed → reload → notify
+
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1));
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cacheControl: 'always' }),
+    );
+
+    unsubscribe();
+    load.mockResolvedValueOnce({ ...initial, cacheControl: 'skip' as const });
+    fire(stat(3), stat(2));
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(listener).toHaveBeenCalledTimes(1); // not called again after unsubscribe
+  });
+
+  it('staticConfigSource subscribe is a no-op', () => {
+    const source = staticConfigSource(initial);
+    const unsubscribe = source.subscribe(() => {
+      throw new Error('must not be called');
+    });
+    expect(typeof unsubscribe).toBe('function');
+    expect(() => unsubscribe()).not.toThrow();
   });
 });
