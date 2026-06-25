@@ -19,8 +19,10 @@ export type LoggingContext = {
  * dump and losing the cache line. The manual pump below unifies all three
  * paths through finalize().
  *
- * SSE folds in O(1) via the accumulator; JSON decodes incrementally into a
- * single string (no separate chunk array held alongside the decoded text).
+ * SSE folds in O(1) memory via the accumulator. Non-SSE (single JSON) responses
+ * collect chunk references — the same buffers forwarded to the client — and
+ * decode them once at finalize, rather than holding a UTF-16 string copy
+ * alongside the streamed bytes for the whole response.
  */
 function createLoggingStream(
   source: ReadableStream<Uint8Array>,
@@ -31,16 +33,22 @@ function createLoggingStream(
   const isSSE = contentType.toLowerCase().includes('text/event-stream');
   const accumulator = isSSE ? new SseUsageAccumulator() : undefined;
   const decoder = new TextDecoder();
-  let text = ''; // non-SSE: incrementally decoded body
+  const chunks: Uint8Array[] = []; // non-SSE only: refs shared with the client stream
   let finalized = false;
 
   const finalize = (): void => {
     if (finalized) return;
     finalized = true;
     try {
-      const extracted: Extracted = accumulator
-        ? accumulator.result()
-        : extractFromFullText(`${text}${decoder.decode()}`, false);
+      let extracted: Extracted;
+      if (accumulator) {
+        extracted = accumulator.result();
+      } else {
+        let text = '';
+        for (const c of chunks) text += decoder.decode(c, { stream: true });
+        text += decoder.decode(); // flush any trailing multi-byte sequence
+        extracted = extractFromFullText(text, false);
+      }
       ctx.observability.observe(ctx.reqCtx, extracted, status);
     } catch (err) {
       logger.debug(
@@ -64,7 +72,7 @@ function createLoggingStream(
         }
         if (value) {
           if (accumulator) accumulator.feed(value);
-          else text += decoder.decode(value, { stream: true });
+          else chunks.push(value);
           controller.enqueue(value);
         }
       } catch (err) {
