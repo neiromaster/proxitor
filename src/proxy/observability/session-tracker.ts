@@ -20,24 +20,30 @@ export class SessionTracker {
     if (prev !== undefined) {
       this.seen.delete(sessionId);
     } else if (this.seen.size >= this.opts.maxEntries) {
-      const oldest = this.seen.keys().next().value;
-      if (oldest !== undefined) this.seen.delete(oldest);
+      this.evictOne();
     }
     this.seen.set(sessionId, t);
     return !fresh;
   }
 
+  /** Drop the least-recently-used entry (first by Map iteration order). Because
+   * a refresh both re-sets the timestamp and moves the key to the end, iteration
+   * order is always lastSeen order — so the first entry is already the most
+   * stale, and a separate TTL sweep would evict the same entry. */
+  private evictOne(): void {
+    const oldest = this.seen.keys().next().value;
+    if (oldest !== undefined) this.seen.delete(oldest);
+  }
+
   /** Apply a reloaded capacity/TTL WITHOUT discarding remembered sessions —
-   * a shrunken capacity evicts the oldest entries; a grown capacity is a
-   * no-op; a TTL change takes effect on the next freshness check. Rebuilding
-   * the tracker on every reload would wipe the map and misclassify the next
-   * active request as COLD. */
+   * a shrunken capacity evicts the least-recently-used entries; a grown
+   * capacity is a no-op; a TTL change takes effect on the next freshness
+   * check. Rebuilding the tracker on every reload would wipe the map and
+   * misclassify the next active request as COLD. */
   applyConfig(opts: { maxEntries: number; ttlMs: number }): void {
     this.opts = opts;
     while (this.seen.size > opts.maxEntries) {
-      const oldest = this.seen.keys().next().value;
-      if (oldest === undefined) break;
-      this.seen.delete(oldest);
+      this.evictOne();
     }
   }
 }
