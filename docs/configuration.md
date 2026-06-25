@@ -293,7 +293,7 @@ observability:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `routerMetadata` | `true` | Opts the proxy into OpenRouter's `x-openrouter-metadata` so responses surface which provider actually served the request (shown as `provider=…` on misses and non-hits). Set `false` to opt out. |
+| `routerMetadata` | `true` | Opts the proxy into OpenRouter's `x-openrouter-metadata` so responses surface which provider actually served the request (shown as `provider=…` on the cache line whenever routing/serving-provider metadata is available). Set `false` to opt out. |
 | `hitThreshold` | `80` | The `cacheRead / inputTokens` percentage at or above which a request is labeled `HIT`. |
 | `sideMaxTokens` | `4096` | A request with **no tools** AND `max_tokens` at or under this budget is tagged `[side]`. |
 | `sessionMaxEntries` | `4096` | Bounded capacity of the in-memory session tracker (FIFO eviction when exceeded). |
