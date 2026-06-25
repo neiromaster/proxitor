@@ -16,16 +16,6 @@ export async function fetchModels(
   return models;
 }
 
-/** `"anthropic/claude-sonnet-4"` → `"anthropic"` */
-export function parseModelAuthor(modelId: string): string {
-  return modelId.split('/')[0] ?? '';
-}
-
-/** `"anthropic/claude-sonnet-4"` → `"claude-sonnet-4"` */
-export function parseModelSlug(modelId: string): string {
-  return modelId.split('/').slice(1).join('/');
-}
-
 /** `"0.000003"` → `"$3.00"`, `"0"` → `"free"` */
 export function formatPrice(pricePerToken: string): string {
   const per1M = Number.parseFloat(pricePerToken) * 1_000_000;

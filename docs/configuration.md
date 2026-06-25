@@ -138,7 +138,11 @@ modelOverrides:
       X-Model-Family: "gpt"
 ```
 
-**Match priority:** exact name > longer prefix > shorter prefix.
+**Match priority:** full exact name > prefix wildcard > slug match (bare name ↔ vendor-prefixed) > slug prefix.
+
+A model name matches with or without its vendor prefix: the bare `kimi-k2.6` matches the override key `moonshotai/kimi-k2.6`. A dated or variant slug needs an explicit `*` — `moonshotai/kimi-k2.6-20260420` matches `moonshotai/kimi-k2.6*`, not the bare `moonshotai/kimi-k2.6` key — so `gpt-4` never captures `gpt-4o`. The vendor prefix distinguishes vendors: `openai/gpt-4o` matches the bare `gpt-4o` but never another vendor's `azure/gpt-4o`. The incoming model name is forwarded upstream unchanged.
+
+> **Same-slug collisions:** if several override keys share a model name across vendors (e.g. `openai/gpt-4o` and `azure/gpt-4o`) and Claude Code sends the bare name, proxitor resolves it to one key — a bare override key if present, otherwise the first-declared vendor-prefixed one (the warning names it). `proxitor` warns once at startup and in `proxitor doctor`; send the vendor-prefixed name to pick a specific one.
 
 ## Custom headers
 

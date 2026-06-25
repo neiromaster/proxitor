@@ -1,6 +1,8 @@
 import { type Stats, unwatchFile, watchFile } from 'node:fs';
 import {
   buildProviderRouting,
+  detectSlugCollisions,
+  formatSlugCollisionWarning,
   type LoadConfigOptions,
   loadConfig,
   type ModelOverride,
@@ -175,9 +177,11 @@ class FileWatchingConfigSource implements ConfigSource {
   private loading: boolean = false;
   private pending: boolean = false;
   private watching: boolean = false;
+  private lastCollisionSig = '';
 
   constructor(options: ConfigSourceOptions) {
     this.current = options.initial;
+    this.warnSlugCollisions(options.initial.modelOverrides);
     this.loadOptions = options.loadOptions;
     this.load = options.load ?? loadConfig;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
@@ -191,6 +195,26 @@ class FileWatchingConfigSource implements ConfigSource {
 
   get(): ProxyConfig {
     return this.current;
+  }
+
+  /** Warn only when the collision set changes, so reloading an unchanged config doesn't re-log. */
+  private warnSlugCollisions(overrides: ProxyConfig['modelOverrides']): void {
+    const collisions = detectSlugCollisions(overrides ?? undefined);
+    // Order-independent identity (slug + winner + sorted keys): a key reorder
+    // re-warns only if it changes which key wins.
+    const sig = collisions
+      .map(c =>
+        [c.slug, c.winner, [...c.keys].sort((a, b) => a.localeCompare(b)).join(',')].join(
+          '|',
+        ),
+      )
+      .sort((a, b) => a.localeCompare(b))
+      .join('||');
+    if (sig === this.lastCollisionSig) return;
+    this.lastCollisionSig = sig;
+    for (const collision of collisions) {
+      logger.warn(formatSlugCollisionWarning(collision));
+    }
   }
 
   async reload(): Promise<ReloadResult> {
@@ -209,6 +233,7 @@ class FileWatchingConfigSource implements ConfigSource {
         diff = '';
       }
       this.current = next;
+      this.warnSlugCollisions(next.modelOverrides);
       if (restartNeeded) {
         logger.warn(
           'host/port changed — restart proxitor to apply (live reload does not re-bind the socket)',

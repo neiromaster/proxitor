@@ -7,7 +7,9 @@ import {
   ConfigParseError,
   ConfigValidationError,
   DEFAULTS,
+  detectSlugCollisions,
   findConfigFile,
+  formatSlugCollisionWarning,
   getConfigSearchPaths,
   loadConfig,
   MissingConfigError,
@@ -172,8 +174,8 @@ describe('matchScore', () => {
     expect(matchScore('gpt-4o', 'claude-sonnet-4-6')).toBe(-1);
   });
 
-  it('should return pattern length for prefix wildcard match', () => {
-    expect(matchScore('claude-*', 'claude-sonnet-4-6')).toBe('claude-*'.length);
+  it('should return full-prefix-tier score for prefix wildcard match', () => {
+    expect(matchScore('claude-*', 'claude-sonnet-4-6')).toBe(2000 + 'claude-*'.length);
   });
 
   it('should return -1 when wildcard does not match', () => {
@@ -190,6 +192,115 @@ describe('matchScore', () => {
     const longer = matchScore('claude-sonnet-*', 'claude-sonnet-4-6');
     const shorter = matchScore('claude-*', 'claude-sonnet-4-6');
     expect(longer).toBeGreaterThan(shorter);
+  });
+
+  it('slug exact: bare name matches vendor-prefixed key', () => {
+    expect(matchScore('moonshotai/kimi-k2.6', 'kimi-k2.6')).toBe(
+      1000 + 'kimi-k2.6'.length,
+    );
+  });
+
+  it('strict * isolation: dated slug does not match a non-* key (both directions)', () => {
+    expect(matchScore('moonshotai/kimi-k2.6', 'moonshotai/kimi-k2.6-20260420')).toBe(-1);
+    expect(matchScore('moonshotai/kimi-k2.6-20260420', 'kimi-k2.6')).toBe(-1);
+  });
+
+  it('explicit * matches dated slug (both planes)', () => {
+    expect(matchScore('moonshotai/kimi-k2.6*', 'kimi-k2.6-20260420')).toBe(
+      'kimi-k2.6*'.length,
+    );
+    expect(matchScore('moonshotai/kimi-k2.6*', 'moonshotai/kimi-k2.6-20260420')).toBe(
+      2000 + 'moonshotai/kimi-k2.6*'.length,
+    );
+  });
+
+  it('full match outranks slug match for the same model', () => {
+    const full = matchScore('moonshotai/kimi-k2.6', 'moonshotai/kimi-k2.6');
+    const slug = matchScore('moonshotai/kimi-k2.6', 'kimi-k2.6');
+    expect(full).toBeGreaterThan(slug);
+  });
+
+  it('non-* key does not capture a more-specific model (isolation)', () => {
+    expect(matchScore('gpt-4', 'gpt-4o')).toBe(-1);
+    expect(matchScore('gpt-4', 'gpt-4-turbo')).toBe(-1);
+  });
+
+  it('slug tiers do not bridge two different vendor prefixes', () => {
+    expect(matchScore('openai/gpt-4o', 'azure/gpt-4o')).toBe(-1);
+    expect(matchScore('openai/gpt-4*', 'azure/gpt-4o')).toBe(-1);
+  });
+});
+
+describe('detectSlugCollisions', () => {
+  it('returns empty for undefined / empty overrides', () => {
+    expect(detectSlugCollisions(undefined)).toEqual([]);
+    expect(detectSlugCollisions({})).toEqual([]);
+  });
+
+  it('returns empty when all slugs are unique', () => {
+    expect(
+      detectSlugCollisions({ 'openai/gpt-4o': {}, 'anthropic/claude-4': {} }),
+    ).toEqual([]);
+  });
+
+  it('groups same-slug vendor keys in declaration order', () => {
+    expect(detectSlugCollisions({ 'openai/gpt-4o': {}, 'azure/gpt-4o': {} })).toEqual([
+      {
+        slug: 'gpt-4o',
+        keys: ['openai/gpt-4o', 'azure/gpt-4o'],
+        winner: 'openai/gpt-4o',
+      },
+    ]);
+  });
+
+  it('treats a bare key and a prefixed key with the same slug as a collision', () => {
+    expect(detectSlugCollisions({ 'gpt-4o': {}, 'openai/gpt-4o': {} })).toEqual([
+      { slug: 'gpt-4o', keys: ['gpt-4o', 'openai/gpt-4o'], winner: 'gpt-4o' },
+    ]);
+  });
+
+  it('winner is the bare key even when it is not first-declared (full-exact beats slug)', () => {
+    // Arrange — bare key wins on full-exact (3000+), so winner ≠ keys[0].
+    const collisions = detectSlugCollisions({ 'openai/gpt-4o': {}, 'gpt-4o': {} });
+
+    // Act & Assert
+    expect(collisions[0]?.winner).toBe('gpt-4o');
+    expect(collisions[0]?.winner).not.toBe(collisions[0]?.keys[0]);
+  });
+
+  it('does not collide on different slugs or * patterns', () => {
+    expect(
+      detectSlugCollisions({ 'moonshotai/kimi*': {}, 'moonshotai/kimi-k2.6': {} }),
+    ).toEqual([]);
+  });
+});
+
+describe('formatSlugCollisionWarning', () => {
+  it('names both keys, the slug, and reports the actual winner', () => {
+    // Arrange
+    const msg = formatSlugCollisionWarning({
+      slug: 'gpt-4o',
+      keys: ['openai/gpt-4o', 'azure/gpt-4o'],
+      winner: 'openai/gpt-4o',
+    });
+
+    // Act & Assert
+    expect(msg).toContain('"openai/gpt-4o"');
+    expect(msg).toContain('"azure/gpt-4o"');
+    expect(msg).toContain('"gpt-4o"');
+    expect(msg).toContain('a bare name resolves to "openai/gpt-4o"');
+  });
+
+  it('reports the bare key as winner regardless of declaration order', () => {
+    // Arrange
+    const msg = formatSlugCollisionWarning({
+      slug: 'gpt-4o',
+      keys: ['openai/gpt-4o', 'gpt-4o'],
+      winner: 'gpt-4o',
+    });
+
+    // Act & Assert
+    expect(msg).toContain('a bare name resolves to "gpt-4o"');
   });
 });
 
@@ -459,6 +570,32 @@ describe('resolveModelConfig', () => {
     };
     const resolved = resolveModelConfig(config, 'qwen-plus');
     expect(resolved.normalizeVolatileSystem).toBe(true);
+  });
+
+  it('records the matched override key (prefix-agnostic)', () => {
+    const config = {
+      ...baseConfig,
+      modelOverrides: { 'moonshotai/kimi-k2.6': { provider: { only: 'baidu/fp4' } } },
+    } as unknown as ProxyConfig;
+    expect(resolveModelConfig(config, 'kimi-k2.6').matchedOverride).toBe(
+      'moonshotai/kimi-k2.6',
+    );
+    expect(resolveModelConfig(config, 'unrelated-model').matchedOverride).toBeUndefined();
+  });
+
+  it('does not apply a vendor-prefixed override to a different vendor', () => {
+    // Arrange
+    const config = {
+      ...baseConfig,
+      modelOverrides: { 'openai/gpt-4o': { provider: { only: 'openai' } } },
+    } as unknown as ProxyConfig;
+
+    // Act
+    const resolved = resolveModelConfig(config, 'azure/gpt-4o');
+
+    // Assert — no match; provider stays at the global 'deepinfra', not 'openai'.
+    expect(resolved.matchedOverride).toBeUndefined();
+    expect(resolved.provider?.only).toBe('deepinfra');
   });
 });
 

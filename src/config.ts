@@ -14,6 +14,7 @@ import {
   proxyConfigSchema,
   type TriState,
 } from './config-schema.js';
+import { parseModelSlug } from './model-id.js';
 import { toArray } from './utils.js';
 
 export type {
@@ -38,6 +39,7 @@ export type ResolvedModelConfig = {
   rewriteBlockTtl: TriState;
   sessionId: TriState;
   normalizeVolatileSystem: boolean;
+  matchedOverride?: string;
 };
 
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
@@ -85,18 +87,63 @@ export function buildProviderRouting(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+/** Slug after the vendor prefix; bare ids keep their text. Delegates to parseModelSlug. */
+function modelSlug(s: string): string {
+  return parseModelSlug(s) || s;
+}
+
 export function matchScore(pattern: string, modelName: string): number {
-  if (pattern === modelName) return modelName.length + 1000;
-
+  // Tiers (length breaks ties within a tier): full exact 3000 > full prefix* 2000 > slug exact 1000 > slug prefix*.
+  if (pattern === modelName) return 3000 + pattern.length;
   if (pattern.endsWith('*') && modelName.startsWith(pattern.slice(0, -1))) {
-    return pattern.length;
+    return 2000 + pattern.length;
   }
-
+  // Slug tiers bridge bare <-> vendor-prefixed only — never two different vendor
+  // prefixes, or openai/gpt-4o would capture azure/gpt-4o. Same-vendor is above.
+  if (pattern.includes('/') && modelName.includes('/')) return -1;
+  const sp = modelSlug(pattern);
+  const sm = modelSlug(modelName);
+  if (sp === sm) return 1000 + sp.length;
+  if (sp.endsWith('*') && sm.startsWith(sp.slice(0, -1))) return sp.length;
   return -1;
 }
 
 export function matchesPattern(pattern: string, modelName: string): boolean {
   return matchScore(pattern, modelName) >= 0;
+}
+
+export type SlugCollision = { slug: string; keys: string[]; winner: string };
+
+/** Override keys sharing a slug. `winner` is the key a bare name resolves to — not always `keys[0]`, since a bare key wins on the full-exact tier. Pure; callers log it. */
+export function detectSlugCollisions(
+  overrides: Record<string, unknown> | undefined,
+): SlugCollision[] {
+  if (!overrides) return [];
+  const groups = new Map<string, string[]>();
+  for (const key of Object.keys(overrides)) {
+    const slug = modelSlug(key);
+    const keys = groups.get(slug);
+    if (keys) keys.push(key);
+    else groups.set(slug, [key]);
+  }
+  const collisions: SlugCollision[] = [];
+  for (const [slug, keys] of groups) {
+    if (keys.length <= 1) continue;
+    // winner is never null here (all keys share the bare slug → slug-exact tier);
+    // the guard narrows string|null → string, since noNonNullAssertion is on.
+    const winner = findBestMatch(keys, slug);
+    if (winner) collisions.push({ slug, keys, winner });
+  }
+  return collisions;
+}
+
+/** Warning text for a same-slug collision. */
+export function formatSlugCollisionWarning(c: SlugCollision): string {
+  return (
+    `Overrides ${c.keys.map(k => `"${k}"`).join(' and ')} share model slug "${c.slug}"; ` +
+    `a bare name resolves to "${c.winner}". ` +
+    `Use the vendor-prefixed name to pick a specific one.`
+  );
 }
 
 export function resolveModelConfig(
@@ -116,7 +163,10 @@ export function resolveModelConfig(
   if (!modelName || !config.modelOverrides) return result;
 
   const bestPattern = findBestMatch(Object.keys(config.modelOverrides), modelName);
-  if (bestPattern) applyOverride(result, config.modelOverrides[bestPattern]);
+  if (bestPattern) {
+    applyOverride(result, config.modelOverrides[bestPattern]);
+    result.matchedOverride = bestPattern;
+  }
 
   return result;
 }
