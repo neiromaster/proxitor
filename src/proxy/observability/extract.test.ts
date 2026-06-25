@@ -96,6 +96,16 @@ describe('parseRouting', () => {
   it('returns undefined without metadata', () => {
     expect(parseRouting({ id: 'gen-1' })).toBeUndefined();
   });
+  it('defers to attempts[] when the selected endpoint omits provider', () => {
+    const r = parseRouting({
+      openrouter_metadata: {
+        attempt: 1,
+        endpoints: { available: [{ provider: 'OpenAI' }, { selected: true }] },
+        attempts: [{ provider: 'Novita' }],
+      },
+    });
+    expect(r?.provider).toBe('Novita');
+  });
 });
 
 describe('SseUsageAccumulator', () => {
@@ -130,6 +140,36 @@ describe('SseUsageAccumulator', () => {
   it('returns empty when no usage/metadata events', () => {
     expect(new SseUsageAccumulator().result()).toEqual({});
   });
+  it('merges events field-by-field: a delta cache_read without input_tokens keeps start usage', () => {
+    // message_start seeds usage; message_delta updates cacheRead but lacks
+    // input_tokens/cache_creation → must not clobber inputTokens or cacheCreate.
+    const acc = new SseUsageAccumulator();
+    const enc = new TextEncoder();
+    acc.feed(
+      enc.encode(
+        data({
+          message: {
+            usage: {
+              input_tokens: 51000,
+              cache_read_input_tokens: 1000,
+              cache_creation_input_tokens: 5000,
+            },
+          },
+        }),
+      ),
+    );
+    acc.feed(
+      enc.encode(
+        data({
+          message: { usage: { cache_read_input_tokens: 50000, output_tokens: 15 } },
+        }),
+      ),
+    );
+    const r = acc.result();
+    expect(r.usage?.cacheRead).toBe(50000);
+    expect(r.usage?.cacheCreate).toBe(5000); // preserved
+    expect(r.usage?.inputTokens).toBe(57000); // preserved (delta had no input_tokens)
+  });
 });
 
 describe('extractFromFullText', () => {
@@ -139,5 +179,16 @@ describe('extractFromFullText', () => {
       false,
     );
     expect(r.usage?.inputTokens).toBe(3);
+  });
+  it('strips a leading UTF-8 BOM from a non-SSE JSON body', () => {
+    const r = extractFromFullText(
+      `﻿${JSON.stringify({ usage: { prompt_tokens: 9 } })}`,
+      false,
+    );
+    expect(r.usage?.inputTokens).toBe(9);
+  });
+  it('strips a leading UTF-8 BOM before the first SSE data: line', () => {
+    const sse = `﻿data: ${JSON.stringify({ usage: { prompt_tokens: 9 } })}\n\ndata: [DONE]\n`;
+    expect(extractFromFullText(sse, true).usage?.inputTokens).toBe(9);
   });
 });

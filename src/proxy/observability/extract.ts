@@ -70,8 +70,13 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
     | { available?: Array<{ provider?: string; selected?: boolean }> }
     | undefined;
   const avail = endpoints?.available;
-  if (Array.isArray(avail))
-    provider = avail.find(e => e.selected === true)?.provider ?? avail[0]?.provider;
+  if (Array.isArray(avail)) {
+    const selected = avail.find(e => e.selected === true);
+    // Use the selected endpoint's provider; only fall back to the first
+    // available entry when nothing is selected. A selected endpoint that
+    // omits `provider` yields undefined and defers to the attempts array.
+    provider = selected ? selected.provider : avail[0]?.provider;
+  }
   const attempts = meta.attempts as Array<{ provider?: string }> | undefined;
   if (provider === undefined && Array.isArray(attempts) && attempts.length > 0)
     provider = attempts[attempts.length - 1]?.provider;
@@ -91,38 +96,52 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
 function fold(parsed: unknown, acc: Extracted): void {
   const u = parseUsage(parsed);
   if (u) {
-    // Last wins — but only when the incoming usage carries input-side signal.
-    // Anthropic streams emit input/cache fields in message_start and only
-    // output_tokens in the terminal message_delta; a delta with no input-side
-    // data must not clobber the authoritative start usage.
-    const hasInputSignal = u.inputTokens > 0 || u.cacheRead > 0 || u.cacheCreate > 0;
-    if (hasInputSignal || !acc.usage) acc.usage = u;
+    // Field-level merge: last non-zero value wins per field. inputTokens is
+    // updated only when the carrying event had an input-side base, so a
+    // terminal Anthropic message_delta (output-only, or cache fields without
+    // input_tokens) cannot clobber the authoritative message_start usage.
+    if (!acc.usage) {
+      acc.usage = { ...u };
+    } else {
+      const a = acc.usage;
+      if (u.cacheRead > 0) a.cacheRead = u.cacheRead;
+      if (u.cacheCreate > 0) a.cacheCreate = u.cacheCreate;
+      if (u.inputTokens > 0) a.inputTokens = u.inputTokens;
+    }
   }
   const rt = parseRouting(parsed);
   if (rt) acc.routing = rt;
 }
 
+/** Strip a leading UTF-8 BOM (U+FEFF) — trim() no longer removes it (ES2019). */
+function stripBom(s: string): string {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+/** Parse one SSE `data:` line into the accumulator. Shared by the stateless and streaming folds. */
+function parseDataLine(line: string, acc: Extracted): void {
+  const trimmed = stripBom(line).trim();
+  if (!trimmed.startsWith('data:')) return;
+  const payload = trimmed.slice(5).trim();
+  if (payload === '' || payload === '[DONE]') return;
+  try {
+    fold(JSON.parse(payload), acc);
+  } catch {
+    /* skip malformed */
+  }
+}
+
 export function extractFromFullText(text: string, isSSE: boolean): Extracted {
   if (!isSSE) {
     try {
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(stripBom(text));
       return { usage: parseUsage(parsed), routing: parseRouting(parsed) };
     } catch {
       return {};
     }
   }
   const acc: Extracted = {};
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) continue;
-    const payload = trimmed.slice(5).trim();
-    if (payload === '' || payload === '[DONE]') continue;
-    try {
-      fold(JSON.parse(payload), acc);
-    } catch {
-      /* skip malformed */
-    }
-  }
+  for (const line of text.split('\n')) parseDataLine(line, acc);
   return acc;
 }
 
@@ -150,14 +169,6 @@ export class SseUsageAccumulator {
   }
 
   private process(line: string): void {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) return;
-    const payload = trimmed.slice(5).trim();
-    if (payload === '' || payload === '[DONE]') return;
-    try {
-      fold(JSON.parse(payload), this.acc);
-    } catch {
-      /* skip malformed */
-    }
+    parseDataLine(line, this.acc);
   }
 }

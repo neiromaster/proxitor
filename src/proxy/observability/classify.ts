@@ -15,7 +15,10 @@ export function classifyCacheOutcome(
   opts: { hitThresholdPct: number },
 ): CacheOutcome {
   if (!usage.present) return { label: 'NOUSAGE', type: ctx.requestType, hitPct: 0 };
-  const hitPct = usage.inputTokens > 0 ? (usage.cacheRead / usage.inputTokens) * 100 : 0;
+  // Clamp at 100: a non-standard provider that reports cached tokens excluded
+  // from prompt_tokens can otherwise yield hitPct > 100 in logs and dumps.
+  const raw = usage.inputTokens > 0 ? (usage.cacheRead / usage.inputTokens) * 100 : 0;
+  const hitPct = Math.min(100, raw);
   let label: CacheLabel;
   if (usage.cacheRead === 0) label = ctx.isFirstForSession ? 'COLD' : 'MISS';
   else label = hitPct >= opts.hitThresholdPct ? 'HIT' : 'PARTIAL';

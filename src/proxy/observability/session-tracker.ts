@@ -9,18 +9,21 @@ export class SessionTracker {
   private readonly now: () => number;
 
   isFirstAndRemember(sessionId: string | undefined): boolean {
-    if (sessionId === undefined) return false;
+    // No session id → we can't prove a repeat, so treat as first-seen (COLD).
+    // Returning false here would make the COLD label permanently unreachable.
+    if (sessionId === undefined) return true;
     const t = this.now();
     const prev = this.seen.get(sessionId);
-    if (prev !== undefined && t - prev < this.opts.ttlMs) {
-      this.seen.set(sessionId, t); // refresh timestamp, keep order
-      return false;
-    }
-    if (!this.seen.has(sessionId) && this.seen.size >= this.opts.maxEntries) {
+    const fresh = prev !== undefined && t - prev < this.opts.ttlMs;
+    // delete-then-set so re-insertion moves the key to the end (true LRU
+    // recency); a long-lived active session is no longer the first evicted.
+    if (prev !== undefined) {
+      this.seen.delete(sessionId);
+    } else if (this.seen.size >= this.opts.maxEntries) {
       const oldest = this.seen.keys().next().value;
       if (oldest !== undefined) this.seen.delete(oldest);
     }
     this.seen.set(sessionId, t);
-    return true;
+    return !fresh;
   }
 }
