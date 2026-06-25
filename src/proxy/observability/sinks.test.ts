@@ -44,6 +44,19 @@ describe('formatLine', () => {
   it('tags side requests', () => {
     expect(formatLine(obs({ requestType: 'side' }))).toContain('[side]');
   });
+  it('omits an empty model token instead of emitting a stray double-space', () => {
+    // A non-model route (e.g. the catch-all) resolves model to '' — the line
+    // must not contain a dangling empty token that breaks whitespace parsing.
+    // (An empty pushed token would join to 'NOUSAGE    [main]' — four spaces.)
+    const line = formatLine(
+      obs({
+        model: '',
+        usage: { present: false, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'NOUSAGE', type: 'main', hitPct: 0 },
+      }),
+    );
+    expect(line).toBe('[a1b2] NOUSAGE  [main]');
+  });
 });
 
 describe('colorizeLabel', () => {

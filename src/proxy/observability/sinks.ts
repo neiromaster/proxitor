@@ -1,7 +1,7 @@
 // src/proxy/observability/sinks.ts
 
 import { logger, withReq } from '../../logger.js';
-import { dumpResponse } from '../body-dump.js';
+import { dumpEnabled, dumpResponse } from '../body-dump.js';
 import type { CacheLabel, CacheObservation } from './types.js';
 
 export type ObservationSink = {
@@ -29,7 +29,10 @@ export function formatLine(obs: CacheObservation, useColor = false): string {
   if (obs.usage.cacheCreate > 0) parts.push(`write ${obs.usage.cacheCreate}`);
   if (obs.usage.present) parts.push(`in ${obs.usage.inputTokens}`);
   if (obs.routing) parts.push(`provider=${obs.routing.provider}`);
-  parts.push(obs.model, `[${obs.requestType}]`);
+  // model may be empty for non-model routes (e.g. the catch-all); omit it
+  // rather than emit a stray empty token that breaks whitespace-delimited logs.
+  if (obs.model) parts.push(obs.model);
+  parts.push(`[${obs.requestType}]`);
   return withReq(obs.reqId, parts.join('  '));
 }
 
@@ -47,16 +50,39 @@ export class LiveLineSink implements ObservationSink {
 
 /** Enriches the request dump file with the classified response observation.
  * The read+write is async (libuv thread pool) and fire-and-forget, so a dump
- * can't block other in-flight responses on the streaming finalize path. */
+ * can't block other in-flight responses on the streaming finalize path. A
+ * small concurrency cap prevents a burst of responses from saturating the
+ * thread pool with dozens of simultaneous fs operations. */
 export class DumpSink implements ObservationSink {
+  private inflight = 0;
+  private readonly waiters: Array<() => void> = [];
+  private readonly maxConcurrent: number;
+  constructor(maxConcurrent = 16) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
   emit(obs: CacheObservation): void {
-    void dumpResponse(obs).catch(err => {
-      logger.debug(
-        withReq(
-          obs.reqId,
-          `DumpSink failed: ${err instanceof Error ? err.message : err}`,
-        ),
-      );
-    });
+    // Gate per-call (not at construction) so a flag flip after startup stays
+    // consistent with dumpRequest — and stays a cheap no-op when dumping is off.
+    if (!dumpEnabled()) return;
+    const run = (): void => {
+      this.inflight += 1;
+      void dumpResponse(obs)
+        .catch(err => {
+          logger.debug(
+            withReq(
+              obs.reqId,
+              `DumpSink failed: ${err instanceof Error ? err.message : err}`,
+            ),
+          );
+        })
+        .finally(() => {
+          this.inflight -= 1;
+          const next = this.waiters.shift();
+          if (next) next();
+        });
+    };
+    if (this.inflight < this.maxConcurrent) run();
+    else this.waiters.push(run);
   }
 }
