@@ -5,6 +5,15 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
+/** First non-empty string among the candidates — resolves a generation id that
+ * may live at the root or nested under message/response SSE containers. */
+function firstStringId(vals: unknown[]): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return undefined;
+}
+
 function applyAnthropic(
   usage: Record<string, unknown>,
   r: ExtractedUsage,
@@ -97,7 +106,14 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
   const provider = resolveProvider(meta);
   if (!provider) return undefined;
   const attempt = num(meta.attempt) ?? 1;
-  const generationId = typeof root.id === 'string' ? root.id : undefined;
+  // The generation id sits at the root for Chat Completions, but under
+  // message.id / response.id for Anthropic / Responses-API SSE shapes — and the
+  // metadata event isn't always the one carrying the root id.
+  const generationId = firstStringId([
+    root.id,
+    (root.message as Record<string, unknown> | undefined)?.id,
+    (root.response as Record<string, unknown> | undefined)?.id,
+  ]);
   return {
     provider,
     strategy: typeof meta.strategy === 'string' ? meta.strategy : 'unknown',

@@ -148,6 +148,35 @@ describe('parseRouting', () => {
     // Act & Assert
     expect(r?.provider).toBe('Novita');
   });
+  it('reads generationId nested under message.id when root.id is absent', () => {
+    // Arrange — Anthropic-style SSE: the id lives under message, not at the
+    // root, and the metadata-carrying event may not have a root id at all.
+    const r = parseRouting({
+      message: {
+        id: 'msg_abc',
+        openrouter_metadata: {
+          strategy: 'direct',
+          attempt: 1,
+          endpoints: { available: [{ provider: 'Anthropic', selected: true }] },
+        },
+      },
+    });
+    // Act & Assert
+    expect(r?.generationId).toBe('msg_abc');
+    expect(r?.provider).toBe('Anthropic');
+  });
+  it('reads generationId nested under response.id (Responses-API shape)', () => {
+    const r = parseRouting({
+      response: {
+        id: 'resp_7',
+        openrouter_metadata: {
+          attempt: 1,
+          endpoints: { available: [{ provider: 'Novita', selected: true }] },
+        },
+      },
+    });
+    expect(r?.generationId).toBe('resp_7');
+  });
 });
 
 describe('SseUsageAccumulator', () => {
