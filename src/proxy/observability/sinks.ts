@@ -45,9 +45,18 @@ export class LiveLineSink implements ObservationSink {
   }
 }
 
-/** Enriches the request dump file with the classified response observation. */
+/** Enriches the request dump file with the classified response observation.
+ * The read+write is async (libuv thread pool) and fire-and-forget, so a dump
+ * can't block other in-flight responses on the streaming finalize path. */
 export class DumpSink implements ObservationSink {
   emit(obs: CacheObservation): void {
-    dumpResponse(obs);
+    void dumpResponse(obs).catch(err => {
+      logger.debug(
+        withReq(
+          obs.reqId,
+          `DumpSink failed: ${err instanceof Error ? err.message : err}`,
+        ),
+      );
+    });
   }
 }

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CacheObservation } from './observability/types.js';
@@ -40,6 +41,20 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
+/** reqId -> dump filePath, so dumpResponse locates the request record in O(1)
+ * without a directory scan (which was O(N) per response and could match a
+ * stale file from a recycled 8-hex reqId). Bounded to in-flight dumps. */
+const dumpPaths = new Map<string, string>();
+const DUMP_PATH_CAP = 4096;
+
+function registerDumpPath(reqId: string, path: string): void {
+  dumpPaths.set(reqId, path);
+  if (dumpPaths.size > DUMP_PATH_CAP) {
+    const oldest = dumpPaths.keys().next().value;
+    if (oldest !== undefined) dumpPaths.delete(oldest);
+  }
+}
+
 export type DumpRequestMeta = {
   forwardBody: ArrayBuffer | undefined;
   method: string;
@@ -70,21 +85,19 @@ export function dumpRequest(meta: DumpRequestMeta): void {
     request: parseForwardBody(meta.forwardBody),
     response: null,
   };
-  writeFileSync(filePath(meta.reqId, meta.model), `${JSON.stringify(record, null, 2)}\n`);
+  const path = filePath(meta.reqId, meta.model);
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+  registerDumpPath(meta.reqId, path);
 }
 
-export function dumpResponse(obs: CacheObservation): void {
+export async function dumpResponse(obs: CacheObservation): Promise<void> {
   if (!dumpEnabled()) return;
-  const dir = dumpDir();
-  if (!existsSync(dir)) return;
-
-  // Locate the request dump by reqId — the timestamp/model prefix is unknown here.
-  const name = readdirSync(dir).find(f => f.endsWith(`${obs.reqId}.json`));
-  if (!name) return; // request wasn't dumped (e.g. flag flipped mid-flight)
-  const path = join(dir, name);
+  const path = dumpPaths.get(obs.reqId);
+  if (path === undefined) return; // request wasn't dumped (e.g. flag flipped mid-flight)
+  dumpPaths.delete(obs.reqId);
 
   try {
-    const record = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    const record = JSON.parse(await readFile(path, 'utf-8')) as Record<string, unknown>;
     record.response = {
       status: obs.status,
       label: obs.outcome.label,
@@ -103,7 +116,7 @@ export function dumpResponse(obs: CacheObservation): void {
       fallback: obs.routing?.fallback ?? false,
       generationId: obs.routing?.generationId ?? null,
     };
-    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+    await writeFile(path, `${JSON.stringify(record, null, 2)}\n`);
   } catch {
     // Best-effort diagnostics — never disrupt the proxy over a dump failure.
   }

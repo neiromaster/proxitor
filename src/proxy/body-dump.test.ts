@@ -207,7 +207,7 @@ describe('dumpResponse', () => {
     ...over,
   });
 
-  it('appends enriched response usage and preserves the classified hit percentage', () => {
+  it('appends enriched response usage and preserves the classified hit percentage', async () => {
     // Arrange
     dumpRequest({
       reqId: 'r1',
@@ -218,7 +218,7 @@ describe('dumpResponse', () => {
     });
 
     // Act — hitPct comes from the classifier (1 decimal), not recomputed here.
-    dumpResponse(
+    await dumpResponse(
       obs({
         usage: { present: true, inputTokens: 10000, cacheRead: 9500, cacheCreate: 500 },
         outcome: { label: 'HIT', type: 'main', hitPct: 95 },
@@ -245,7 +245,7 @@ describe('dumpResponse', () => {
     });
   });
 
-  it('records zero hitPct when there are no input tokens', () => {
+  it('records zero hitPct when there are no input tokens', async () => {
     // Arrange
     dumpRequest({
       reqId: 'r2',
@@ -256,7 +256,7 @@ describe('dumpResponse', () => {
     });
 
     // Act
-    dumpResponse(
+    await dumpResponse(
       obs({
         reqId: 'r2',
         usage: { present: true, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
@@ -269,7 +269,7 @@ describe('dumpResponse', () => {
     expect(response.hitPct).toBe(0);
   });
 
-  it('records status and null routing when usage is absent (NOUSAGE)', () => {
+  it('records status and null routing when usage is absent (NOUSAGE)', async () => {
     // Arrange
     dumpRequest({
       reqId: 'r3',
@@ -280,7 +280,7 @@ describe('dumpResponse', () => {
     });
 
     // Act — no usage parsed upstream; outcome collapses to NOUSAGE with zeroed tokens.
-    dumpResponse(
+    await dumpResponse(
       obs({
         reqId: 'r3',
         status: 504,
@@ -301,11 +301,11 @@ describe('dumpResponse', () => {
     });
   });
 
-  it('is a no-op when no matching request file exists', () => {
+  it('is a no-op when no matching request file exists', async () => {
     // Arrange — no prior dumpRequest for "ghost"
 
     // Act
-    dumpResponse(obs({ reqId: 'ghost' }));
+    await dumpResponse(obs({ reqId: 'ghost' }));
 
     // Assert
     expect(readdirSync(dir)).toHaveLength(0);
