@@ -85,4 +85,84 @@ describe('buildUpstreamResponseWithLogging', () => {
     expect(got).toBeDefined();
     expect(got?.usage?.inputTokens).toBe(7);
   });
+
+  it('observes when the upstream body errors mid-stream (pull catch)', async () => {
+    // Arrange — flush()/cancel() don't run on an upstream body error; the
+    // manual pump's pull-catch must still finalize() so the dump isn't orphaned.
+    let got: CacheObservation | undefined;
+    const obs = new Observability(
+      new SessionTracker({ maxEntries: 8, ttlMs: 1000 }),
+      [
+        {
+          emit: o => {
+            got = o;
+          },
+        },
+      ],
+      80,
+    );
+    // Pull-based source: deliver one chunk, then error on the next read — so
+    // the chunk is actually consumed before the upstream error fires.
+    let pulls = 0;
+    const source = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify({ usage: { prompt_tokens: 9 } })}\n\n`,
+            ),
+          );
+        } else {
+          controller.error(new Error('upstream reset'));
+        }
+      },
+    });
+    const upstream = new Response(source, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    });
+
+    // Act — drain; the stream errors but finalize() must have run first.
+    const logged = buildUpstreamResponseWithLogging(upstream, 'POST', {
+      reqCtx,
+      observability: obs,
+    });
+    await expect(logged.text()).rejects.toBeDefined();
+
+    // Assert — partial observation emitted despite the mid-stream error.
+    expect(got).toBeDefined();
+    expect(got?.usage?.inputTokens).toBe(9);
+  });
+
+  it('observes a NOUSAGE line for a non-JSON/non-SSE success response', async () => {
+    // Arrange — a content type we don't parse still gets one observe call so
+    // the request dump is completed (no orphaned request-only record).
+    let got: CacheObservation | undefined;
+    const obs = new Observability(
+      new SessionTracker({ maxEntries: 8, ttlMs: 1000 }),
+      [
+        {
+          emit: o => {
+            got = o;
+          },
+        },
+      ],
+      80,
+    );
+    const upstream = new Response(new TextEncoder().encode('plain'), {
+      status: 200,
+      headers: { 'content-type': 'text/plain' },
+    });
+
+    // Act
+    const res = buildUpstreamResponseWithLogging(upstream, 'POST', {
+      reqCtx,
+      observability: obs,
+    });
+    await res.text();
+
+    // Assert
+    expect(got?.outcome.label).toBe('NOUSAGE');
+  });
 });

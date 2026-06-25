@@ -11,30 +11,36 @@ export type LoggingContext = {
   reqCtx: RequestContext;
 };
 
+/**
+ * Wraps the upstream body in a ReadableStream that observes usage/routing once,
+ * on ANY termination path: clean close, client cancel, OR an upstream body
+ * error. A bare TransformStream only runs flush() (clean close) and cancel()
+ * (downstream cancel) — an upstream stream error skips BOTH, orphaning the
+ * dump and losing the cache line. The manual pump below unifies all three
+ * paths through finalize().
+ *
+ * SSE folds in O(1) via the accumulator; JSON decodes incrementally into a
+ * single string (no separate chunk array held alongside the decoded text).
+ */
 function createLoggingStream(
+  source: ReadableStream<Uint8Array>,
   contentType: string,
   status: number,
   ctx: LoggingContext,
-): TransformStream<Uint8Array, Uint8Array> {
+): ReadableStream<Uint8Array> {
   const isSSE = contentType.toLowerCase().includes('text/event-stream');
   const accumulator = isSSE ? new SseUsageAccumulator() : undefined;
-  const chunks: Uint8Array[] | null = isSSE ? null : [];
   const decoder = new TextDecoder();
+  let text = ''; // non-SSE: incrementally decoded body
   let finalized = false;
 
-  // Shared by flush() (clean close) and cancel() (client abort / upstream
-  // error). The runtime guarantees these are mutually exclusive; the flag
-  // guards against a defensive double-call.
   const finalize = (): void => {
     if (finalized) return;
     finalized = true;
     try {
       const extracted: Extracted = accumulator
         ? accumulator.result()
-        : extractFromFullText(
-            `${chunks?.reduce((acc, c) => acc + decoder.decode(c, { stream: true }), '') ?? ''}${decoder.decode()}`,
-            false,
-          );
+        : extractFromFullText(`${text}${decoder.decode()}`, false);
       ctx.observability.observe(ctx.reqCtx, extracted, status);
     } catch (err) {
       logger.debug(
@@ -46,19 +52,35 @@ function createLoggingStream(
     }
   };
 
-  return new TransformStream({
-    transform(chunk, controller) {
-      controller.enqueue(chunk);
-      if (accumulator) accumulator.feed(chunk);
-      else chunks?.push(chunk);
-    },
-    flush() {
-      finalize();
+  const reader = source.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          finalize();
+          controller.close();
+          return;
+        }
+        if (value) {
+          if (accumulator) accumulator.feed(value);
+          else text += decoder.decode(value, { stream: true });
+          controller.enqueue(value);
+        }
+      } catch (err) {
+        // Upstream body errored mid-stream — emit the partial observation
+        // before propagating the error to the client.
+        finalize();
+        controller.error(err);
+      }
     },
     cancel() {
-      // flush() does not run on abort/cancel — emit the (possibly partial)
-      // observation here so the dump isn't orphaned and the line isn't lost.
+      // Downstream (client) cancelled — emit the partial observation and
+      // release the upstream reader.
       finalize();
+      void reader.cancel().catch(() => {
+        /* upstream already gone */
+      });
     },
   });
 }
@@ -71,6 +93,8 @@ export function buildUpstreamResponseWithLogging(
   const headers = buildResponseHeaders(upstream.headers);
 
   if (method === 'HEAD' || !upstream.body) {
+    // No body to parse — still observe once so the request dump isn't orphaned.
+    ctx.observability.observe(ctx.reqCtx, {}, upstream.status);
     return new Response(null, { status: upstream.status, headers });
   }
 
@@ -79,9 +103,13 @@ export function buildUpstreamResponseWithLogging(
   const shouldLog =
     lower.includes('application/json') || lower.includes('text/event-stream');
 
-  const body = shouldLog
-    ? upstream.body.pipeThrough(createLoggingStream(contentType, upstream.status, ctx))
-    : upstream.body;
+  if (!shouldLog) {
+    // Non-observability content type — forward as-is but still observe once so
+    // the dump is completed and a NOUSAGE line is emitted (no usage to parse).
+    ctx.observability.observe(ctx.reqCtx, {}, upstream.status);
+    return new Response(upstream.body, { status: upstream.status, headers });
+  }
 
+  const body = createLoggingStream(upstream.body, contentType, upstream.status, ctx);
   return new Response(body, { status: upstream.status, headers });
 }
