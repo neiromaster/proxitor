@@ -1,7 +1,8 @@
 // src/proxy/observability/observability.ts
+import { dumpEnabled } from '../body-dump.js';
 import { classifyCacheOutcome } from './classify.js';
 import { SessionTracker } from './session-tracker.js';
-import { LiveLineSink, type ObservationSink } from './sinks.js';
+import { DumpSink, LiveLineSink, type ObservationSink } from './sinks.js';
 import type {
   CacheObservation,
   ExtractedUsage,
@@ -71,5 +72,7 @@ export function createObservability(
     maxEntries: o.sessionMaxEntries,
     ttlMs: o.sessionTtlMs,
   });
-  return new Observability(tracker, sinks ?? [new LiveLineSink()], o.hitThreshold);
+  const built: ObservationSink[] = [new LiveLineSink()];
+  if (dumpEnabled()) built.push(new DumpSink());
+  return new Observability(tracker, sinks ?? built, o.hitThreshold);
 }

@@ -4,6 +4,8 @@ import { dumpEnabled, dumpRequest } from '../body-dump.js';
 import { buildUpstreamResponseWithLogging } from '../cache-logging.js';
 import type { ProxyEnv } from '../context.js';
 import { buildResponseHeaders } from '../headers.js';
+import { classifyRequestType } from '../observability/classify.js';
+import type { RequestContext } from '../observability/types.js';
 import { extractErrorDetail } from '../utils/error.js';
 
 const DUPLEX_HALF = { duplex: 'half' as const };
@@ -120,5 +122,24 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     ),
   );
 
-  return buildUpstreamResponseWithLogging(upstream, method, reqId);
+  const parsedBody = c.var.parsedBody;
+  const toolsCount = Array.isArray(parsedBody?.tools) ? parsedBody.tools.length : 0;
+  const maxTokens = parsedBody?.max_tokens ?? parsedBody?.max_completion_tokens;
+  const requestType = classifyRequestType(
+    { toolsCount, maxTokens },
+    { sideMaxTokens: c.var.config.observability.sideMaxTokens },
+  );
+  const reqCtx: RequestContext = {
+    reqId,
+    model: c.var.modelName ?? '',
+    sessionId: c.var.effectiveSessionId,
+    toolsCount,
+    maxTokens,
+    requestType,
+  };
+
+  return buildUpstreamResponseWithLogging(upstream, method, {
+    reqCtx,
+    observability: c.var.observability,
+  });
 });

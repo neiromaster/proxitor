@@ -90,7 +90,14 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
 
 function fold(parsed: unknown, acc: Extracted): void {
   const u = parseUsage(parsed);
-  if (u) acc.usage = u; // last wins (terminal usage is authoritative)
+  if (u) {
+    // Last wins — but only when the incoming usage carries input-side signal.
+    // Anthropic streams emit input/cache fields in message_start and only
+    // output_tokens in the terminal message_delta; a delta with no input-side
+    // data must not clobber the authoritative start usage.
+    const hasInputSignal = u.inputTokens > 0 || u.cacheRead > 0 || u.cacheCreate > 0;
+    if (hasInputSignal || !acc.usage) acc.usage = u;
+  }
   const rt = parseRouting(parsed);
   if (rt) acc.routing = rt;
 }

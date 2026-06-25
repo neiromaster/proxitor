@@ -1,208 +1,46 @@
+// src/proxy/cache-logging.ts
+
 import { logger, withReq } from '../logger.js';
-import { dumpEnabled, dumpResponse } from './body-dump.js';
 import { buildResponseHeaders } from './headers.js';
+import { extractFromFullText, SseUsageAccumulator } from './observability/extract.js';
+import type { Observability } from './observability/observability.js';
+import type { Extracted, RequestContext } from './observability/types.js';
 
-/** @internal */
-export type CacheUsage = {
-  cacheRead: number;
-  cacheCreate: number;
-  inputTokens: number;
+export type LoggingContext = {
+  observability: Observability;
+  reqCtx: RequestContext;
 };
-
-function applyOpenAIDetails(
-  details: Record<string, unknown>,
-  result: CacheUsage,
-): boolean {
-  let found = false;
-  if (
-    typeof details.cached_tokens === 'number' &&
-    (details.cached_tokens as number) > 0
-  ) {
-    result.cacheRead = details.cached_tokens as number;
-    found = true;
-  }
-  if (
-    typeof details.cache_write_tokens === 'number' &&
-    (details.cache_write_tokens as number) > 0
-  ) {
-    result.cacheCreate = details.cache_write_tokens as number;
-    found = true;
-  }
-  return found;
-}
-
-function applyAnthropicUsage(usage: Record<string, unknown>, result: CacheUsage): void {
-  if (
-    typeof usage.cache_read_input_tokens === 'number' &&
-    (usage.cache_read_input_tokens as number) > 0
-  ) {
-    result.cacheRead = usage.cache_read_input_tokens as number;
-  }
-  if (
-    typeof usage.cache_creation_input_tokens === 'number' &&
-    (usage.cache_creation_input_tokens as number) > 0
-  ) {
-    result.cacheCreate = usage.cache_creation_input_tokens as number;
-  }
-  // input_tokens excludes cache; reconstruct the full total.
-  if (typeof usage.input_tokens === 'number' && (usage.input_tokens as number) > 0) {
-    result.inputTokens =
-      (usage.input_tokens as number) + result.cacheRead + result.cacheCreate;
-  }
-}
-
-function applyOpenAIUsage(usage: Record<string, unknown>, result: CacheUsage): void {
-  const promptDetails = usage.prompt_tokens_details;
-  if (typeof promptDetails === 'object' && promptDetails !== null) {
-    applyOpenAIDetails(promptDetails as Record<string, unknown>, result);
-  }
-
-  // Responses API: input_tokens_details (skip if Chat Completions already reported cache).
-  if (result.cacheRead === 0 && result.cacheCreate === 0) {
-    const inputDetails = usage.input_tokens_details;
-    if (typeof inputDetails === 'object' && inputDetails !== null) {
-      applyOpenAIDetails(inputDetails as Record<string, unknown>, result);
-    }
-  }
-
-  if (typeof usage.prompt_tokens === 'number' && (usage.prompt_tokens as number) > 0) {
-    result.inputTokens = usage.prompt_tokens as number;
-  } else if (
-    typeof usage.input_tokens === 'number' &&
-    (usage.input_tokens as number) > 0
-  ) {
-    result.inputTokens = usage.input_tokens as number;
-  }
-}
-
-function extractFromUsage(usage: Record<string, unknown>, result: CacheUsage): void {
-  const isAnthropic =
-    typeof usage.cache_read_input_tokens === 'number' ||
-    typeof usage.cache_creation_input_tokens === 'number';
-
-  if (isAnthropic) {
-    applyAnthropicUsage(usage, result);
-  } else {
-    applyOpenAIUsage(usage, result);
-  }
-}
-
-/** @internal */
-export function extractCacheUsage(bodyText: string): CacheUsage | undefined {
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (typeof parsed !== 'object' || parsed === null) return undefined;
-
-    const usage = parsed.usage;
-    if (typeof usage !== 'object' || usage === null) return undefined;
-
-    const result: CacheUsage = { cacheRead: 0, cacheCreate: 0, inputTokens: 0 };
-    extractFromUsage(usage, result);
-    return result;
-  } catch {
-    return undefined;
-  }
-}
-
-function extractFromEvent(parsed: unknown, result: CacheUsage): boolean {
-  if (typeof parsed !== 'object' || parsed === null) return false;
-
-  // Provider-specific SSE wrappers: Anthropic uses { message }, Responses uses { response }, Chat Completions is bare.
-  const record = parsed as Record<string, unknown>;
-  const container = record.message ?? record.response ?? parsed;
-  const usage = (container as Record<string, unknown>).usage;
-  if (typeof usage !== 'object' || usage === null) return false;
-
-  const before = result.cacheRead + result.cacheCreate;
-  extractFromUsage(usage as Record<string, unknown>, result);
-  const after = result.cacheRead + result.cacheCreate;
-
-  return after > before;
-}
-
-/** @internal */
-export function extractCacheUsageFromSSE(fullText: string): CacheUsage | undefined {
-  const result: CacheUsage = { cacheRead: 0, cacheCreate: 0, inputTokens: 0 };
-  let found = false;
-
-  for (const line of fullText.split('\n')) {
-    if (!line.startsWith('data:')) continue;
-    const payload = line.slice(5).trim();
-    if (payload === '[DONE]') continue;
-
-    try {
-      if (extractFromEvent(JSON.parse(payload), result)) found = true;
-    } catch {}
-  }
-
-  return found ? result : undefined;
-}
-
-function formatCacheUsage(usage: CacheUsage, reqId: string): void {
-  const parts: string[] = [];
-  if (usage.cacheRead > 0) parts.push(`read: ${usage.cacheRead}`);
-  if (usage.cacheCreate > 0) parts.push(`write: ${usage.cacheCreate}`);
-
-  const pct =
-    usage.inputTokens > 0 && usage.cacheRead > 0
-      ? ` (${((usage.cacheRead / usage.inputTokens) * 100).toFixed(1)}% hit)`
-      : '';
-
-  logger.info(
-    withReq(
-      reqId,
-      parts.length > 0
-        ? `Cache ${parts.join(', ')} tokens${pct}`
-        : 'Cache: no cached tokens',
-    ),
-  );
-}
 
 function createLoggingStream(
   contentType: string,
-  reqId: string,
   status: number,
+  ctx: LoggingContext,
 ): TransformStream<Uint8Array, Uint8Array> {
-  const isDumpEnabled = dumpEnabled();
   const isSSE = contentType.toLowerCase().includes('text/event-stream');
-  // Buffer the full body for dumps and non-SSE (single JSON) responses. For SSE
-  // without dumping, keep only a 4KB rolling tail (O(1) memory) — the final
-  // usage payload always sits in the last event.
-  const bufferAll = isDumpEnabled || !isSSE;
-  const chunks: Uint8Array[] | null = bufferAll ? [] : null;
-  let tailText = '';
+  const accumulator = isSSE ? new SseUsageAccumulator() : undefined;
+  const chunks: Uint8Array[] | null = isSSE ? null : [];
+  const decoder = new TextDecoder();
 
   return new TransformStream({
-    transform(
-      chunk: Uint8Array,
-      controller: TransformStreamDefaultController<Uint8Array>,
-    ) {
+    transform(chunk, controller) {
       controller.enqueue(chunk);
-      if (chunks) {
-        chunks.push(chunk);
-      } else {
-        const decoder = new TextDecoder();
-        tailText += decoder.decode(chunk, { stream: true });
-        if (tailText.length > 4096) tailText = tailText.slice(-4096);
-      }
+      if (accumulator) accumulator.feed(chunk);
+      else chunks!.push(chunk);
     },
     flush() {
       try {
-        const decoder = new TextDecoder();
-        const text = chunks
-          ? `${chunks.reduce((acc, chunk) => acc + decoder.decode(chunk, { stream: true }), '')}${decoder.decode()}`
-          : // Leading newline guards a truncated first line; broken lines are
-            // safely skipped by extractCacheUsageFromSSE.
-            `\n${tailText}${decoder.decode()}`;
-
-        const usage = isSSE ? extractCacheUsageFromSSE(text) : extractCacheUsage(text);
-        if (usage) formatCacheUsage(usage, reqId);
-        if (isDumpEnabled) dumpResponse(reqId, status, usage);
+        const extracted: Extracted = accumulator
+          ? accumulator.result()
+          : extractFromFullText(
+              `${chunks!.reduce((acc, c) => acc + decoder.decode(c, { stream: true }), '')}${decoder.decode()}`,
+              false,
+            );
+        ctx.observability.observe(ctx.reqCtx, extracted, status);
       } catch (err) {
         logger.debug(
           withReq(
-            reqId,
-            `Cache usage extraction failed: ${err instanceof Error ? err.message : err}`,
+            ctx.reqCtx.reqId,
+            `Cache observability failed: ${err instanceof Error ? err.message : err}`,
           ),
         );
       }
@@ -213,7 +51,7 @@ function createLoggingStream(
 export function buildUpstreamResponseWithLogging(
   upstream: Response,
   method: string,
-  reqId: string,
+  ctx: LoggingContext,
 ): Response {
   const headers = buildResponseHeaders(upstream.headers);
 
@@ -227,7 +65,7 @@ export function buildUpstreamResponseWithLogging(
     lower.includes('application/json') || lower.includes('text/event-stream');
 
   const body = shouldLog
-    ? upstream.body.pipeThrough(createLoggingStream(contentType, reqId, upstream.status))
+    ? upstream.body.pipeThrough(createLoggingStream(contentType, upstream.status, ctx))
     : upstream.body;
 
   return new Response(body, { status: upstream.status, headers });

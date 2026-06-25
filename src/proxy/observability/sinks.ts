@@ -1,5 +1,7 @@
 // src/proxy/observability/sinks.ts
+
 import { logger, withReq } from '../../logger.js';
+import { dumpResponse } from '../body-dump.js';
 import type { CacheLabel, CacheObservation } from './types.js';
 
 export type ObservationSink = {
@@ -38,5 +40,12 @@ export class LiveLineSink implements ObservationSink {
   }
   emit(obs: CacheObservation): void {
     logger.info(formatLine(obs, this.useColor));
+  }
+}
+
+/** Enriches the request dump file with the classified response observation. */
+export class DumpSink implements ObservationSink {
+  emit(obs: CacheObservation): void {
+    dumpResponse(obs);
   }
 }

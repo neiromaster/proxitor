@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { CacheObservation } from './observability/types.js';
 
 const FLAG = 'PROXITOR_DUMP_BODY';
 const DIR_ENV = 'PROXITOR_DUMP_DIR';
@@ -47,13 +48,6 @@ export type DumpRequestMeta = {
   reqId: string;
 };
 
-/** Subset of CacheUsage — kept local to avoid a circular import with cache-logging. */
-export type DumpUsage = {
-  cacheCreate: number;
-  cacheRead: number;
-  inputTokens: number;
-};
-
 function parseForwardBody(body: ArrayBuffer | undefined): unknown {
   if (!body || body.byteLength === 0) return null;
   try {
@@ -79,29 +73,35 @@ export function dumpRequest(meta: DumpRequestMeta): void {
   writeFileSync(filePath(meta.reqId, meta.model), `${JSON.stringify(record, null, 2)}\n`);
 }
 
-export function dumpResponse(
-  reqId: string,
-  status: number,
-  usage: DumpUsage | undefined,
-): void {
+export function dumpResponse(obs: CacheObservation): void {
   if (!dumpEnabled()) return;
   const dir = dumpDir();
   if (!existsSync(dir)) return;
 
   // Locate the request dump by reqId — the timestamp/model prefix is unknown here.
-  const name = readdirSync(dir).find(f => f.endsWith(`${reqId}.json`));
+  const name = readdirSync(dir).find(f => f.endsWith(`${obs.reqId}.json`));
   if (!name) return; // request wasn't dumped (e.g. flag flipped mid-flight)
   const path = join(dir, name);
 
   try {
     const record = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
-    const { cacheRead = 0, cacheCreate = 0, inputTokens = 0 } = usage ?? {};
     record.response = {
-      status,
-      cacheRead,
-      cacheCreate,
-      inputTokens,
-      hitPct: inputTokens > 0 ? Number(((cacheRead / inputTokens) * 100).toFixed(2)) : 0,
+      status: obs.status,
+      label: obs.outcome.label,
+      requestType: obs.requestType,
+      model: obs.model,
+      sessionId: obs.sessionId ?? null,
+      toolsCount: obs.toolsCount,
+      inputTokens: obs.usage.inputTokens,
+      cacheRead: obs.usage.cacheRead,
+      cacheCreate: obs.usage.cacheCreate,
+      hitPct: obs.outcome.hitPct,
+      provider: obs.routing?.provider ?? null,
+      strategy: obs.routing?.strategy ?? null,
+      region: obs.routing?.region ?? null,
+      attempt: obs.routing?.attempt ?? null,
+      fallback: obs.routing?.fallback ?? false,
+      generationId: obs.routing?.generationId ?? null,
     };
     writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
   } catch {

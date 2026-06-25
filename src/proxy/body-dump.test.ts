@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dumpDir, dumpEnabled, dumpRequest, dumpResponse } from './body-dump.js';
+import type { CacheObservation } from './observability/types.js';
 
 const ENV = { body: 'PROXITOR_DUMP_BODY', dir: 'PROXITOR_DUMP_DIR' };
 
@@ -194,7 +195,19 @@ describe('dumpRequest — contents', () => {
 });
 
 describe('dumpResponse', () => {
-  it('appends response usage and computes hit percentage', () => {
+  // Local builder mirroring the CacheObservation shape consumed by the new signature.
+  const obs = (over: Partial<CacheObservation> = {}): CacheObservation => ({
+    reqId: 'r1',
+    status: 200,
+    model: 'x',
+    requestType: 'main',
+    toolsCount: 0,
+    usage: { present: true, inputTokens: 10000, cacheRead: 9500, cacheCreate: 500 },
+    outcome: { label: 'HIT', type: 'main', hitPct: 95 },
+    ...over,
+  });
+
+  it('appends enriched response usage and preserves the classified hit percentage', () => {
     // Arrange
     dumpRequest({
       reqId: 'r1',
@@ -204,12 +217,27 @@ describe('dumpResponse', () => {
       forwardBody: undefined,
     });
 
-    // Act
-    dumpResponse('r1', 200, { cacheRead: 9500, cacheCreate: 500, inputTokens: 10000 });
+    // Act — hitPct comes from the classifier (1 decimal), not recomputed here.
+    dumpResponse(
+      obs({
+        usage: { present: true, inputTokens: 10000, cacheRead: 9500, cacheCreate: 500 },
+        outcome: { label: 'HIT', type: 'main', hitPct: 95 },
+        routing: {
+          provider: 'Novita',
+          strategy: 'direct',
+          attempt: 1,
+          fallback: false,
+          generationId: 'gen-1',
+        },
+      }),
+    );
 
-    // Assert
-    expect(read('r1').response).toEqual({
+    // Assert — enriched record carries the classified label, routing and tokens.
+    expect(read('r1').response).toMatchObject({
       status: 200,
+      label: 'HIT',
+      provider: 'Novita',
+      generationId: 'gen-1',
       cacheRead: 9500,
       cacheCreate: 500,
       inputTokens: 10000,
@@ -228,14 +256,20 @@ describe('dumpResponse', () => {
     });
 
     // Act
-    dumpResponse('r2', 200, { cacheRead: 0, cacheCreate: 0, inputTokens: 0 });
+    dumpResponse(
+      obs({
+        reqId: 'r2',
+        usage: { present: true, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'MISS', type: 'main', hitPct: 0 },
+      }),
+    );
 
     // Assert
     const response = read('r2').response as { hitPct: number };
     expect(response.hitPct).toBe(0);
   });
 
-  it('records status even when usage is undefined', () => {
+  it('records status and null routing when usage is absent (NOUSAGE)', () => {
     // Arrange
     dumpRequest({
       reqId: 'r3',
@@ -245,16 +279,25 @@ describe('dumpResponse', () => {
       forwardBody: undefined,
     });
 
-    // Act
-    dumpResponse('r3', 504, undefined);
+    // Act — no usage parsed upstream; outcome collapses to NOUSAGE with zeroed tokens.
+    dumpResponse(
+      obs({
+        reqId: 'r3',
+        status: 504,
+        usage: { present: false, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'NOUSAGE', type: 'main', hitPct: 0 },
+      }),
+    );
 
     // Assert
-    expect(read('r3').response).toEqual({
+    expect(read('r3').response).toMatchObject({
       status: 504,
+      label: 'NOUSAGE',
       cacheRead: 0,
       cacheCreate: 0,
       inputTokens: 0,
       hitPct: 0,
+      provider: null,
     });
   });
 
@@ -262,7 +305,7 @@ describe('dumpResponse', () => {
     // Arrange — no prior dumpRequest for "ghost"
 
     // Act
-    dumpResponse('ghost', 200, { cacheRead: 1, cacheCreate: 0, inputTokens: 10 });
+    dumpResponse(obs({ reqId: 'ghost' }));
 
     // Assert
     expect(readdirSync(dir)).toHaveLength(0);
