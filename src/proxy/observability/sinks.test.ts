@@ -1,6 +1,7 @@
 // src/proxy/observability/sinks.test.ts
-import { describe, expect, it } from 'vitest';
-import { colorizeLabel, formatLine } from './sinks.js';
+import { describe, expect, it, vi } from 'vitest';
+import { logger } from '../../logger.js';
+import { colorizeLabel, DumpSink, formatLine } from './sinks.js';
 import type { CacheObservation } from './types.js';
 
 const obs = (over: Partial<CacheObservation> = {}): CacheObservation => ({
@@ -65,5 +66,48 @@ describe('colorizeLabel', () => {
   });
   it('wraps with ANSI when useColor true', () => {
     expect(colorizeLabel('MISS', true)).toBe('\x1b[31mMISS\x1b[0m');
+  });
+});
+
+describe('DumpSink', () => {
+  it('drops a dump once the waiter queue is full, so the overflow never runs', async () => {
+    // Arrange — maxConcurrent=1, maxWaiters=1: r1 takes the slot, r2 fills the
+    // queue, r3 overflows and must be dropped (and reported). Each dump resolves
+    // only on demand, so draining can't cascade-run the queued items.
+    const debug = vi.spyOn(logger, 'debug');
+    const resolveQueue: Array<() => void> = [];
+    const calls: string[] = [];
+    const sink = new DumpSink({
+      maxConcurrent: 1,
+      maxWaiters: 1,
+      enabled: () => true,
+      dump: o => {
+        calls.push(o.reqId);
+        return new Promise<void>(resolve => {
+          resolveQueue.push(resolve);
+        });
+      },
+    });
+    const flush = async (): Promise<void> => {
+      await new Promise<void>(r => {
+        setTimeout(r, 0);
+      });
+    };
+
+    // Act
+    sink.emit(obs({ reqId: 'r1' })); // in-flight
+    sink.emit(obs({ reqId: 'r2' })); // queued
+    sink.emit(obs({ reqId: 'r3' })); // over the queue cap → dropped + logged
+    expect(calls).toEqual(['r1']); // only the in-flight slot has run so far
+    // Drain the whole pipeline: r1 then r2 must run; r3 was dropped, never queued.
+    resolveQueue[0]?.();
+    await flush();
+    resolveQueue[1]?.();
+    await flush();
+
+    // Assert — r3 never ran (dropped, not queued) and the loss was logged with its reqId.
+    expect(calls).toEqual(['r1', 'r2']);
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('r3'));
+    debug.mockRestore();
   });
 });

@@ -180,10 +180,19 @@ export function extractFromFullText(text: string, isSSE: boolean): Extracted {
 export class SseUsageAccumulator {
   private buffer = '';
   private offset = 0;
+  // Explicit `boolean` (not inferred from `= false`) so Biome's
+  // noUnnecessaryConditions doesn't treat this as a literal-false field and
+  // flag the guards below — result() flips it to true, which makes both checks
+  // load-bearing for the one-shot contract.
+  private done: boolean = false;
   private readonly decoder = new TextDecoder();
   private readonly acc: Extracted = {};
 
   feed(chunk: Uint8Array): void {
+    // result() finalizes this stream; a stray late chunk (e.g. a delayed write
+    // after finalize) must be ignored rather than folded into a reset buffer
+    // with an already-flushed decoder.
+    if (this.done) return;
     this.buffer += this.decoder.decode(chunk, { stream: true });
     let nl = this.buffer.indexOf('\n', this.offset);
     while (nl !== -1) {
@@ -201,6 +210,11 @@ export class SseUsageAccumulator {
   }
 
   result(): Extracted {
+    // One-shot: a repeated finalize (the stream's pull/cancel/error paths can
+    // each call it) returns the same snapshot without re-processing the buffer
+    // or re-flushing an already-flushed decoder.
+    if (this.done) return this.acc;
+    this.done = true;
     this.buffer += this.decoder.decode(); // flush decoder
     if (this.buffer.length > 0) this.process(this.buffer.slice(this.offset));
     this.buffer = '';

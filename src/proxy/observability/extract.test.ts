@@ -241,6 +241,21 @@ describe('SseUsageAccumulator', () => {
     expect(r.usage?.cacheCreate).toBe(5000); // preserved
     expect(r.usage?.inputTokens).toBe(57000); // preserved (delta had no input_tokens)
   });
+  it('ignores data fed after result() (one-shot finalize contract)', () => {
+    // Arrange — the stream has already finalized and returned its snapshot.
+    const acc = new SseUsageAccumulator();
+    const enc = new TextEncoder();
+    acc.feed(enc.encode(data({ usage: { prompt_tokens: 7 } })));
+    const first = acc.result();
+    expect(first.usage?.inputTokens).toBe(7);
+    // Act — a stray chunk arrives after finalize. It must NOT mutate the
+    // already-returned observation or be folded into a later result().
+    acc.feed(enc.encode(data({ usage: { prompt_tokens: 999 } })));
+    const second = acc.result();
+    // Assert — idempotent: the late data was discarded, not re-processed.
+    expect(second.usage?.inputTokens).toBe(7);
+    expect(second).toEqual(first);
+  });
 });
 
 describe('extractFromFullText', () => {

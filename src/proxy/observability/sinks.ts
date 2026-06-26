@@ -53,21 +53,39 @@ export class LiveLineSink implements ObservationSink {
  * can't block other in-flight responses on the streaming finalize path. A
  * small concurrency cap prevents a burst of responses from saturating the
  * thread pool with dozens of simultaneous fs operations. */
+export type DumpSinkDeps = {
+  maxConcurrent?: number;
+  /** Upper bound on the waiter queue. Beyond it a dump is dropped (best-effort)
+   * so a sustained burst of slowly-streaming responses that fs-enrich slower
+   * than they finalize can't grow the queue without limit. */
+  maxWaiters?: number;
+  /** Injectable async work + gate so the queue cap is unit-testable without fs. */
+  dump?: (obs: CacheObservation) => Promise<void>;
+  enabled?: () => boolean;
+};
+
 export class DumpSink implements ObservationSink {
   private inflight = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly maxConcurrent: number;
-  constructor(maxConcurrent = 16) {
-    this.maxConcurrent = maxConcurrent;
+  private readonly maxWaiters: number;
+  private readonly dump: (obs: CacheObservation) => Promise<void>;
+  private readonly enabled: () => boolean;
+
+  constructor(deps: DumpSinkDeps = {}) {
+    this.maxConcurrent = deps.maxConcurrent ?? 16;
+    this.maxWaiters = deps.maxWaiters ?? 256;
+    this.dump = deps.dump ?? dumpResponse;
+    this.enabled = deps.enabled ?? dumpEnabled;
   }
 
   emit(obs: CacheObservation): void {
     // Gate per-call (not at construction) so a flag flip after startup stays
     // consistent with dumpRequest — and stays a cheap no-op when dumping is off.
-    if (!dumpEnabled()) return;
+    if (!this.enabled()) return;
     const run = (): void => {
       this.inflight += 1;
-      void dumpResponse(obs)
+      void this.dump(obs)
         .catch(err => {
           logger.debug(
             withReq(
@@ -83,6 +101,9 @@ export class DumpSink implements ObservationSink {
         });
     };
     if (this.inflight < this.maxConcurrent) run();
-    else this.waiters.push(run);
+    else if (this.waiters.length < this.maxWaiters) this.waiters.push(run);
+    // Queue full — drop the dump and log so the loss is observable. Dumping is
+    // best-effort; bounding the queue protects memory under a sustained burst.
+    else logger.debug(withReq(obs.reqId, 'DumpSink queue full — dump dropped'));
   }
 }
