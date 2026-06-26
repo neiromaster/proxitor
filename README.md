@@ -197,6 +197,8 @@ Common flags: `--port`, `--host`, `--config <path>`, `--openrouter-key <key>` / 
 
 **Anthropic returns `400` about mixed TTLs when `cacheControlTtl: 1h`.** Set `rewriteBlockTtl: auto` (or `always`) to normalize the client's block-level `cache_control` breakpoints to the same TTL — see the [configuration reference](./docs/configuration.md#prompt-caching).
 
+**OpenRouter returns `400 invalid_prompt | Invalid Responses API request` on `/v1/responses`.** Some clients send Responses `input` items without the `type` field OpenRouter requires. `normalizeResponses: auto` (the default) tags them, lifts `role:"system"` into `instructions`, and adds the `id`/`status` OpenRouter wants on assistant history. Set it to `skip` only for raw passthrough.
+
 **The provider keeps switching between requests.** Make sure `sessionId` is not `skip` — both `auto` (default) and `always` inject a sticky session ID; without it OpenRouter only pins after the first cache hit.
 
 **Config edits don't take effect.** They should — proxitor hot-reloads on save. If the file is invalid the proxy keeps the last valid config; `proxitor config validate` shows what was rejected.

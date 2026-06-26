@@ -200,6 +200,14 @@ modelOverrides:
     rewriteBlockTtl: skip   # leave Opus block TTLs as the client sends them
 ```
 
+**`normalizeResponses`** (`auto` / `always` / `skip`, default `auto`) — repairs `/v1/responses` bodies so they satisfy OpenRouter's strict `input` schema. OpenRouter validates each `input` item as a union discriminated by `type`; clients that omit `type` on message items (legal on OpenAI, which infers `message`) get `400 invalid_prompt | Invalid Responses API request`. The normalizer:
+
+- tags role-bearing items lacking `type` with `type: "message"`;
+- lifts `role: "system"` items into the top-level `instructions` field (OpenRouter Responses has no system role in `input`);
+- synthesizes the `id` / `status` OpenRouter requires on assistant history items.
+
+It is idempotent and only touches items that need it. `auto` acts on `/v1/responses`; `always` acts everywhere; `skip` is raw passthrough (such client requests then fail at OpenRouter). Set per-model in the override editor.
+
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
 Both `cacheControl` and `sessionId` support `auto` / `always` / `skip` modes:

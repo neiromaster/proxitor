@@ -197,6 +197,8 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 
 **Anthropic возвращает `400` про смешанные TTL при `cacheControlTtl: 1h`.** Поставьте `rewriteBlockTtl: auto` (или `always`), чтобы привести клиентские блочные `cache_control`-брейкпойнты к тому же TTL — см. [справочник по конфигурации](./configuration.ru.md#кэширование-подсказок).
 
+**OpenRouter возвращает `400 invalid_prompt | Invalid Responses API request` на `/v1/responses`.** Некоторые клиенты отправляют айтемы `input` без поля `type`, которое требует OpenRouter. `normalizeResponses: auto` (по умолчанию) проставляет его, переносит `role:"system"` в `instructions` и добавляет `id`/`status`, которые OpenRouter ждёт от assistant-истории. Ставьте `skip` только для чистого passthrough.
+
 **Провайдер переключается между запросами.** Убедитесь, что `sessionId` не `skip` — и `auto` (по умолчанию), и `always` инжектят липкий session ID; без него OpenRouter закрепляет провайдера только после первого попадания в кэш.
 
 **Изменения конфига не применяются.** Должны — proxitor подхватывает файл на лету. Если файл битый, прокси держит последний валидный конфиг; `proxitor config validate` покажет, что именно отвергнуто.

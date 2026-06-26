@@ -200,6 +200,14 @@ modelOverrides:
     rewriteBlockTtl: skip   # оставить блочный TTL Opus как шлёт клиент
 ```
 
+**`normalizeResponses`** (`auto` / `always` / `skip`, по умолчанию `auto`) — чинит тела запросов `/v1/responses`, чтобы они соответствовали строгой схеме `input` в OpenRouter. OpenRouter валидирует каждый айтем `input` как объединение, различаемое полем `type`; клиенты, опускающие `type` у message-айтемов (допустимо у OpenAI, где выводится `message`), получают `400 invalid_prompt | Invalid Responses API request`. Нормализатор:
+
+- проставляет айтемам с ролью без `type` поле `type: "message"`;
+- переносит айтемы `role: "system"` в top-level поле `instructions` (в Responses у OpenRouter нет роли system в `input`);
+- генерирует `id` / `status`, которые OpenRouter требует для assistant-истории.
+
+Идемпотентен, меняет только то, что нужно. `auto` действует на `/v1/responses`; `always` — везде; `skip` — чистый passthrough (такие клиентские запросы затем падают в OpenRouter). Поключается и через override-редактор по модели.
+
 **`sessionId`** — внедряет `session_id` для «липкой» маршрутизации к провайдеру. Без него OpenRouter привязывается к провайдеру только после фиксации попадания в кэш. С ним маршрутизация липнет с **первого запроса** — критично для моделей OpenAI, где отложенное кэширование означает 0 закэшированных токенов на первых 1-2 запросах.
 
 И `cacheControl`, и `sessionId` поддерживают режимы `auto` / `always` / `skip`:
