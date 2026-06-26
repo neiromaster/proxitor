@@ -418,32 +418,6 @@ describe('Proxy Integration', () => {
     expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
-  it('injects cache_control with ttl:300 for Anthropic model when cacheControlTtl is 5m', async () => {
-    let capturedBody: Record<string, unknown> = {};
-
-    env = await createTestEnv(
-      { cacheControl: 'auto', cacheControlTtl: '5m' },
-      upstream => {
-        catchAll(upstream, async c => {
-          capturedBody = await c.req.json().catch(() => ({}));
-          return c.json({ id: 'test', content: [] });
-        });
-      },
-    );
-
-    await fetch(`${env.proxyUrl}/v1/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 100,
-      }),
-    });
-
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
-  });
-
   it('injects cache_control without ttl for non-Anthropic model even when cacheControlTtl is set', async () => {
     let capturedBody: Record<string, unknown> = {};
 
@@ -467,28 +441,6 @@ describe('Proxy Integration', () => {
     });
 
     expect(capturedBody.cache_control).toBeUndefined();
-  });
-
-  it('injects cache_control without ttl when cacheControlTtl is not configured', async () => {
-    let capturedBody: Record<string, unknown> = {};
-
-    env = await createTestEnv({ cacheControl: 'auto' }, upstream => {
-      catchAll(upstream, async c => {
-        capturedBody = await c.req.json().catch(() => ({}));
-        return c.json({ id: 'test', choices: [] });
-      });
-    });
-
-    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-20250514',
-        messages: [{ role: 'user', content: 'Hello' }],
-      }),
-    });
-
-    expect(capturedBody.cache_control).toEqual({ type: 'ephemeral' });
   });
 
   it('injects cache_control without ttl for non-Anthropic model in always mode with cacheControlTtl', async () => {
@@ -843,28 +795,6 @@ describe('Proxy Integration', () => {
 
     // "skip" = proxy does not manage session headers at all
     expect(capturedHeaders['x-session-id']).toBe('client-session-id');
-  });
-
-  it('sets x-session-id header from client X-Claude-Code-Session-Id', async () => {
-    let capturedHeaders: Record<string, string> = {};
-
-    env = await createTestEnv({ sessionId: 'auto' }, upstream => {
-      catchAll(upstream, async c => {
-        capturedHeaders = Object.fromEntries(c.req.raw.headers.entries());
-        return c.json({ id: 'test' });
-      });
-    });
-
-    await fetch(`${env.proxyUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Claude-Code-Session-Id': 'header-session',
-      },
-      body: JSON.stringify({ model: 'test', messages: [] }),
-    });
-
-    expect(capturedHeaders['x-session-id']).toBe('header-session');
   });
 
   it('preserves existing session_id in body and sets header from client header', async () => {

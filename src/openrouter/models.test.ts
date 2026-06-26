@@ -41,7 +41,7 @@ describe('formatPrice', () => {
 });
 
 describe('parseModelAuthor', () => {
-  it('extracts author from model id', () => {
+  it('extracts the vendor segment from a prefixed id', () => {
     // Arrange
     const modelId = 'anthropic/claude-sonnet-4';
     // Act
@@ -50,18 +50,27 @@ describe('parseModelAuthor', () => {
     expect(result).toBe('anthropic');
   });
 
-  it('extracts author for openai models', () => {
-    // Arrange
-    const modelId = 'openai/gpt-4o';
+  it('returns the whole id when there is no slash (bare id)', () => {
+    // Arrange — documented behavior: a bare "gpt-4o" is its own author.
+    const modelId = 'gpt-4o';
     // Act
     const result = parseModelAuthor(modelId);
     // Assert
-    expect(result).toBe('openai');
+    expect(result).toBe('gpt-4o');
+  });
+
+  it('returns only the first segment of a multi-segment id', () => {
+    // Arrange — only the segment before the first "/" is the author.
+    const modelId = 'vendor/sub/model';
+    // Act
+    const result = parseModelAuthor(modelId);
+    // Assert
+    expect(result).toBe('vendor');
   });
 });
 
 describe('parseModelSlug', () => {
-  it('extracts slug from model id', () => {
+  it('extracts the slug from a prefixed id', () => {
     // Arrange
     const modelId = 'anthropic/claude-sonnet-4';
     // Act
@@ -70,12 +79,21 @@ describe('parseModelSlug', () => {
     expect(result).toBe('claude-sonnet-4');
   });
 
-  it('extracts slug for google models', () => {
-    // Arrange
-    const modelId = 'google/gemini-2.5-pro';
+  it('returns an empty string when there is no slash (bare id)', () => {
+    // Arrange — a bare id has no slug portion after the "/".
+    const modelId = 'gpt-4o';
     // Act
     const result = parseModelSlug(modelId);
     // Assert
-    expect(result).toBe('gemini-2.5-pro');
+    expect(result).toBe('');
+  });
+
+  it('keeps everything after the first slash for a multi-segment id', () => {
+    // Arrange — the slug is the remainder after the first "/", slashes included.
+    const modelId = 'vendor/sub/model';
+    // Act
+    const result = parseModelSlug(modelId);
+    // Assert
+    expect(result).toBe('sub/model');
   });
 });

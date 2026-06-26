@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -162,9 +162,6 @@ describe('doctor does not throw on the project directory', () => {
     // Use offline + tiny timeout to keep the test fast.
     const code = await doctorCommand({ offline: true, timeoutMs: 100 });
     expect(typeof code).toBe('number');
-    // existsSync is referenced to avoid unused-import lints; touching it
-    // here is intentional to validate the helper export in tests.
-    expect(typeof existsSync).toBe('function');
   });
 });
 
