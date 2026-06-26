@@ -19,9 +19,10 @@ type Ctx = {
   bodyMutated: boolean;
 };
 
-function buildErrorResponse(
+export function buildErrorResponse(
   err: unknown,
   ctx: Pick<Ctx, 'reqId' | 'method' | 'path'>,
+  observeUnhandled?: () => void,
 ): Response {
   if (err instanceof TypeError) {
     // Network failures (undici TypeError) → 502.
@@ -41,6 +42,10 @@ function buildErrorResponse(
     logger.warn(withReq(ctx.reqId, `Aborted: ${ctx.method} ${ctx.path}`));
     return new Response(null, { status: 499 });
   }
+  // Truly unexpected error — record the attempt (status 500, no body) before
+  // re-throwing, so the app error handler still logs it but no request is
+  // silently lost from observability and no dump is left orphaned.
+  observeUnhandled?.();
   throw err;
 }
 
@@ -144,7 +149,9 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     // Pre-response failure (client abort → 499, upstream unreachable → 502):
     // observe so the dump isn't orphaned and the attempt is recorded. No
     // response body is available → collapses to NOUSAGE.
-    const response = buildErrorResponse(err, ctx);
+    const response = buildErrorResponse(err, ctx, () =>
+      observability.observe(reqCtx, {}, 500),
+    );
     observability.observe(reqCtx, {}, response.status);
     return response;
   } finally {
