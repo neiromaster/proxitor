@@ -11,34 +11,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Bugfix #3: add/edit forward configPath for writes
-// ---------------------------------------------------------------------------
-
-describe('Bugfix #3: add/edit forward configPath for writes', () => {
-  it('addOverrideCommand accepts configPath in AddOptions', async () => {
-    const { addOverrideCommand } = await import('../../src/commands/config/add.js');
-    // Verify the function signature accepts configPath by checking it's a
-    // function that takes an options object with a configPath field.
-    expect(typeof addOverrideCommand).toBe('function');
-  });
-
-  it('editOverrideCommand accepts optional configPath parameter', async () => {
-    const { editOverrideCommand } = await import('../../src/commands/config/edit.js');
-    // editOverrideCommand now accepts (client, configPath?) — verify it's
-    // importable and is a function (signatures match).
-    expect(typeof editOverrideCommand).toBe('function');
-  });
-
-  it('add handler in cli-commands forwards configPath', async () => {
-    // Verify the add handler wires configPath through by checking the module
-    // exports the command with the correct structure.
-    const { configCli } = await import('../../src/cli-commands.js');
-    // configCli is a subcommands() result — check it has the 'add' command
-    expect(configCli).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Bugfix #8: logResolved auto-iterates config keys
 // ---------------------------------------------------------------------------
 

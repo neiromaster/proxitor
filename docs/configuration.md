@@ -248,25 +248,83 @@ modelOverrides:
 - **Non-Anthropic models behind Claude Code (qwen / glm / …)** — lever 3 (`normalizeVolatileSystem`) stabilizes the prefix; without it the churned `cch`/`cc_version` hashes prevent the prefix cache from ever warming.
 - **All models** — lever 2 (`session_id`) prevents the provider switch that silently resets the cache.
 
-## Cache usage logging
+## Cache observability
 
-Proxitor automatically logs cache token usage from upstream responses — both non-streaming JSON and streaming SSE. No configuration needed.
+While proxitor runs, it prints a **classified per-request cache line** for every proxied response (non-streaming JSON and streaming SSE) so you can see at a glance whether caching is actually helping. No configuration is needed — it's on by default.
 
 ```
-[abc123] Cache read: 50000, write: 25000 tokens (99.6% hit)
-[def456] Cache read: 1088 tokens (90.0% hit)
-[ghi789] Cache: no cached tokens
+[a1b2] HIT   99%  read 48640  in 48874  glm-4.5-air  [main]
+[c3d4] PARTIAL  42%  read 1088  in 2600  provider=anthropic  claude-sonnet-4-6  [side]
+[e5f6] MISS   in 48874  provider=novita  glm-4.5-air  [main]
+[g7h8] COLD   in 48874  glm-4.5-air  [main]
+[i9j0] NOUSAGE   claude-sonnet-4-6  [main]
 ```
 
-Supports all three provider formats:
+Each line carries the request ID, the **label**, the hit percentage (for `HIT`/`PARTIAL`), `read N` / `write N` tokens where present, `in N` input tokens, `provider=…` when routing metadata is available, the model, and the request type `[main]`/`[side]`. (`read N` only appears when there is a non-zero cache read, so `MISS`/`COLD` lines omit it.)
 
-| Provider format | Fields |
+### Labels
+
+| Label | Meaning |
 | --- | --- |
-| Anthropic | `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` |
-| OpenAI / OpenRouter | `usage.prompt_tokens_details.cached_tokens` / `cache_write_tokens` |
-| Responses API | `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` |
+| `HIT` | Cache read ≥ `hitThreshold`% of input tokens — a warm, useful cache. |
+| `PARTIAL` | Some cache read, but below the threshold. |
+| `MISS` | No cache read on a **repeat** request in the same session — the cache should have served it but didn't. |
+| `COLD` | No cache read on the **first** request in a session — the expected one-time warm-up cost. |
+| `NOUSAGE` | No usage object was observed (non-logged content type, malformed response, etc.). |
 
-When both formats are present (e.g., OpenRouter relaying an Anthropic response), Anthropic fields take priority.
+### Request type
+
+Each request is tagged `[main]` or `[side]`. A request is `[side]` only when it has **no tools** and its `max_tokens` is at or under `sideMaxTokens` — a two-signal rule that avoids mislabeling small tool-less lookups as the main turn. Everything else is `[main]`.
+
+**`max_tokens` resolution:** the budget uses `max_tokens ?? max_completion_tokens`. When neither is present, the request defaults to `[main]` (fail-safe) rather than `[side]`.
+
+### Configuration
+
+All options live under `observability:` and are optional with sensible defaults.
+
+```yaml
+observability:
+  routerMetadata: true      # send x-openrouter-metadata to surface the serving provider
+  hitThreshold: 80          # cacheRead/inputTokens % at or above => HIT
+  sideMaxTokens: 4096       # tool-less request with max_tokens <= this => [side]
+  sessionMaxEntries: 4096   # in-memory session-tracker capacity (FIFO eviction)
+  sessionTtlMs: 600000      # session-tracker entry TTL (10 minutes)
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `routerMetadata` | `true` | Opts the proxy into OpenRouter's `x-openrouter-metadata` so responses surface which provider actually served the request (shown as `provider=…` on the cache line whenever routing/serving-provider metadata is available). Set `false` to opt out. |
+| `hitThreshold` | `80` | The `cacheRead / inputTokens` percentage at or above which a request is labeled `HIT`. |
+| `sideMaxTokens` | `4096` | A request with **no tools** AND `max_tokens` at or under this budget is tagged `[side]`. |
+| `sessionMaxEntries` | `4096` | Bounded capacity of the in-memory session tracker (FIFO eviction when exceeded). |
+| `sessionTtlMs` | `600000` | Session-tracker entry time-to-live (10 minutes). |
+
+### Enriched dumps
+
+Set `PROXITOR_DUMP_BODY=1` to write request/response dumps (to `~/.cache/proxitor/dumps`, overridable via `PROXITOR_DUMP_DIR`). When enabled, the `response` object in each dump is enriched with the classified observation:
+
+```json
+"response": {
+  "status": 200,
+  "label": "HIT",
+  "requestType": "main",
+  "model": "glm-4.5-air",
+  "sessionId": "8f3e...",
+  "toolsCount": 0,
+  "inputTokens": 48874,
+  "cacheRead": 48640,
+  "cacheCreate": 0,
+  "hitPct": 99.5,
+  "provider": "novita",
+  "strategy": "priority",
+  "region": null,
+  "attempt": 1,
+  "fallback": false,
+  "generationId": "gen-..."
+}
+```
+
+`provider`, `strategy`, `region`, `attempt`, `fallback`, and `generationId` are populated only when routing metadata is present (i.e., `routerMetadata` is on and the upstream returns it).
 
 ## normalizeVolatileSystem (stable prefix for non-Anthropic providers)
 

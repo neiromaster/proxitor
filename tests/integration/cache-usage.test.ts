@@ -62,13 +62,13 @@ describe('Cache usage logging', () => {
 
     const cacheLogs = infoSpy.mock.calls
       .map((args: string[]) =>
-        args.find(a => typeof a === 'string' && a.includes('Cache')),
+        args.find(a => typeof a === 'string' && a.includes('PARTIAL')),
       )
       .filter(Boolean);
 
     expect(cacheLogs.length).toBeGreaterThanOrEqual(1);
-    expect(cacheLogs[0]).toMatch(/read: 50000/);
-    expect(cacheLogs[0]).toMatch(/write: 100000/);
+    expect(cacheLogs[0]).toMatch(/read 50000/);
+    expect(cacheLogs[0]).toMatch(/write 100000/);
 
     infoSpy.mockRestore();
     await cleanup();
@@ -102,12 +102,13 @@ describe('Cache usage logging', () => {
 
     const cacheLogs = infoSpy.mock.calls
       .map((args: string[]) =>
-        args.find(a => typeof a === 'string' && a.includes('Cache')),
+        args.find(a => typeof a === 'string' && a.includes('COLD')),
       )
       .filter(Boolean);
 
     expect(cacheLogs.length).toBeGreaterThanOrEqual(1);
-    expect(cacheLogs[0]).toMatch(/no cached tokens/);
+    // No cache read/write tokens reported for a cold (zero-cache) response.
+    expect(cacheLogs[0]).not.toMatch(/read \d+/);
 
     infoSpy.mockRestore();
     await cleanup();
@@ -158,13 +159,15 @@ describe('Cache usage logging', () => {
 
     const cacheLogs = infoSpy.mock.calls
       .map((args: string[]) =>
-        args.find(a => typeof a === 'string' && a.includes('Cache')),
+        args.find(
+          a => typeof a === 'string' && (a.includes('HIT') || a.includes('PARTIAL')),
+        ),
       )
       .filter(Boolean);
 
     expect(cacheLogs.length).toBeGreaterThanOrEqual(1);
-    expect(cacheLogs[0]).toMatch(/read: 50000/);
-    expect(cacheLogs[0]).toMatch(/write: 25000/);
+    expect(cacheLogs[0]).toMatch(/read 50000/);
+    expect(cacheLogs[0]).toMatch(/write 25000/);
 
     infoSpy.mockRestore();
     await cleanup();
@@ -211,12 +214,14 @@ describe('Cache usage logging', () => {
 
     const cacheLogs = infoSpy.mock.calls
       .map((args: string[]) =>
-        args.find(a => typeof a === 'string' && a.includes('Cache')),
+        args.find(
+          a => typeof a === 'string' && (a.includes('HIT') || a.includes('PARTIAL')),
+        ),
       )
       .filter(Boolean);
 
     expect(cacheLogs.length).toBeGreaterThanOrEqual(1);
-    expect(cacheLogs[0]).toMatch(/read: 50000/);
+    expect(cacheLogs[0]).toMatch(/read 50000/);
 
     infoSpy.mockRestore();
     await cleanup();

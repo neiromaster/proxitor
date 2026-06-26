@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { CacheObservation } from './observability/types.js';
 
 const FLAG = 'PROXITOR_DUMP_BODY';
 const DIR_ENV = 'PROXITOR_DUMP_DIR';
@@ -47,13 +49,6 @@ export type DumpRequestMeta = {
   reqId: string;
 };
 
-/** Subset of CacheUsage — kept local to avoid a circular import with cache-logging. */
-export type DumpUsage = {
-  cacheCreate: number;
-  cacheRead: number;
-  inputTokens: number;
-};
-
 function parseForwardBody(body: ArrayBuffer | undefined): unknown {
   if (!body || body.byteLength === 0) return null;
   try {
@@ -63,9 +58,10 @@ function parseForwardBody(body: ArrayBuffer | undefined): unknown {
   }
 }
 
-/** `response` is filled later by dumpResponse, once the upstream stream completes. */
-export function dumpRequest(meta: DumpRequestMeta): void {
-  if (!dumpEnabled()) return;
+/** Writes the request half; `response` is filled later by dumpResponse. Returns
+ * the file path so the response half can find it without a reqId→path lookup. */
+export function dumpRequest(meta: DumpRequestMeta): string | undefined {
+  if (!dumpEnabled()) return undefined;
   ensureDir(dumpDir());
   const record = {
     reqId: meta.reqId,
@@ -76,34 +72,51 @@ export function dumpRequest(meta: DumpRequestMeta): void {
     request: parseForwardBody(meta.forwardBody),
     response: null,
   };
-  writeFileSync(filePath(meta.reqId, meta.model), `${JSON.stringify(record, null, 2)}\n`);
+  const path = filePath(meta.reqId, meta.model);
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+  return path;
 }
 
-export function dumpResponse(
-  reqId: string,
-  status: number,
-  usage: DumpUsage | undefined,
-): void {
+export async function dumpResponse(obs: CacheObservation): Promise<void> {
   if (!dumpEnabled()) return;
-  const dir = dumpDir();
-  if (!existsSync(dir)) return;
-
-  // Locate the request dump by reqId — the timestamp/model prefix is unknown here.
-  const name = readdirSync(dir).find(f => f.endsWith(`${reqId}.json`));
-  if (!name) return; // request wasn't dumped (e.g. flag flipped mid-flight)
-  const path = join(dir, name);
+  const path = obs.dumpPath;
+  if (path === undefined) return; // request wasn't dumped (e.g. flag flipped mid-flight)
 
   try {
-    const record = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
-    const { cacheRead = 0, cacheCreate = 0, inputTokens = 0 } = usage ?? {};
+    const record = JSON.parse(await readFile(path, 'utf-8')) as Record<string, unknown>;
+    const r = obs.routing;
+    // routing is optional; spread when present, serialize explicit nulls when
+    // absent so the dump always carries a complete (and biome-clean) block.
     record.response = {
-      status,
-      cacheRead,
-      cacheCreate,
-      inputTokens,
-      hitPct: inputTokens > 0 ? Number(((cacheRead / inputTokens) * 100).toFixed(2)) : 0,
+      status: obs.status,
+      label: obs.outcome.label,
+      requestType: obs.requestType,
+      model: obs.model,
+      sessionId: obs.sessionId ?? null,
+      toolsCount: obs.toolsCount,
+      inputTokens: obs.usage.inputTokens,
+      cacheRead: obs.usage.cacheRead,
+      cacheCreate: obs.usage.cacheCreate,
+      hitPct: obs.outcome.hitPct,
+      ...(r
+        ? {
+            provider: r.provider,
+            strategy: r.strategy,
+            region: r.region ?? null,
+            attempt: r.attempt,
+            fallback: r.fallback,
+            generationId: r.generationId ?? null,
+          }
+        : {
+            provider: null,
+            strategy: null,
+            region: null,
+            attempt: null,
+            fallback: false,
+            generationId: null,
+          }),
     };
-    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+    await writeFile(path, `${JSON.stringify(record, null, 2)}\n`);
   } catch {
     // Best-effort diagnostics — never disrupt the proxy over a dump failure.
   }

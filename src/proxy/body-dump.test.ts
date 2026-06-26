@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dumpDir, dumpEnabled, dumpRequest, dumpResponse } from './body-dump.js';
+import type { CacheObservation } from './observability/types.js';
 
 const ENV = { body: 'PROXITOR_DUMP_BODY', dir: 'PROXITOR_DUMP_DIR' };
 
@@ -194,22 +195,52 @@ describe('dumpRequest — contents', () => {
 });
 
 describe('dumpResponse', () => {
-  it('appends response usage and computes hit percentage', () => {
-    // Arrange
-    dumpRequest({
+  // Local builder mirroring the CacheObservation shape consumed by the new signature.
+  const obs = (over: Partial<CacheObservation> = {}): CacheObservation => ({
+    reqId: 'r1',
+    status: 200,
+    model: 'x',
+    requestType: 'main',
+    toolsCount: 0,
+    usage: { present: true, inputTokens: 10000, cacheRead: 9500, cacheCreate: 500 },
+    outcome: { label: 'HIT', type: 'main', hitPct: 95 },
+    ...over,
+  });
+
+  it('appends enriched response usage and preserves the classified hit percentage', async () => {
+    // Arrange — dumpRequest returns the file path threaded through the observation.
+    const path = dumpRequest({
       reqId: 'r1',
       method: 'POST',
       path: '/v1/messages',
       model: 'x',
       forwardBody: undefined,
     });
+    expect(path).toBeDefined();
 
-    // Act
-    dumpResponse('r1', 200, { cacheRead: 9500, cacheCreate: 500, inputTokens: 10000 });
+    // Act — hitPct comes from the classifier (1 decimal), not recomputed here.
+    await dumpResponse(
+      obs({
+        reqId: 'r1',
+        dumpPath: path,
+        usage: { present: true, inputTokens: 10000, cacheRead: 9500, cacheCreate: 500 },
+        outcome: { label: 'HIT', type: 'main', hitPct: 95 },
+        routing: {
+          provider: 'Novita',
+          strategy: 'direct',
+          attempt: 1,
+          fallback: false,
+          generationId: 'gen-1',
+        },
+      }),
+    );
 
-    // Assert
-    expect(read('r1').response).toEqual({
+    // Assert — enriched record carries the classified label, routing and tokens.
+    expect(read('r1').response).toMatchObject({
       status: 200,
+      label: 'HIT',
+      provider: 'Novita',
+      generationId: 'gen-1',
       cacheRead: 9500,
       cacheCreate: 500,
       inputTokens: 10000,
@@ -217,9 +248,9 @@ describe('dumpResponse', () => {
     });
   });
 
-  it('records zero hitPct when there are no input tokens', () => {
+  it('records zero hitPct when there are no input tokens', async () => {
     // Arrange
-    dumpRequest({
+    const path = dumpRequest({
       reqId: 'r2',
       method: 'POST',
       path: '/v1/messages',
@@ -228,16 +259,23 @@ describe('dumpResponse', () => {
     });
 
     // Act
-    dumpResponse('r2', 200, { cacheRead: 0, cacheCreate: 0, inputTokens: 0 });
+    await dumpResponse(
+      obs({
+        reqId: 'r2',
+        dumpPath: path,
+        usage: { present: true, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'MISS', type: 'main', hitPct: 0 },
+      }),
+    );
 
     // Assert
     const response = read('r2').response as { hitPct: number };
     expect(response.hitPct).toBe(0);
   });
 
-  it('records status even when usage is undefined', () => {
+  it('records status and null routing when usage is absent (NOUSAGE)', async () => {
     // Arrange
-    dumpRequest({
+    const path = dumpRequest({
       reqId: 'r3',
       method: 'POST',
       path: '/v1/messages',
@@ -245,26 +283,87 @@ describe('dumpResponse', () => {
       forwardBody: undefined,
     });
 
-    // Act
-    dumpResponse('r3', 504, undefined);
+    // Act — no usage parsed upstream; outcome collapses to NOUSAGE with zeroed tokens.
+    await dumpResponse(
+      obs({
+        reqId: 'r3',
+        dumpPath: path,
+        status: 504,
+        usage: { present: false, inputTokens: 0, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'NOUSAGE', type: 'main', hitPct: 0 },
+      }),
+    );
 
     // Assert
-    expect(read('r3').response).toEqual({
+    expect(read('r3').response).toMatchObject({
       status: 504,
+      label: 'NOUSAGE',
       cacheRead: 0,
       cacheCreate: 0,
       inputTokens: 0,
       hitPct: 0,
+      provider: null,
     });
   });
 
-  it('is a no-op when no matching request file exists', () => {
+  it('is a no-op when no matching request file exists', async () => {
     // Arrange — no prior dumpRequest for "ghost"
 
     // Act
-    dumpResponse('ghost', 200, { cacheRead: 1, cacheCreate: 0, inputTokens: 10 });
+    await dumpResponse(obs({ reqId: 'ghost' }));
 
     // Assert
     expect(readdirSync(dir)).toHaveLength(0);
+  });
+
+  it('enriches each file by its own dumpPath — no cross-talk on a reqId collision', async () => {
+    // Arrange — two requests reuse the same 8-hex reqId (birthday collision).
+    // Each carries its OWN dumpPath (threaded from dumpRequest), so a response
+    // must enrich its own file, never the other request's, regardless of reqId.
+    const pathA = dumpRequest({
+      reqId: 'dup',
+      method: 'POST',
+      path: '/v1/messages',
+      model: 'A',
+      forwardBody: undefined,
+    });
+    const pathB = dumpRequest({
+      reqId: 'dup',
+      method: 'POST',
+      path: '/v1/messages',
+      model: 'B',
+      forwardBody: undefined,
+    });
+    expect(pathA).toBeDefined();
+    expect(pathB).toBeDefined();
+    expect(pathA).not.toBe(pathB);
+
+    // Act — A's response (HIT) then B's response (MISS), same reqId.
+    await dumpResponse(
+      obs({
+        reqId: 'dup',
+        dumpPath: pathA,
+        usage: { present: true, inputTokens: 100, cacheRead: 90, cacheCreate: 0 },
+        outcome: { label: 'HIT', type: 'main', hitPct: 90 },
+      }),
+    );
+    await dumpResponse(
+      obs({
+        reqId: 'dup',
+        dumpPath: pathB,
+        usage: { present: true, inputTokens: 100, cacheRead: 0, cacheCreate: 0 },
+        outcome: { label: 'MISS', type: 'main', hitPct: 0 },
+      }),
+    );
+
+    // Assert — each file carries its own response; no contamination.
+    const recA = JSON.parse(readFileSync(pathA as string, 'utf-8')) as {
+      response: { label: string };
+    };
+    const recB = JSON.parse(readFileSync(pathB as string, 'utf-8')) as {
+      response: { label: string };
+    };
+    expect(recA.response.label).toBe('HIT');
+    expect(recB.response.label).toBe('MISS');
   });
 });

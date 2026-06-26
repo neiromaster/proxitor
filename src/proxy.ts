@@ -14,6 +14,7 @@ import { parseBody } from './proxy/middleware/parse-body.js';
 import { readBody } from './proxy/middleware/read-body.js';
 import { resolveConfig } from './proxy/middleware/resolve-config.js';
 import { setupRequest } from './proxy/middleware/setup-request.js';
+import { createObservability } from './proxy/observability/observability.js';
 import { INJECT_PATHS } from './proxy/paths.js';
 
 const injectChain = [
@@ -31,8 +32,14 @@ export function createProxyServer(
 ): ServerType {
   const app = new Hono<ProxyEnv>();
 
+  const observability = createObservability(source.get());
+  // Keep the classifier threshold and session-tracker sizing live-reloading
+  // with the config (otherwise they're pinned at startup).
+  source.subscribe(config => observability.reconfigure(config));
+
   app.use('*', async (c, next) => {
     c.set('config', source.get());
+    c.set('observability', observability);
     await next();
   });
 

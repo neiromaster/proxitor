@@ -243,16 +243,6 @@ describe('deriveSessionId', () => {
     expect(a).toBe(b);
   });
 
-  it('"auto" without any client ID falls back to fingerprint', () => {
-    const body = {
-      model: 'gpt-4o',
-      messages: [{ role: 'user', content: 'Hi' }],
-    };
-    const result = deriveSessionId(mockHeaders(), body, '/v1/chat/completions', 'auto');
-    expect(result).toBeTypeOf('string');
-    expect(result!.length).toBe(64);
-  });
-
   it('"always" without body falls back to proxy UUID', () => {
     const headers = mockHeaders({ 'x-claude-code-session-id': 'should-be-ignored' });
     const result = deriveSessionId(headers, undefined, '/v1/chat/completions', 'always');

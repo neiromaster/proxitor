@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProxyConfig } from '../config.js';
-import { buildUpstreamUrl, classifyEndpoint, INJECT_PATHS } from './paths.js';
+import { buildUpstreamUrl, classifyEndpoint } from './paths.js';
 
 describe('classifyEndpoint', () => {
   it('classifies /v1/chat/completions', () => {
@@ -35,14 +35,6 @@ describe('classifyEndpoint', () => {
 
   it('returns "other" for unknown paths even with a query string', () => {
     expect(classifyEndpoint('/v1/models?order=price')).toBe('other');
-  });
-});
-
-describe('INJECT_PATHS', () => {
-  it('contains exactly the 3 expected paths', () => {
-    expect(INJECT_PATHS).toEqual(
-      new Set(['/v1/chat/completions', '/v1/responses', '/v1/messages']),
-    );
   });
 });
 

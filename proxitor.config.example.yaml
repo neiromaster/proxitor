@@ -125,3 +125,18 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 
 # Enable verbose logging
 verbose: false
+
+# Cache observability: per-request cache-outcome logging and optional body dumps.
+# Every proxied request logs an outcome line (HIT/PARTIAL/MISS/COLD/NOUSAGE with
+# hit %) at info level. Set PROXITOR_DUMP_BODY=1 to additionally write paired
+# request+response dumps (with provider routing metadata) to the dump directory.
+# observability:
+#   # Send the x-openrouter-metadata header to capture provider routing. Default true.
+#   routerMetadata: true
+#   # hitPct >= this counts as a full HIT (otherwise PARTIAL). Default 80.
+#   hitThreshold: 80
+#   # A request with no tools and max_tokens <= this is classified as a [side] call.
+#   sideMaxTokens: 4096
+#   # Bounded LRU of remembered sessions for warm/cold detection. Defaults: 4096 / 10m.
+#   sessionMaxEntries: 4096
+#   sessionTtlMs: 600000

@@ -440,6 +440,7 @@ describe('resolveModelConfig', () => {
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
     normalizeVolatileSystem: false,
+    observability: { ...DEFAULTS.observability },
     provider: { only: 'deepinfra' },
     headers: { 'X-Global': 'global-value' },
   };
@@ -826,6 +827,7 @@ describe('cacheControl and sessionId config', () => {
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
     normalizeVolatileSystem: false,
+    observability: { ...DEFAULTS.observability },
   };
 
   it('accepts cacheControl: auto', () => {

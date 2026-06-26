@@ -68,6 +68,13 @@ function withJsonContentType(headers: Record<string, string>): Record<string, st
   return { ...headers, 'content-type': 'application/json' };
 }
 
+export function withRouterMetadata(
+  headers: Record<string, string>,
+  enabled: boolean,
+): Record<string, string> {
+  return enabled ? { ...headers, 'x-openrouter-metadata': 'enabled' } : headers;
+}
+
 export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
   c.set(
     'forwardBody',
@@ -93,6 +100,8 @@ export const buildUpstreamReq = createMiddleware<ProxyEnv>(async (c, next) => {
   if (c.var.bodyMutated) {
     headers = withJsonContentType(headers);
   }
+
+  headers = withRouterMetadata(headers, c.var.config.observability.routerMetadata);
 
   c.set('upstreamHeaders', headers);
 
