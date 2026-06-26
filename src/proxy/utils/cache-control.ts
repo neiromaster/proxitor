@@ -115,15 +115,11 @@ export function rewriteBlockTtls(
   const messages = body.messages as Record<string, unknown>[] | undefined;
   for (const m of messages ?? []) {
     if (m === null || typeof m !== 'object' || Array.isArray(m)) continue;
-    // Message-level cache_control (openrouter/openai convention) lives directly
-    // on the message object, not inside its content blocks — rewrite it before
-    // descending, else a client's ttl-less breakpoint (5m) survives alongside
-    // rewritten 1h breakpoints and Anthropic rejects "1h after 5m".
+    // Message-level cache_control (on the message and on tool_calls) is a sibling
+    // of content, not a block inside it — rewrite it too, else its 5m breakpoint
+    // survives next to rewritten 1h ones → Anthropic "1h after 5m".
     rewriteNode(m);
     visitBlocks(m.content);
-    // OpenAI-format tool_calls are a sibling of content; a cache_control here is a
-    // breakpoint too. Left unrewritten it stays 5m ahead of the next tool result's
-    // 1h breakpoint → same "1h after 5m" rejection.
     visitBlocks(m.tool_calls);
   }
 

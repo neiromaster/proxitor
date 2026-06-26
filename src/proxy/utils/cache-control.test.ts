@@ -240,10 +240,8 @@ describe('rewriteBlockTtls', () => {
   });
 
   it('rewrites message-level cache_control (openrouter/openai convention)', () => {
-    // cache_control sits directly on the message object (alongside content), not
-    // inside the content blocks — the openrouter/OpenAI chat-completions convention.
-    // Without rewriting it, a client's ttl-less {type:'ephemeral'} (5m) survives
-    // next to rewritten 1h breakpoints → Anthropic 400 "1h after 5m".
+    // Message-level cache_control (alongside content, not in a content block) must
+    // be rewritten, else its 5m breakpoint survives next to 1h ones → 400 "1h after 5m".
     const body = {
       messages: [
         { role: 'user', cache_control: { type: 'ephemeral' }, content: 'first' },
@@ -265,10 +263,8 @@ describe('rewriteBlockTtls', () => {
   });
 
   it('rewrites cache_control on assistant tool_calls (openai/openrouter tool_use)', () => {
-    // A client may mark a tool_call with cache_control. It lives in
-    // messages[i].tool_calls, a sibling of content — not inside content. Leaving it
-    // unrewritten yields a 5m breakpoint on the tool_call ahead of the rewritten 1h
-    // breakpoint on the following tool result → Anthropic 400 "1h after 5m".
+    // cache_control on a tool_call (sibling of content) must be rewritten too, else
+    // its 5m breakpoint leads the next tool result's 1h → 400 "1h after 5m".
     const body = {
       messages: [
         {
@@ -295,9 +291,7 @@ describe('rewriteBlockTtls', () => {
   });
 
   it('leaves message-level cache_control untouched when TTL is skip', () => {
-    // Design choice: with rewriting disabled, client ttls pass through verbatim —
-    // even if the resulting ordering is one Anthropic rejects. Rewriting only
-    // repairs ordering when enabled; it must not silently mutate in skip mode.
+    // Skip mode passes client ttls through verbatim — rewriting must not mutate when disabled.
     const cc = { type: 'ephemeral' };
     const body = { messages: [{ role: 'user', cache_control: cc, content: 'x' }] };
     const mutated = rewriteBlockTtls(body, 'skip', true);

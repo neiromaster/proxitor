@@ -9,10 +9,7 @@ import { editNormalizeResponses } from './override-levers.js';
 
 type LeverValue = 'normalizeResponses';
 
-/**
- * Compatibility fixes that repair request bodies OpenRouter would otherwise
- * reject. Mirrors the caching-menu lever table so future fixes slot in here.
- */
+/** Compatibility fixes for request bodies OpenRouter rejects. Mirrors caching-menu's lever table. */
 const FIXES_LEVERS: ReadonlyArray<{
   value: LeverValue;
   label: string;
@@ -78,7 +75,7 @@ export async function perModelFixesMenu(opts: {
     renderNote: () => `normalizeResponses: ${current.normalizeResponses ?? '(inherit)'}`,
     onLever: async lever => {
       const next = await lever.perModel(current);
-      // Skip no-op writes; instant-save still fires on real changes.
+      // Skip no-op writes.
       if (!overridesEqual(next, current)) {
         setModelOverride(opts.configPath, opts.modelKey, next);
         current = next;

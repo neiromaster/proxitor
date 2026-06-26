@@ -55,9 +55,8 @@ function tagMessageItem(obj: Record<string, unknown>): boolean {
 }
 
 /**
- * Lift a `role: "system"` item — OpenRouter Responses has no system role in
- * `input`. Its text moves to top-level `instructions`; if no text is
- * extractable the item is tagged and kept so it still parses.
+ * Lift a `role: "system"` item: OpenRouter Responses has no system role in
+ * `input`, so its text moves to `instructions` (or is tagged and kept if empty).
  */
 function handleSystemItem(obj: Record<string, unknown>, state: NormalizerState): void {
   const text = contentToText(obj.content);
@@ -72,13 +71,11 @@ function handleSystemItem(obj: Record<string, unknown>, state: NormalizerState):
 }
 
 /**
- * Make a Responses-api body match OpenRouter's strict `input` schema. OpenRouter
- * validates each `input` item as a union discriminated by `type`; clients that
- * omit `type` (legal on OpenAI, which infers "message") are rejected with
- * `invalid_prompt | Invalid Responses API request`. Also relocates
- * `role: "system"` items to the top-level `instructions` field and synthesizes
- * the `id`/`status` OpenRouter requires on assistant history items. Idempotent;
- * returns whether the body changed.
+ * Make a Responses body satisfy OpenRouter's `input` schema. Each item is a
+ * `type`-discriminated union, so items missing `type` (OpenAI infers "message")
+ * are rejected as `invalid_prompt`. Also relocates `role: "system"` items to
+ * `instructions` and synthesizes the `id`/`status` assistant history requires.
+ * Idempotent; returns whether the body changed.
  */
 export function normalizeResponsesInput(body: Record<string, unknown>): boolean {
   const input = body.input;

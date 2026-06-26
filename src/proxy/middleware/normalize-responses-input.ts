@@ -5,10 +5,7 @@ import {
   shouldNormalizeResponses,
 } from '../utils/responses-input.js';
 
-/**
- * Normalize Responses-API `input` so it satisfies OpenRouter's strict schema —
- * see normalizeResponsesInput. No-op for chat-completions / messages.
- */
+/** Normalize Responses-API input for OpenRouter's schema (see normalizeResponsesInput); no-op for chat/messages. */
 export const normalizeResponsesInputMiddleware = createMiddleware<ProxyEnv>(
   async (c, next) => {
     const parsedBody: ParsedRequestBody | undefined = c.var.parsedBody;
