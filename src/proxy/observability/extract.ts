@@ -1,12 +1,10 @@
-// src/proxy/observability/extract.ts
 import type { Extracted, ExtractedUsage, RoutingMetadata } from './types.js';
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-/** First non-empty string among the candidates — resolves a generation id that
- * may live at the root or nested under message/response SSE containers. */
+/** First non-empty candidate — the generation id may live at the root or under message/response. */
 function firstStringId(vals: unknown[]): string | undefined {
   for (const v of vals) {
     if (typeof v === 'string' && v.length > 0) return v;
@@ -63,9 +61,8 @@ export function parseUsage(parsed: unknown): ExtractedUsage | undefined {
     cacheRead: 0,
     cacheCreate: 0,
   };
-  // Route by NUMERIC Anthropic fields, not mere key presence: a key set to
-  // null/string would otherwise take the Anthropic branch (which then no-ops)
-  // and skip the OpenAI cached_tokens path — losing a real cache hit.
+  // Route by NUMERIC Anthropic fields, not key presence: a null/string value
+  // would take the (no-op) Anthropic branch and skip the OpenAI cache hit.
   const cr = num(usage.cache_read_input_tokens);
   const cc = num(usage.cache_creation_input_tokens);
   if (cr !== undefined || cc !== undefined) applyAnthropic(usage, r, cr, cc);
@@ -73,9 +70,7 @@ export function parseUsage(parsed: unknown): ExtractedUsage | undefined {
   return r;
 }
 
-/** Resolve the provider from endpoints[].available (selected first) then the
- * last attempts[] entry. An empty/absent provider string defers to the next
- * source — '' is treated as absent, not a real value. */
+/** Provider from endpoints[].available (selected first), then the last attempt; '' is absent. */
 function resolveProvider(meta: Record<string, unknown>): string | undefined {
   const endpoints = meta.endpoints as
     | { available?: Array<{ provider?: string; selected?: boolean }> }
@@ -106,9 +101,8 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
   const provider = resolveProvider(meta);
   if (!provider) return undefined;
   const attempt = num(meta.attempt) ?? 1;
-  // The generation id sits at the root for Chat Completions, but under
-  // message.id / response.id for Anthropic / Responses-API SSE shapes — and the
-  // metadata event isn't always the one carrying the root id.
+  // The id sits at the root for Chat Completions but under message/response for
+  // Anthropic/Responses SSE — and not always in the metadata event.
   const generationId = firstStringId([
     root.id,
     (root.message as Record<string, unknown> | undefined)?.id,
@@ -127,10 +121,8 @@ export function parseRouting(parsed: unknown): RoutingMetadata | undefined {
 function fold(parsed: unknown, acc: Extracted): void {
   const u = parseUsage(parsed);
   if (u) {
-    // Field-level merge: last non-zero value wins per field. inputTokens is
-    // updated only when the carrying event had an input-side base, so a
-    // terminal Anthropic message_delta (output-only, or cache fields without
-    // input_tokens) cannot clobber the authoritative message_start usage.
+    // Last non-zero value wins per field, so an output-only message_delta can't
+    // clobber the authoritative message_start usage.
     if (!acc.usage) {
       acc.usage = { ...u };
     } else {
@@ -180,18 +172,14 @@ export function extractFromFullText(text: string, isSSE: boolean): Extracted {
 export class SseUsageAccumulator {
   private buffer = '';
   private offset = 0;
-  // Explicit `boolean` (not inferred from `= false`) so Biome's
-  // noUnnecessaryConditions doesn't treat this as a literal-false field and
-  // flag the guards below — result() flips it to true, which makes both checks
-  // load-bearing for the one-shot contract.
+  // Explicit `boolean` so Biome doesn't treat this as literal-false and flag
+  // the one-shot guards below.
   private done: boolean = false;
   private readonly decoder = new TextDecoder();
   private readonly acc: Extracted = {};
 
   feed(chunk: Uint8Array): void {
-    // result() finalizes this stream; a stray late chunk (e.g. a delayed write
-    // after finalize) must be ignored rather than folded into a reset buffer
-    // with an already-flushed decoder.
+    // Ignore late chunks after result() — the buffer/decoder are already flushed.
     if (this.done) return;
     this.buffer += this.decoder.decode(chunk, { stream: true });
     let nl = this.buffer.indexOf('\n', this.offset);
@@ -200,9 +188,8 @@ export class SseUsageAccumulator {
       this.offset = nl + 1;
       nl = this.buffer.indexOf('\n', this.offset);
     }
-    // Drop the processed prefix once per chunk so the buffer holds only the
-    // trailing partial line. Without this, slice(nl + 1) in the loop would
-    // rebuild the whole tail on every newline — O(n*lines) per chunk.
+    // Drop the processed prefix so the buffer holds only the trailing partial
+    // line (else the loop rebuilds the whole tail per newline → O(n·lines)).
     if (this.offset > 0) {
       this.buffer = this.buffer.slice(this.offset);
       this.offset = 0;
@@ -210,9 +197,7 @@ export class SseUsageAccumulator {
   }
 
   result(): Extracted {
-    // One-shot: a repeated finalize (the stream's pull/cancel/error paths can
-    // each call it) returns the same snapshot without re-processing the buffer
-    // or re-flushing an already-flushed decoder.
+    // One-shot: pull/cancel/error may each call this; a repeat returns the same snapshot.
     if (this.done) return this.acc;
     this.done = true;
     this.buffer += this.decoder.decode(); // flush decoder

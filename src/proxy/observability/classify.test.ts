@@ -1,4 +1,3 @@
-// src/proxy/observability/classify.test.ts
 import { describe, expect, it } from 'vitest';
 import { classifyCacheOutcome, classifyRequestType } from './classify.js';
 import type { ExtractedUsage } from './types.js';

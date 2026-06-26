@@ -1,4 +1,3 @@
-// src/proxy/cache-logging.test.ts
 import { describe, expect, it } from 'vitest';
 import { buildUpstreamResponseWithLogging } from './cache-logging.js';
 import { Observability } from './observability/observability.js';

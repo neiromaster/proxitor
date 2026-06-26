@@ -1,5 +1,3 @@
-// src/proxy/observability/sinks.ts
-
 import { logger, withReq } from '../../logger.js';
 import { dumpEnabled, dumpResponse } from '../body-dump.js';
 import type { CacheLabel, CacheObservation } from './types.js';
@@ -29,16 +27,14 @@ export function formatLine(obs: CacheObservation, useColor = false): string {
   if (obs.usage.cacheCreate > 0) parts.push(`write ${obs.usage.cacheCreate}`);
   if (obs.usage.present) parts.push(`in ${obs.usage.inputTokens}`);
   if (obs.routing) parts.push(`provider=${obs.routing.provider}`);
-  // model may be empty for non-model routes (e.g. the catch-all); omit it
-  // rather than emit a stray empty token that breaks whitespace-delimited logs.
+  // Omit an empty model (non-model routes) — a stray token breaks log parsing.
   if (obs.model) parts.push(obs.model);
   parts.push(`[${obs.requestType}]`);
   return withReq(obs.reqId, parts.join('  '));
 }
 
 export class LiveLineSink implements ObservationSink {
-  // Resolved at emit time, not construction, so a stdout redirection or TTY
-  // attachment after startup is honored (avoids leaking ANSI into piped files).
+  // Resolve at emit time so a redirection/TTY change after startup is honored.
   private readonly useColor: () => boolean;
   constructor(useColor: () => boolean = () => process.stdout.isTTY === true) {
     this.useColor = useColor;
@@ -48,16 +44,13 @@ export class LiveLineSink implements ObservationSink {
   }
 }
 
-/** Enriches the request dump file with the classified response observation.
- * The read+write is async (libuv thread pool) and fire-and-forget, so a dump
- * can't block other in-flight responses on the streaming finalize path. A
- * small concurrency cap prevents a burst of responses from saturating the
- * thread pool with dozens of simultaneous fs operations. */
+/** Enriches the request dump with the response observation. Fire-and-forget
+ * with a concurrency cap so a burst of responses can't saturate the fs thread
+ * pool and stall the streaming finalize path. */
 export type DumpSinkDeps = {
   maxConcurrent?: number;
-  /** Upper bound on the waiter queue. Beyond it a dump is dropped (best-effort)
-   * so a sustained burst of slowly-streaming responses that fs-enrich slower
-   * than they finalize can't grow the queue without limit. */
+  /** Upper bound on the waiter queue; beyond it a dump is dropped so a burst
+   * can't grow the queue without limit. */
   maxWaiters?: number;
   /** Injectable async work + gate so the queue cap is unit-testable without fs. */
   dump?: (obs: CacheObservation) => Promise<void>;
@@ -80,8 +73,7 @@ export class DumpSink implements ObservationSink {
   }
 
   emit(obs: CacheObservation): void {
-    // Gate per-call (not at construction) so a flag flip after startup stays
-    // consistent with dumpRequest — and stays a cheap no-op when dumping is off.
+    // Gate per-call so a flag flip stays consistent with dumpRequest.
     if (!this.enabled()) return;
     const run = (): void => {
       this.inflight += 1;
@@ -102,8 +94,7 @@ export class DumpSink implements ObservationSink {
     };
     if (this.inflight < this.maxConcurrent) run();
     else if (this.waiters.length < this.maxWaiters) this.waiters.push(run);
-    // Queue full — drop the dump and log so the loss is observable. Dumping is
-    // best-effort; bounding the queue protects memory under a sustained burst.
+    // Queue full — drop the dump (best-effort) and log the loss.
     else logger.debug(withReq(obs.reqId, 'DumpSink queue full — dump dropped'));
   }
 }

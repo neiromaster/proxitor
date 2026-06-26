@@ -1,4 +1,3 @@
-// src/proxy/observability/observability.ts
 import type { ObservabilityConfig } from '../../config-schema.js';
 import { logger, withReq } from '../../logger.js';
 import { classifyCacheOutcome } from './classify.js';
@@ -32,10 +31,9 @@ export class Observability {
     this.hitThresholdPct = hitThresholdPct;
   }
 
-  /** Classify and dispatch one observation to every sink. Never throws — the
-   * response pipeline calls this on multiple termination paths (stream finalize,
-   * HEAD, non-logged content type, error/abort branches), so a classification
-   * failure must degrade to a debug log, never escape to the client. */
+  /** Classify and dispatch one observation to every sink. Never throws: the
+   * response pipeline calls this on many termination paths, so a failure must
+   * degrade to a debug log, not escape to the client. */
   observe(
     req: RequestContext,
     extracted: { usage?: ExtractedUsage; routing?: RoutingMetadata },
@@ -66,8 +64,7 @@ export class Observability {
         outcome,
         routing: extracted.routing,
       };
-      // Isolate each sink so a throwing sink (e.g. a logger transport failure)
-      // doesn't silently kill the remaining sinks for this observation.
+      // Isolate sinks: one throwing sink must not kill the rest for this observation.
       for (const sink of this.sinks) {
         try {
           sink.emit(obs);
@@ -90,11 +87,8 @@ export class Observability {
     }
   }
 
-  /** Apply a hot-reloaded config: update the hit threshold and resize the
-   * session tracker (capacity/TTL) in place. Called by the config-source
-   * subscriber on every reload — must not discard remembered sessions, or an
-   * unrelated edit (or a no-op re-save) misclassifies the next active request
-   * as COLD. */
+  /** Apply a hot-reloaded config in place — must not discard remembered
+   * sessions, or an unrelated reload misclassifies the next request as COLD. */
   reconfigure(config: { observability: ObservabilityRuntimeConfig }): void {
     const o = config.observability;
     this.hitThresholdPct = o.hitThreshold;
@@ -114,10 +108,8 @@ export function createObservability(
     maxEntries: o.sessionMaxEntries,
     ttlMs: o.sessionTtlMs,
   });
-  // DumpSink is always wired: dumpResponse re-checks dumpEnabled() per call, so
-  // a flag flip after startup stays consistent with dumpRequest (which also
-  // checks per call) — gating the sink only at construction would orphan every
-  // request dump if PROXITOR_DUMP_BODY were enabled later.
+  // DumpSink is always wired; both it and dumpRequest re-check dumpEnabled()
+  // per call, so a flag flip after startup doesn't orphan later request dumps.
   const built: ObservationSink[] = [new LiveLineSink(), new DumpSink()];
   return new Observability(tracker, sinks ?? built, o.hitThreshold);
 }

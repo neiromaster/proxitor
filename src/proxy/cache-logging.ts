@@ -1,5 +1,3 @@
-// src/proxy/cache-logging.ts
-
 import { logger, withReq } from '../logger.js';
 import { buildResponseHeaders } from './headers.js';
 import { extractFromFullText, SseUsageAccumulator } from './observability/extract.js';
@@ -12,17 +10,9 @@ export type LoggingContext = {
 };
 
 /**
- * Wraps the upstream body in a ReadableStream that observes usage/routing once,
- * on ANY termination path: clean close, client cancel, OR an upstream body
- * error. A bare TransformStream only runs flush() (clean close) and cancel()
- * (downstream cancel) — an upstream stream error skips BOTH, orphaning the
- * dump and losing the cache line. The manual pump below unifies all three
- * paths through finalize().
- *
- * SSE folds in O(1) memory via the accumulator. Non-SSE (single JSON) responses
- * collect chunk references — the same buffers forwarded to the client — and
- * decode them once at finalize, rather than holding a UTF-16 string copy
- * alongside the streamed bytes for the whole response.
+ * Wraps the upstream body so usage/routing is observed once on ANY termination
+ * path (clean close, client cancel, upstream error) via finalize() — a bare
+ * TransformStream skips flush() on upstream errors, orphaning the dump.
  */
 function createLoggingStream(
   source: ReadableStream<Uint8Array>,
@@ -76,15 +66,13 @@ function createLoggingStream(
           controller.enqueue(value);
         }
       } catch (err) {
-        // Upstream body errored mid-stream — emit the partial observation
-        // before propagating the error to the client.
+        // Emit the partial observation before propagating the upstream error.
         finalize();
         controller.error(err);
       }
     },
     cancel() {
-      // Downstream (client) cancelled — emit the partial observation and
-      // release the upstream reader.
+      // Client cancelled — observe the partial result, then release the reader.
       finalize();
       void reader.cancel().catch(() => {
         /* upstream already gone */
@@ -112,8 +100,7 @@ export function buildUpstreamResponseWithLogging(
     lower.includes('application/json') || lower.includes('text/event-stream');
 
   if (!shouldLog) {
-    // Non-observability content type — forward as-is but still observe once so
-    // the dump is completed and a NOUSAGE line is emitted (no usage to parse).
+    // Forward as-is but still observe once, so the dump completes with NOUSAGE.
     ctx.observability.observe(ctx.reqCtx, {}, upstream.status);
     return new Response(upstream.body, { status: upstream.status, headers });
   }

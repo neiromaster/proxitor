@@ -33,9 +33,8 @@ export function createProxyServer(
   const app = new Hono<ProxyEnv>();
 
   const observability = createObservability(source.get());
-  // Hot-reload: keep the classifier threshold and session-tracker sizing in
-  // sync with config edits (otherwise they're pinned at startup while sibling
-  // observability knobs like routerMetadata/sideMaxTokens live-reload).
+  // Keep the classifier threshold and session-tracker sizing live-reloading
+  // with the config (otherwise they're pinned at startup).
   source.subscribe(config => observability.reconfigure(config));
 
   app.use('*', async (c, next) => {

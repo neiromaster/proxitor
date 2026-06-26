@@ -1,4 +1,3 @@
-// src/proxy/observability/extract.test.ts
 import { describe, expect, it } from 'vitest';
 import {
   extractFromFullText,

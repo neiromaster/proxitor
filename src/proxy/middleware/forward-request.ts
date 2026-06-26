@@ -42,9 +42,8 @@ export function buildErrorResponse(
     logger.warn(withReq(ctx.reqId, `Aborted: ${ctx.method} ${ctx.path}`));
     return new Response(null, { status: 499 });
   }
-  // Truly unexpected error — record the attempt (status 500, no body) before
-  // re-throwing, so the app error handler still logs it but no request is
-  // silently lost from observability and no dump is left orphaned.
+  // Unexpected error — observe (status 500) before re-throwing so the attempt
+  // isn't lost from observability and the dump isn't orphaned.
   observeUnhandled?.();
   throw err;
 }
@@ -70,8 +69,7 @@ async function buildUpstreamErrorResponse(
     ctx.method === 'HEAD'
       ? new Response(null, { status: upstream.status, headers: responseHeaders })
       : new Response(bodyText, { status: upstream.status, headers: responseHeaders });
-  // Some providers return a usage object inside 4xx/5xx error bodies — preserve it
-  // instead of collapsing every error response to NOUSAGE.
+  // Some providers include usage in error bodies — preserve it, not NOUSAGE.
   const extracted = extractFromFullText(bodyText, false);
   return { response, extracted };
 }
@@ -102,21 +100,18 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
     ),
   );
 
-  // dumpRequest writes the request half of the dump and returns its file path;
-  // threading it through reqCtx lets the DumpSink enrich that exact file later
-  // without a reqId→path lookup (reqId is only 32 bits, so such a map collides).
+  // dumpRequest returns the file path; threading it through reqCtx lets the
+  // DumpSink enrich that file without a collision-prone reqId→path lookup.
   const dumpPath = dumpEnabled()
     ? dumpRequest({ reqId, method, path, model: c.var.modelName, forwardBody })
     : undefined;
 
-  // Request context for observability — computed once, before the fetch, so
-  // every termination path (success, HTTP error, client abort, network
-  // failure) can observe and no request dump is left orphaned.
+  // Compute once before the fetch so every termination path can observe and no
+  // dump is orphaned.
   const parsedBody = c.var.parsedBody;
   const toolsCount = Array.isArray(parsedBody?.tools) ? parsedBody.tools.length : 0;
-  // Chat Completions uses max_tokens/max_completion_tokens; the Responses API
-  // uses max_output_tokens — resolve across all three so /v1/responses side
-  // calls classify correctly instead of defaulting to [main].
+  // Resolve across max_tokens / max_completion_tokens / max_output_tokens so
+  // /v1/responses side calls classify correctly.
   const maxTokens =
     parsedBody?.max_tokens ??
     parsedBody?.max_completion_tokens ??
@@ -146,9 +141,8 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
       ...(forwardBody ? DUPLEX_HALF : {}),
     });
   } catch (err) {
-    // Pre-response failure (client abort → 499, upstream unreachable → 502):
-    // observe so the dump isn't orphaned and the attempt is recorded. No
-    // response body is available → collapses to NOUSAGE.
+    // Pre-response failure (abort → 499, unreachable → 502): no body, so the
+    // observation collapses to NOUSAGE — observe to avoid an orphaned dump.
     const response = buildErrorResponse(err, ctx, () =>
       observability.observe(reqCtx, {}, 500),
     );
@@ -159,11 +153,9 @@ export const forwardRequest = createMiddleware<ProxyEnv>(async c => {
   }
 
   if (upstream.status >= 400) {
-    // Observe error responses too — extract usage from the error body so a
-    // failed attempt that still reports cache tokens isn't forced to NOUSAGE.
-    // The body read is guarded: if it throws (upstream dropped mid-error-body),
-    // we still observe with an empty extraction and return the real upstream
-    // status — never a synthetic proxy 500, never an orphaned dump.
+    // Observe error responses, extracting any usage from the body. The read is
+    // guarded: on failure we still observe empty and return the real status —
+    // never a synthetic 500, never an orphaned dump.
     let extracted: Extracted = {};
     let response: Response;
     try {

@@ -58,9 +58,8 @@ function parseForwardBody(body: ArrayBuffer | undefined): unknown {
   }
 }
 
-/** `response` is filled later by dumpResponse, once the upstream stream completes.
- * Returns the dump file path (threaded through the request context to the
- * DumpSink) so the response half can locate it without a reqId→path lookup. */
+/** Writes the request half; `response` is filled later by dumpResponse. Returns
+ * the file path so the response half can find it without a reqId→path lookup. */
 export function dumpRequest(meta: DumpRequestMeta): string | undefined {
   if (!dumpEnabled()) return undefined;
   ensureDir(dumpDir());
@@ -86,10 +85,8 @@ export async function dumpResponse(obs: CacheObservation): Promise<void> {
   try {
     const record = JSON.parse(await readFile(path, 'utf-8')) as Record<string, unknown>;
     const r = obs.routing;
-    // routing is optional. When present its required fields are non-null, so we
-    // spread them directly; when absent we serialize explicit nulls so the dump
-    // always carries a complete routing block (and stays biome-clean — the
-    // non-optional RoutingMetadata fields can't be guarded with `?? null`).
+    // routing is optional; spread when present, serialize explicit nulls when
+    // absent so the dump always carries a complete (and biome-clean) block.
     record.response = {
       status: obs.status,
       label: obs.outcome.label,

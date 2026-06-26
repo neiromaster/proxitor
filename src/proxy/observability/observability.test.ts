@@ -1,4 +1,3 @@
-// src/proxy/observability/observability.test.ts
 import { describe, expect, it } from 'vitest';
 import { Observability } from './observability.js';
 import { SessionTracker } from './session-tracker.js';

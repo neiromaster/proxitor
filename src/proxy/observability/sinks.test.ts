@@ -1,4 +1,3 @@
-// src/proxy/observability/sinks.test.ts
 import { describe, expect, it, vi } from 'vitest';
 import { logger } from '../../logger.js';
 import { colorizeLabel, DumpSink, formatLine } from './sinks.js';

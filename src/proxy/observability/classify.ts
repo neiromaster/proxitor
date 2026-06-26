@@ -1,13 +1,11 @@
-// src/proxy/observability/classify.ts
 import type { CacheLabel, CacheOutcome, ExtractedUsage, RequestType } from './types.js';
 
 export function classifyRequestType(
   ctx: { toolsCount: number; maxTokens?: number },
   opts: { sideMaxTokens: number },
 ): RequestType {
-  // A missing OR non-positive budget (max_tokens: 0 / negative) carries no
-  // meaningful side-call signal — treat it as unbounded so a degenerate main
-  // turn isn't bucketed as [side]. Only a real positive small budget counts.
+  // A missing or non-positive budget is unbounded: only a small positive one
+  // signals a side call.
   const budget =
     ctx.maxTokens === undefined || ctx.maxTokens <= 0
       ? Number.POSITIVE_INFINITY
@@ -21,8 +19,7 @@ export function classifyCacheOutcome(
   opts: { hitThresholdPct: number },
 ): CacheOutcome {
   if (!usage.present) return { label: 'NOUSAGE', type: ctx.requestType, hitPct: 0 };
-  // Clamp at 100: a non-standard provider that reports cached tokens excluded
-  // from prompt_tokens can otherwise yield hitPct > 100 in logs and dumps.
+  // Clamp at 100: some providers report cacheRead > prompt_tokens.
   const raw = usage.inputTokens > 0 ? (usage.cacheRead / usage.inputTokens) * 100 : 0;
   const hitPct = Math.min(100, raw);
   let label: CacheLabel;
