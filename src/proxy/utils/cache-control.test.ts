@@ -239,6 +239,72 @@ describe('rewriteBlockTtls', () => {
     expect(body.tools[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
   });
 
+  it('rewrites message-level cache_control (openrouter/openai convention)', () => {
+    // cache_control sits directly on the message object (alongside content), not
+    // inside the content blocks — the openrouter/OpenAI chat-completions convention.
+    // Without rewriting it, a client's ttl-less {type:'ephemeral'} (5m) survives
+    // next to rewritten 1h breakpoints → Anthropic 400 "1h after 5m".
+    const body = {
+      messages: [
+        { role: 'user', cache_control: { type: 'ephemeral' }, content: 'first' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'second', cache_control: { type: 'ephemeral' } },
+          ],
+        },
+      ],
+    };
+    const mutated = rewriteBlockTtls(body, '1h', true);
+    expect(mutated).toBe(true);
+    const messages = body.messages as Record<string, unknown>[];
+    expect(messages[0]!.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(
+      (messages[1]!.content as { cache_control: unknown }[])[0]!.cache_control,
+    ).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+
+  it('rewrites cache_control on assistant tool_calls (openai/openrouter tool_use)', () => {
+    // A client may mark a tool_call with cache_control. It lives in
+    // messages[i].tool_calls, a sibling of content — not inside content. Leaving it
+    // unrewritten yields a 5m breakpoint on the tool_call ahead of the rewritten 1h
+    // breakpoint on the following tool result → Anthropic 400 "1h after 5m".
+    const body = {
+      messages: [
+        {
+          role: 'assistant',
+          content: 'calling tool',
+          tool_calls: [
+            {
+              id: 't1',
+              type: 'function',
+              cache_control: { type: 'ephemeral' },
+              function: { name: 'f', arguments: '{}' },
+            },
+          ],
+        },
+        { role: 'tool', cache_control: { type: 'ephemeral' }, content: 'result' },
+      ],
+    };
+    const mutated = rewriteBlockTtls(body, '1h', true);
+    expect(mutated).toBe(true);
+    const toolCall = (
+      body.messages[0] as { tool_calls: { cache_control?: { ttl?: string } }[] }
+    ).tool_calls[0];
+    expect(toolCall?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+
+  it('leaves message-level cache_control untouched when TTL is skip', () => {
+    // Design choice: with rewriting disabled, client ttls pass through verbatim —
+    // even if the resulting ordering is one Anthropic rejects. Rewriting only
+    // repairs ordering when enabled; it must not silently mutate in skip mode.
+    const cc = { type: 'ephemeral' };
+    const body = { messages: [{ role: 'user', cache_control: cc, content: 'x' }] };
+    const mutated = rewriteBlockTtls(body, 'skip', true);
+    expect(mutated).toBe(false);
+    expect((body.messages[0] as Record<string, unknown>).cache_control).toBe(cc);
+  });
+
   it('does not add new breakpoints — only touches existing cache_control', () => {
     const body = {
       system: [
