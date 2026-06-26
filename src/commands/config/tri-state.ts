@@ -4,6 +4,7 @@ import {
   askNormalizeVolatileSystem,
   askTriState,
   CACHE_HINTS,
+  NORMALIZE_RESPONSES_HINTS,
   REWRITE_HINTS,
   SESSION_HINTS,
 } from './prompts.js';
@@ -31,6 +32,22 @@ export async function collectSessionTriState(
   if (typeof sid === 'symbol') return null; // cancelled
   if (sid === 'reset') return { sessionId: { remove: true } };
   return { sessionId: { value: sid } };
+}
+
+export async function collectNormalizeResponsesTriState(
+  currentNr?: TriState,
+): Promise<{ normalizeResponses: ResolvedField<TriState> } | null> {
+  const nr = await askTriState(
+    'normalizeResponses mode',
+    currentNr,
+    NORMALIZE_RESPONSES_HINTS,
+    {
+      removable: true,
+    },
+  );
+  if (typeof nr === 'symbol') return null; // cancelled
+  if (nr === 'reset') return { normalizeResponses: { remove: true } };
+  return { normalizeResponses: { value: nr } };
 }
 
 /**

@@ -6,13 +6,14 @@ import { perModelCachingMenu } from './caching-menu.js';
 import { describeTtl } from './caching-summary.js';
 import { getModelOverrides, requireConfigPath, setModelOverride } from './config.js';
 import { overridesEqual } from './equality.js';
+import { perModelFixesMenu } from './fixes-menu.js';
 import {
   fetchProvidersForModel,
   selectProvidersByMode,
   selectRoutingMode,
 } from './providers.js';
 
-type EditField = 'provider' | 'caching' | 'done';
+type EditField = 'provider' | 'caching' | 'fixes' | 'done';
 
 function nvsHint(value: boolean | undefined): string {
   if (value === undefined) return '(inherit)';
@@ -30,6 +31,7 @@ function formatOverrideHint(override: ModelOverride | undefined): string {
   if (override.cacheControl) parts.push(`cache: ${override.cacheControl}`);
   if (override.normalizeVolatileSystem !== undefined)
     parts.push(`normalize: ${nvsHint(override.normalizeVolatileSystem)}`);
+  if (override.normalizeResponses) parts.push(`fix: ${override.normalizeResponses}`);
   if (override.headers) parts.push(`${Object.keys(override.headers).length} header(s)`);
   return parts.join(', ') || '(empty)';
 }
@@ -40,6 +42,10 @@ function formatCachingHint(current: ModelOverride): string {
   const sid = current.sessionId ?? 'inherit';
   const nvs = nvsHint(current.normalizeVolatileSystem);
   return `cc ${cc} · ttl ${ttl} · sid ${sid} · nvs ${nvs}`;
+}
+
+function formatFixesHint(current: ModelOverride): string {
+  return `normalizeResponses: ${current.normalizeResponses ?? 'inherit'}`;
 }
 
 async function editProvider(
@@ -110,6 +116,11 @@ export async function editOverrideCommand(
           label: '💾 Caching',
           hint: formatCachingHint(current),
         },
+        {
+          value: 'fixes',
+          label: '🛠 Fixes',
+          hint: formatFixesHint(current),
+        },
         { value: 'done', label: '✓ Done' },
       ],
     });
@@ -118,6 +129,15 @@ export async function editOverrideCommand(
     if (field === 'caching') {
       // Submenu self-persists; just refresh the local ref (no extra write).
       current = await perModelCachingMenu({
+        modelKey,
+        current,
+        configPath: resolvedConfigPath,
+      });
+      continue;
+    }
+
+    if (field === 'fixes') {
+      current = await perModelFixesMenu({
         modelKey,
         current,
         configPath: resolvedConfigPath,

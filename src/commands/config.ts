@@ -6,6 +6,7 @@ import { browseModelsCommand } from './config/browse.js';
 import { globalCachingMenu } from './config/caching-menu.js';
 import { connectionMenuCommand } from './config/connection.js';
 import { editOverrideCommand } from './config/edit.js';
+import { globalFixesMenu } from './config/fixes-menu.js';
 import { listOverridesCommand } from './config/list.js';
 import { removeOverrideCommand } from './config/remove.js';
 import { showConfigCommand } from './config/show.js';
@@ -22,6 +23,7 @@ export async function runConfigMenu(client: OpenRouterDataClient): Promise<void>
         { value: '_sep1', label: '── Global Settings ──', disabled: true },
         { value: 'connection', label: '🔑  API key & connection' },
         { value: 'caching', label: '💾  Caching' },
+        { value: 'fixes', label: '🛠  Fixes' },
         { value: '_sep2', label: '── Model Overrides ──', disabled: true },
         { value: 'add', label: '➕  Add model override' },
         { value: 'edit', label: '✏️   Edit model override' },
@@ -48,6 +50,9 @@ export async function runConfigMenu(client: OpenRouterDataClient): Promise<void>
         break;
       case 'caching':
         await globalCachingMenu();
+        break;
+      case 'fixes':
+        await globalFixesMenu();
         break;
       case 'add':
         await addOverrideCommand({ client });
