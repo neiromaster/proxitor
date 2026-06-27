@@ -56,18 +56,16 @@ function tagMessageItem(obj: Record<string, unknown>): boolean {
 
 /**
  * Lift a `role: "system"` item: OpenRouter Responses has no system role in
- * `input`, so its text moves to `instructions` (or is tagged and kept if empty).
+ * `input`, so its text moves to `instructions`. Items with no extractable text
+ * (image-only/empty) can't be represented there and are dropped — keeping them
+ * as `role: "system"` would reproduce the rejection this normalizer exists to fix.
  */
 function handleSystemItem(obj: Record<string, unknown>, state: NormalizerState): void {
   const text = contentToText(obj.content);
   if (text !== undefined) {
     state.instructions = appendInstructions(state.instructions, text);
-    return;
   }
-  if (obj.type === undefined) {
-    obj.type = 'message';
-    state.next.push(obj);
-  }
+  // No text → nothing to lift, and role:"system" can't stay in input: drop it.
 }
 
 /**

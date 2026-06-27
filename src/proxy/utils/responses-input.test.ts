@@ -119,6 +119,25 @@ describe('normalizeResponsesInput', () => {
     expect(normalizeResponsesInput({})).toBe(false);
   });
 
+  it('drops role:system items whose content has no extractable text (no role:system left in input)', () => {
+    // OpenRouter has no system role in input; an image-only/empty system item
+    // can't move to string `instructions`, so drop it — never keep role:"system".
+    const body: Record<string, unknown> = {
+      input: [
+        {
+          role: 'system',
+          content: [{ type: 'input_image', image_url: 'https://x/y.png' }],
+        },
+        { role: 'user', content: 'hi' },
+      ],
+    };
+    expect(normalizeResponsesInput(body)).toBe(true);
+    const items = body.input as { role?: string }[];
+    expect(items.some(i => i.role === 'system')).toBe(false);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.role).toBe('user');
+  });
+
   it('matches the real failing dump shape (system + untyped messages + assistant w/o id/status)', () => {
     // Shape from dump 86a0da2b: the client body openrouter rejected with
     // invalid_prompt (discriminated-union validation on input[].type).
