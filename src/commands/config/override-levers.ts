@@ -3,6 +3,7 @@ import type { ModelOverride, TriState } from '../../config-schema.js';
 import {
   applyField,
   collectCacheTriState,
+  collectNormalizeMessagesTriState,
   collectNormalizeResponsesTriState,
   collectNormalizeVolatileSystem,
   collectSessionTriState,
@@ -43,6 +44,19 @@ export async function editNormalizeResponses(
 
   const next: Record<string, unknown> = { ...current };
   applyField(next, 'normalizeResponses', result.normalizeResponses);
+  return next as ModelOverride;
+}
+
+export async function editNormalizeMessages(
+  current: ModelOverride,
+): Promise<ModelOverride> {
+  const result = await collectNormalizeMessagesTriState(
+    current.normalizeMessages as TriState | undefined,
+  );
+  if (result === null) return current;
+
+  const next: Record<string, unknown> = { ...current };
+  applyField(next, 'normalizeMessages', result.normalizeMessages);
   return next as ModelOverride;
 }
 

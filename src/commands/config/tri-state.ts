@@ -4,6 +4,7 @@ import {
   askNormalizeVolatileSystem,
   askTriState,
   CACHE_HINTS,
+  NORMALIZE_MESSAGES_HINTS,
   NORMALIZE_RESPONSES_HINTS,
   REWRITE_HINTS,
   SESSION_HINTS,
@@ -48,6 +49,22 @@ export async function collectNormalizeResponsesTriState(
   if (typeof nr === 'symbol') return null; // cancelled
   if (nr === 'reset') return { normalizeResponses: { remove: true } };
   return { normalizeResponses: { value: nr } };
+}
+
+export async function collectNormalizeMessagesTriState(
+  currentNm?: TriState,
+): Promise<{ normalizeMessages: ResolvedField<TriState> } | null> {
+  const nm = await askTriState(
+    'normalizeMessages mode',
+    currentNm,
+    NORMALIZE_MESSAGES_HINTS,
+    {
+      removable: true,
+    },
+  );
+  if (typeof nm === 'symbol') return null; // cancelled
+  if (nm === 'reset') return { normalizeMessages: { remove: true } };
+  return { normalizeMessages: { value: nm } };
 }
 
 /**

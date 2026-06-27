@@ -4,10 +4,11 @@ import { readConfigFileRaw } from '../../config.js';
 import type { ModelOverride } from '../../config-schema.js';
 import { requireConfigPath, setModelOverride } from './config.js';
 import { overridesEqual } from './equality.js';
+import { normalizeMessagesCommand } from './normalize-messages.js';
 import { normalizeResponsesCommand } from './normalize-responses.js';
-import { editNormalizeResponses } from './override-levers.js';
+import { editNormalizeMessages, editNormalizeResponses } from './override-levers.js';
 
-type LeverValue = 'normalizeResponses';
+type LeverValue = 'normalizeResponses' | 'normalizeMessages';
 
 /** Compatibility fixes for request bodies OpenRouter rejects. Mirrors caching-menu's lever table. */
 const FIXES_LEVERS: ReadonlyArray<{
@@ -21,6 +22,12 @@ const FIXES_LEVERS: ReadonlyArray<{
     label: 'Repair /v1/responses bodies (normalizeResponses)',
     global: configPath => normalizeResponsesCommand({ configPath }),
     perModel: current => editNormalizeResponses(current),
+  },
+  {
+    value: 'normalizeMessages',
+    label: 'Lift role:system out of /v1/messages (normalizeMessages)',
+    global: configPath => normalizeMessagesCommand({ configPath }),
+    perModel: current => editNormalizeMessages(current),
   },
 ];
 
@@ -54,8 +61,11 @@ export async function globalFixesMenu(opts?: { configPath?: string }): Promise<v
     noteTitle: 'Fixes',
     backLabel: '← Back',
     renderNote: () => {
-      const raw = readConfigFileRaw(configPath).normalizeResponses;
-      return `normalizeResponses: ${raw ?? '(default → auto)'}`;
+      const raw = readConfigFileRaw(configPath);
+      return [
+        `normalizeResponses: ${raw.normalizeResponses ?? '(default → auto)'}`,
+        `normalizeMessages: ${raw.normalizeMessages ?? '(default → auto)'}`,
+      ].join('\n');
     },
     onLever: lever => lever.global(configPath),
   });
@@ -72,7 +82,11 @@ export async function perModelFixesMenu(opts: {
   await runFixesLeverMenu({
     noteTitle: `Fixes for "${opts.modelKey}"`,
     backLabel: '← Back to override edit',
-    renderNote: () => `normalizeResponses: ${current.normalizeResponses ?? '(inherit)'}`,
+    renderNote: () =>
+      [
+        `normalizeResponses: ${current.normalizeResponses ?? '(inherit)'}`,
+        `normalizeMessages: ${current.normalizeMessages ?? '(inherit)'}`,
+      ].join('\n'),
     onLever: async lever => {
       const next = await lever.perModel(current);
       // Skip no-op writes.

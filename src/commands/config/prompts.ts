@@ -148,6 +148,13 @@ export const NORMALIZE_RESPONSES_HINTS: Record<TriState, string> = {
   skip: 'Off — raw passthrough (OpenRouter may reject)',
 };
 
+/** Shared hint texts for the normalize-messages tri-state — lifts stray role:"system" out of messages. */
+export const NORMALIZE_MESSAGES_HINTS: Record<TriState, string> = {
+  auto: '/v1/messages only (default)',
+  always: 'All endpoints',
+  skip: 'Off — raw passthrough (strict providers may reject role:system)',
+};
+
 export const NORMALIZE_HINTS = {
   on: 'Rewrite cch → stable prefix cache',
   off: 'Passthrough — rewrite nothing',
