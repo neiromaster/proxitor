@@ -17,6 +17,7 @@ import { addOverrideCommand } from './commands/config/add.js';
 import { browseModelsCommand } from './commands/config/browse.js';
 import { cachingCommand } from './commands/config/caching-menu.js';
 import { editOverrideCommand } from './commands/config/edit.js';
+import { fixesCommand } from './commands/config/fixes-menu.js';
 import { listOverridesCommand } from './commands/config/list.js';
 import { removeOverrideCommand } from './commands/config/remove.js';
 import { showConfigCommand } from './commands/config/show.js';
@@ -174,6 +175,14 @@ export const configCli = subcommands({
       args: { ...configArgs },
       handler: async args => {
         await cachingCommand({ configPath: args.configPath });
+      },
+    }),
+    fixes: command({
+      name: 'fixes',
+      description: 'Tune compatibility fixes (interactive)',
+      args: { ...configArgs },
+      handler: async args => {
+        await fixesCommand({ configPath: args.configPath });
       },
     }),
     edit: command({
