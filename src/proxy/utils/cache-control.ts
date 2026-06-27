@@ -112,8 +112,16 @@ export function rewriteBlockTtls(
 
   visitBlocks(body.system);
   visitBlocks(body.tools);
-  const messages = body.messages as Array<{ content?: unknown }> | undefined;
-  for (const m of messages ?? []) visitBlocks(m?.content);
+  const messages = body.messages as Record<string, unknown>[] | undefined;
+  for (const m of messages ?? []) {
+    if (m === null || typeof m !== 'object' || Array.isArray(m)) continue;
+    // Message-level cache_control (on the message and on tool_calls) is a sibling
+    // of content, not a block inside it — rewrite it too, else its 5m breakpoint
+    // survives next to rewritten 1h ones → Anthropic "1h after 5m".
+    rewriteNode(m);
+    visitBlocks(m.content);
+    visitBlocks(m.tool_calls);
+  }
 
   return mutated;
 }

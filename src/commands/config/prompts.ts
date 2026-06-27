@@ -141,6 +141,13 @@ export const REWRITE_HINTS: Record<TriState, string> = {
   skip: 'Leave client block ttl as-is (may mismatch root)',
 };
 
+/** Shared hint texts for the normalize-responses tri-state — used in the Fixes menu + override editor. */
+export const NORMALIZE_RESPONSES_HINTS: Record<TriState, string> = {
+  auto: '/v1/responses only (default)',
+  always: 'All endpoints',
+  skip: 'Off — raw passthrough (OpenRouter may reject)',
+};
+
 export const NORMALIZE_HINTS = {
   on: 'Rewrite cch → stable prefix cache',
   off: 'Passthrough — rewrite nothing',

@@ -67,6 +67,7 @@ export async function createTestEnv(
     cacheControl: 'auto',
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
+    normalizeResponses: 'auto',
     normalizeVolatileSystem: false,
     observability: { ...DEFAULTS.observability },
     verbose: false,

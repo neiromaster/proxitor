@@ -123,6 +123,14 @@ openrouterBaseUrl: 'https://openrouter.ai/api'
 # true = rewrite the hashes (default false), also settable per-model in modelOverrides.
 # normalizeVolatileSystem: false
 
+# Normalize Responses-api (/v1/responses) bodies so they satisfy OpenRouter's
+# strict input schema: tag message items with type:"message", lift role:"system"
+# into the top-level instructions field, and add id/status on assistant history.
+# Some clients omit these and OpenRouter rejects the request with
+# "400 invalid_prompt | Invalid Responses API request".
+# "auto" = on for /v1/responses (default), "always" = all endpoints, "skip" = off.
+# normalizeResponses: auto
+
 # Enable verbose logging
 verbose: false
 
