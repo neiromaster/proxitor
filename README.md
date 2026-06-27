@@ -199,6 +199,8 @@ Common flags: `--port`, `--host`, `--config <path>`, `--openrouter-key <key>` / 
 
 **OpenRouter returns `400 invalid_prompt | Invalid Responses API request` on `/v1/responses`.** Some clients send Responses `input` items without the `type` field OpenRouter requires. `normalizeResponses: auto` (the default) tags them, lifts `role:"system"` into `instructions`, and adds the `id`/`status` OpenRouter wants on assistant history. Set it to `skip` only for raw passthrough.
 
+**Strict providers reject `role:"system"` inside `/v1/messages`.** Some clients (e.g. an injected `SessionStart` hook payload) place a `role:"system"` item mid-thread in `messages`; the Anthropic Messages API allows only `user`/`assistant` there, so providers like OpenRouter → GLM return `400 ... messages[n].role: Input should be 'user' or 'assistant'`. `normalizeMessages: auto` (the default) lifts each such item's text into the top-level `system` field and drops it from `messages`. Set it to `skip` only for raw passthrough.
+
 **The provider keeps switching between requests.** Make sure `sessionId` is not `skip` — both `auto` (default) and `always` inject a sticky session ID; without it OpenRouter only pins after the first cache hit.
 
 **Config edits don't take effect.** They should — proxitor hot-reloads on save. If the file is invalid the proxy keeps the last valid config; `proxitor config validate` shows what was rejected.

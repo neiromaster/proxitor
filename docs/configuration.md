@@ -208,6 +208,14 @@ modelOverrides:
 
 It is idempotent and only touches items that need it. `auto` acts on `/v1/responses`; `always` acts everywhere; `skip` is raw passthrough (such client requests then fail at OpenRouter). Set per-model in the override editor.
 
+**`normalizeMessages`** (`auto` / `always` / `skip`, default `auto`) — lifts stray `role:"system"` items out of the `messages` array on `/v1/messages`. The Anthropic Messages API allows only `user`/`assistant` in `messages`; a mid-thread `role:"system"` (e.g. an injected `SessionStart` hook payload) is rejected by strict Anthropic-format providers (OpenRouter → GLM and others) with `400 ... messages[n].role: Input should be 'user' or 'assistant'`. The normalizer:
+
+- moves each system item's text into the top-level `system` field (string stays a string, a block array gets a new `{type:"text"}` block appended);
+- drops the item from `messages`, which also preserves `user`/`assistant` alternation;
+- drops system items whose content has no extractable text.
+
+It is idempotent. `auto` acts on `/v1/messages`; `always` acts everywhere; `skip` is raw passthrough. Set per-model in the override editor.
+
 **`sessionId`** — injects `session_id` for provider sticky routing. Without it, OpenRouter only pins to a provider after detecting a cache hit. With it, routing sticks from the **first request** — critical for OpenAI models where delayed caching means 0 cached tokens on the first 1-2 requests.
 
 Both `cacheControl` and `sessionId` support `auto` / `always` / `skip` modes:

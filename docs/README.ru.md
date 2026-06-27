@@ -199,6 +199,8 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 
 **OpenRouter возвращает `400 invalid_prompt | Invalid Responses API request` на `/v1/responses`.** Некоторые клиенты отправляют айтемы `input` без поля `type`, которое требует OpenRouter. `normalizeResponses: auto` (по умолчанию) проставляет его, переносит `role:"system"` в `instructions` и добавляет `id`/`status`, которые OpenRouter ждёт от assistant-истории. Ставьте `skip` только для чистого passthrough.
 
+**Строгие провайдеры режектят `role:"system"` внутри `/v1/messages`.** Некоторые клиенты (например, внедрённый вывод хука `SessionStart`) ставят айтем `role:"system"` в середину треда в `messages`; Anthropic Messages API разрешает там только `user`/`assistant`, поэтому провайдеры вроде OpenRouter → GLM возвращают `400 ... messages[n].role: Input should be 'user' or 'assistant'`. `normalizeMessages: auto` (по умолчанию) переносит текст такого айтема в top-level поле `system` и убирает его из `messages`. Ставьте `skip` только для чистого passthrough.
+
 **Провайдер переключается между запросами.** Убедитесь, что `sessionId` не `skip` — и `auto` (по умолчанию), и `always` инжектят липкий session ID; без него OpenRouter закрепляет провайдера только после первого попадания в кэш.
 
 **Изменения конфига не применяются.** Должны — proxitor подхватывает файл на лету. Если файл битый, прокси держит последний валидный конфиг; `proxitor config validate` покажет, что именно отвергнуто.
