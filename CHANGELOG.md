@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.18.0
+
+### Minor Changes
+
+- 8055421: Add `normalizeResponses` to repair `/v1/responses` bodies OpenRouter rejects.
+
+  OpenRouter validates each Responses `input` item as a union discriminated by
+  `type`, but some clients omit `type` on message items — OpenRouter returns
+  `400 invalid_prompt | Invalid Responses API request`. The new normalizer (on by
+  default for `/v1/responses`) tags message items with `type: "message"`, lifts
+  `role: "system"` items into the top-level `instructions` field, and synthesizes
+  the `id`/`status` OpenRouter requires on assistant history items. Configurable
+  via `normalizeResponses: auto | always | skip` (and per-model overrides).
+
+### Patch Changes
+
+- 8055421: `rewriteBlockTtl` now rewrites message-level and `tool_calls` cache_control.
+
+  It previously descended only into `messages[].content`, so `cache_control` on
+  `messages[].cache_control` (the OpenRouter/OpenAI message-level convention) and
+  on `messages[].tool_calls[].cache_control` stayed at the client's ttl-less 5m
+  while the rest were rewritten to `cacheControlTtl` — Anthropic rejected the
+  mixed ordering with `400 ... a ttl='1h' cache_control block must not come after
+a ttl='5m' cache_control block`. Both locations are rewritten too now.
+
 ## 0.17.0
 
 ### Minor Changes
