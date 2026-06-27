@@ -96,6 +96,9 @@ const { sessionRoutingCommand } = await import(
 const { normalizeVolatileSystemCommand } = await import(
   '../../src/commands/config/normalize-system.js'
 );
+const { normalizeMessagesCommand } = await import(
+  '../../src/commands/config/normalize-messages.js'
+);
 
 // Real (un-mocked) config utilities for file-level tests
 const { setGlobalConfigFields, readConfigRaw } = await import(
@@ -822,5 +825,84 @@ describe('editOverrideCommand: instant-save', () => {
     await editOverrideCommand({} as any, configPath);
 
     expect(mockSetModelOverride).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// normalizeMessagesCommand (global) — lift role:system out of /v1/messages
+// ===========================================================================
+
+describe('normalizeMessagesCommand (global)', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    configPath = join(tmpDir, 'proxitor.config.yaml');
+    mockRequireConfigPath.mockReturnValue(configPath);
+    mockAskTriState.mockClear();
+  });
+  afterEach(() => {
+    removeTempDir(tmpDir);
+    vi.clearAllMocks();
+  });
+
+  it('passes undefined current when normalizeMessages is absent (Reset/inherit)', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await normalizeMessagesCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledTimes(1);
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.anything(),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('passes the existing value as current when normalizeMessages is set', async () => {
+    writeFileSync(configPath, 'normalizeMessages: always\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await normalizeMessagesCommand({ configPath });
+
+    expect(mockAskTriState).toHaveBeenCalledWith(
+      expect.any(String),
+      'always',
+      expect.anything(),
+      expect.objectContaining({ removable: true }),
+    );
+  });
+
+  it('writes the chosen mode when the user picks one', async () => {
+    writeFileSync(configPath, 'port: 8828\n');
+    mockAskTriState.mockResolvedValueOnce('always');
+
+    await normalizeMessagesCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('normalizeMessages: always');
+  });
+
+  it('removes normalizeMessages on reset', async () => {
+    writeFileSync(configPath, 'normalizeMessages: skip\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce('reset');
+
+    await normalizeMessagesCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).not.toContain('normalizeMessages');
+  });
+
+  it('makes no change when cancelled', async () => {
+    writeFileSync(configPath, 'normalizeMessages: skip\nport: 8828\n');
+    mockAskTriState.mockResolvedValueOnce(Symbol.for('clack:cancel'));
+
+    await normalizeMessagesCommand({ configPath });
+
+    const raw = readConfigRaw(configPath);
+    expect(raw).toContain('normalizeMessages: skip');
   });
 });
