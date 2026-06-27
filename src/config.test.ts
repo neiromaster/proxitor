@@ -440,6 +440,7 @@ describe('resolveModelConfig', () => {
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
     normalizeResponses: 'auto',
+    normalizeMessages: 'auto',
     normalizeVolatileSystem: false,
     observability: { ...DEFAULTS.observability },
     provider: { only: 'deepinfra' },
@@ -828,6 +829,7 @@ describe('cacheControl and sessionId config', () => {
     sessionId: 'auto',
     rewriteBlockTtl: 'skip',
     normalizeResponses: 'auto',
+    normalizeMessages: 'auto',
     normalizeVolatileSystem: false,
     observability: { ...DEFAULTS.observability },
   };
