@@ -1,3 +1,4 @@
+import { type InspectColor, styleText } from 'node:util';
 import { logger, withReq } from '../../logger.js';
 import { dumpEnabled, dumpResponse } from '../body-dump.js';
 import type { CacheLabel, CacheObservation } from './types.js';
@@ -6,17 +7,19 @@ export type ObservationSink = {
   emit(obs: CacheObservation): void;
 };
 
-const wrap = (code: string) => (s: string) => `\x1b[${code}m${s}\x1b[0m`;
-const PAINT: Record<CacheLabel, (s: string) => string> = {
-  HIT: wrap('32'),
-  PARTIAL: wrap('33'),
-  MISS: wrap('31'),
-  COLD: wrap('2'),
-  NOUSAGE: wrap('90'),
+// styleText owns the escape codes (and Node's TTY/FORCE_COLOR/NO_COLOR gating);
+// it closes each run with a per-format reset ([39m/[22m) instead of the blanket
+// [0m the old wrapper used — identical rendering for a standalone label.
+const STYLE: Record<CacheLabel, InspectColor> = {
+  HIT: 'green',
+  PARTIAL: 'yellow',
+  MISS: 'red',
+  COLD: 'dim',
+  NOUSAGE: 'gray',
 };
 
 export function colorizeLabel(label: CacheLabel, useColor: boolean): string {
-  return useColor ? PAINT[label](label) : label;
+  return useColor ? styleText(STYLE[label], label) : label;
 }
 
 export function formatLine(obs: CacheObservation, useColor = false): string {
