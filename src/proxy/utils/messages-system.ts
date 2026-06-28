@@ -80,7 +80,9 @@ export function liftSystemMessages(body: Record<string, unknown>): boolean {
 
   if (mutated) {
     body.messages = next;
-    body.system = system;
+    // Only reassign system when lifted text actually changed it; otherwise an
+    // absent system would gain an undefined-valued own property for no reason.
+    if (system !== body.system) body.system = system;
   }
   return mutated;
 }
