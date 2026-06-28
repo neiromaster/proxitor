@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.19.0
+
+### Minor Changes
+
+- 485628e: Add `normalizeMessages` to lift stray `role:"system"` items out of the
+  `messages` array on `/v1/messages` requests. The Anthropic Messages API allows
+  only `user`/`assistant` in `messages` — a mid-thread `role:"system"` (e.g. an
+  injected `SessionStart` hook payload) is rejected by strict Anthropic-format
+  providers (OpenRouter → GLM and others) with `400 ... messages[n].role: Input
+should be 'user' or 'assistant'`. The normalizer moves each system item's text
+  into the top-level `system` field and drops it from `messages`, which also
+  preserves `user`/`assistant` alternation. It acts on `/v1/messages` only (the
+  lift is never valid on chat-completions or responses) and is off by default;
+  enable via `normalizeMessages: true` (global or per-model override).
+- 485628e: `normalizeResponses` is now a boolean (`true`/`false`, default `true`), not a
+  tri-state (`auto`/`always`/`skip`). It repairs `/v1/responses` bodies for
+  OpenRouter and acts on `/v1/responses` only.
+
+  The `always`/`auto`/`skip` distinction is removed: `always` was already a no-op
+  off `/v1/responses` (the normalizer keys off `body.input`, which is absent on
+  messages/chat-completions), so on/off captures the whole real surface.
+
+  Migration (config schema change): `normalizeResponses: always` or `auto` → drop
+  the key (defaults to `true`); `normalizeResponses: skip` → `normalizeResponses:
+false`. Configs still holding the old string values are rejected by the schema
+  on reload (the proxy keeps the last valid config).
+
 ## 0.18.0
 
 ### Minor Changes
