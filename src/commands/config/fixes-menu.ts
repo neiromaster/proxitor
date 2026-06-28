@@ -64,7 +64,7 @@ export async function globalFixesMenu(opts?: { configPath?: string }): Promise<v
       const raw = readConfigFileRaw(configPath);
       return [
         `normalizeResponses: ${raw.normalizeResponses ?? '(default → auto)'}`,
-        `normalizeMessages: ${raw.normalizeMessages ?? '(default → auto)'}`,
+        `normalizeMessages: ${raw.normalizeMessages ?? '(default → off)'}`,
       ].join('\n');
     },
     onLever: lever => lever.global(configPath),

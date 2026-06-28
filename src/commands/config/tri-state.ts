@@ -1,10 +1,10 @@
 import type { TriState } from '../../config-schema.js';
 import {
   askCacheControlTtl,
+  askNormalizeMessages,
   askNormalizeVolatileSystem,
   askTriState,
   CACHE_HINTS,
-  NORMALIZE_MESSAGES_HINTS,
   NORMALIZE_RESPONSES_HINTS,
   REWRITE_HINTS,
   SESSION_HINTS,
@@ -51,16 +51,13 @@ export async function collectNormalizeResponsesTriState(
   return { normalizeResponses: { value: nr } };
 }
 
-export async function collectNormalizeMessagesTriState(
-  currentNm?: TriState,
-): Promise<{ normalizeMessages: ResolvedField<TriState> } | null> {
-  const nm = await askTriState(
-    'normalizeMessages mode',
+export async function collectNormalizeMessages(
+  currentNm?: boolean,
+): Promise<{ normalizeMessages: ResolvedField<boolean> } | null> {
+  const nm = await askNormalizeMessages(
+    'Lift role:system out of /v1/messages',
     currentNm,
-    NORMALIZE_MESSAGES_HINTS,
-    {
-      removable: true,
-    },
+    { removable: true },
   );
   if (typeof nm === 'symbol') return null; // cancelled
   if (nm === 'reset') return { normalizeMessages: { remove: true } };

@@ -3,7 +3,7 @@ import type { ModelOverride, TriState } from '../../config-schema.js';
 import {
   applyField,
   collectCacheTriState,
-  collectNormalizeMessagesTriState,
+  collectNormalizeMessages,
   collectNormalizeResponsesTriState,
   collectNormalizeVolatileSystem,
   collectSessionTriState,
@@ -50,8 +50,8 @@ export async function editNormalizeResponses(
 export async function editNormalizeMessages(
   current: ModelOverride,
 ): Promise<ModelOverride> {
-  const result = await collectNormalizeMessagesTriState(
-    current.normalizeMessages as TriState | undefined,
+  const result = await collectNormalizeMessages(
+    current.normalizeMessages as boolean | undefined,
   );
   if (result === null) return current;
 

@@ -148,12 +148,36 @@ export const NORMALIZE_RESPONSES_HINTS: Record<TriState, string> = {
   skip: 'Off — raw passthrough (OpenRouter may reject)',
 };
 
-/** Shared hint texts for the normalize-messages tri-state — lifts stray role:"system" out of messages. */
-export const NORMALIZE_MESSAGES_HINTS: Record<TriState, string> = {
-  auto: '/v1/messages only (default)',
-  always: 'All endpoints',
-  skip: 'Off — raw passthrough (strict providers may reject role:system)',
-};
+/** Hint texts for the normalize-messages on/off toggle — lifts stray role:"system" out of /v1/messages. */
+export const NORMALIZE_MESSAGES_HINTS = {
+  on: 'Lift role:system → top-level system (/v1/messages only)',
+  off: 'Raw passthrough (strict providers may reject role:system)',
+} as const;
+
+export async function askNormalizeMessages(
+  message: string,
+  current: boolean | undefined,
+  opts?: { removable?: boolean; resetHint?: string },
+): Promise<boolean | 'reset' | symbol> {
+  const options: { value: boolean | 'reset'; label: string; hint: string }[] = [
+    { value: true, label: 'On', hint: NORMALIZE_MESSAGES_HINTS.on },
+    { value: false, label: 'Off', hint: NORMALIZE_MESSAGES_HINTS.off },
+  ];
+  if (opts?.removable) {
+    options.push({
+      value: 'reset',
+      label: 'Reset / inherit',
+      hint: opts.resetHint ?? 'Remove override',
+    });
+  }
+  // Unset (inheriting) → highlight "Reset / inherit".
+  const result = await clack.select({
+    message,
+    initialValue: current ?? (opts?.removable ? 'reset' : false),
+    options,
+  });
+  return result as boolean | 'reset' | symbol; // symbol = clack cancel
+}
 
 export const NORMALIZE_HINTS = {
   on: 'Rewrite cch → stable prefix cache',

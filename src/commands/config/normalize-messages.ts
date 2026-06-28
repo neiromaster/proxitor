@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { DEFAULTS, readConfigFileRaw } from '../../config.js';
-import { requireConfigPath, setGlobalConfigField } from './config.js';
-import { askTriState, NORMALIZE_MESSAGES_HINTS } from './prompts.js';
+import { requireConfigPath, setGlobalConfigFields } from './config.js';
+import { askNormalizeMessages } from './prompts.js';
 
 export async function normalizeMessagesCommand(opts?: {
   configPath?: string;
@@ -12,25 +12,23 @@ export async function normalizeMessagesCommand(opts?: {
   const effective = raw ?? DEFAULTS.normalizeMessages;
 
   clack.log.info(
-    `Current: normalizeMessages = ${raw === undefined ? `(default -> ${effective})` : effective}`,
+    `Current: normalizeMessages = ${raw === undefined ? `(default -> ${effective ? 'on' : 'off'})` : effective}`,
   );
 
-  const result = await askTriState(
-    'normalizeMessages mode',
+  const choice = await askNormalizeMessages(
+    'Lift stray role:"system" out of /v1/messages into top-level system? Fixes 400 rejections from strict Anthropic-format providers (OpenRouter → GLM et al.). Acts on /v1/messages only.',
     raw,
-    NORMALIZE_MESSAGES_HINTS,
     {
       removable: true,
+      resetHint: `remove (default: ${DEFAULTS.normalizeMessages ? 'on' : 'off'})`,
     },
   );
+  if (typeof choice === 'symbol') return; // cancelled
 
-  if (typeof result === 'symbol') return;
+  const fields: Record<string, unknown> = {};
+  fields.normalizeMessages = choice === 'reset' ? undefined : choice;
+  setGlobalConfigFields(configPath, fields);
 
-  if (result === 'reset') {
-    setGlobalConfigField(configPath, 'normalizeMessages', undefined);
-    clack.log.success('normalizeMessages reset to default (auto)');
-    return;
-  }
-  setGlobalConfigField(configPath, 'normalizeMessages', result);
-  clack.log.success(`normalizeMessages set to ${result}`);
+  const label = choice === 'reset' ? `(default: ${DEFAULTS.normalizeMessages})` : choice;
+  clack.log.success(`normalizeMessages set to ${label}`);
 }

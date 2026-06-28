@@ -1,15 +1,13 @@
-import type { TriState } from '../../config-schema.js';
 import { classifyEndpoint } from '../paths.js';
 
 /**
- * Whether to lift stray `role:"system"` items out of `messages`. Mirrors the
- * other tri-states: `auto` acts only on /v1/messages, `always` acts everywhere,
- * `skip` never.
+ * Whether to lift stray `role:"system"` items out of `messages`. The lift is
+ * only valid on `/v1/messages` (where `system` is a top-level field) — never on
+ * chat-completions (system belongs in `messages`) or responses — so it is gated
+ * by endpoint regardless of the on/off setting.
  */
-export function shouldNormalizeMessages(mode: TriState, path: string): boolean {
-  if (mode === 'skip') return false;
-  if (mode === 'always') return true;
-  return classifyEndpoint(path) === 'messages';
+export function shouldNormalizeMessages(enabled: boolean, path: string): boolean {
+  return enabled && classifyEndpoint(path) === 'messages';
 }
 
 type TextBlock = Record<string, unknown> & { text?: unknown };
@@ -33,7 +31,9 @@ function contentToText(content: unknown): string | undefined {
 /**
  * Append lifted system text to a top-level `system` value, preserving its form:
  * a block array stays an array (new `{type:"text"}` block), a string stays a
- * string, and a missing system starts as a plain string.
+ * string, and a missing system starts as a plain string. A stray single-block
+ * object (malformed but parseable) is wrapped as a one-element array so its
+ * content is never silently discarded.
  */
 function appendSystemText(current: unknown, text: string): unknown {
   if (Array.isArray(current)) {
@@ -41,6 +41,9 @@ function appendSystemText(current: unknown, text: string): unknown {
   }
   if (typeof current === 'string') {
     return current.length > 0 ? `${current}\n\n${text}` : text;
+  }
+  if (isPlainObject(current)) {
+    return [current, { type: 'text', text }];
   }
   return text;
 }

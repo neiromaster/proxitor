@@ -6,8 +6,8 @@ Add `normalizeMessages` to lift stray `role:"system"` items out of the
 only `user`/`assistant` in `messages` — a mid-thread `role:"system"` (e.g. an
 injected `SessionStart` hook payload) is rejected by strict Anthropic-format
 providers (OpenRouter → GLM and others) with `400 ... messages[n].role: Input
-should be 'user' or 'assistant'`. The new normalizer (on by default for
-`/v1/messages`) moves each system item's text into the top-level `system` field
-and drops it from `messages`, which also preserves `user`/`assistant`
-alternation. Configurable via `normalizeMessages: auto | always | skip` (and
-per-model overrides).
+should be 'user' or 'assistant'`. The normalizer moves each system item's text
+into the top-level `system` field and drops it from `messages`, which also
+preserves `user`/`assistant` alternation. It acts on `/v1/messages` only (the
+lift is never valid on chat-completions or responses) and is off by default;
+enable via `normalizeMessages: true` (global or per-model override).

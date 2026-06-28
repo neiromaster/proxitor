@@ -15,7 +15,7 @@ describe('normalizeMessages middleware (/v1/messages)', () => {
     // (OpenRouter -> GLM) reject. The middleware must set bodyMutated and lift
     // it into the top-level system before forwarding.
     let captured: Record<string, unknown> = {};
-    env = await createTestEnv({}, (upstream: Hono) => {
+    env = await createTestEnv({ normalizeMessages: true }, (upstream: Hono) => {
       upstream.all('/*', async c => {
         captured = (await c.req.json()) as Record<string, unknown>;
         return c.json({
@@ -53,10 +53,10 @@ describe('normalizeMessages middleware (/v1/messages)', () => {
     expect(system.some(b => b.text === 'SessionStart: ...')).toBe(true);
   });
 
-  it('leaves role:system in messages when normalizeMessages is skip', async () => {
-    // Arrange — skip is raw passthrough: the offending role:system survives.
+  it('leaves role:system in messages when normalizeMessages is off', async () => {
+    // Arrange — off is raw passthrough: the offending role:system survives.
     let captured: Record<string, unknown> = {};
-    env = await createTestEnv({ normalizeMessages: 'skip' }, (upstream: Hono) => {
+    env = await createTestEnv({ normalizeMessages: false }, (upstream: Hono) => {
       upstream.all('/*', async c => {
         captured = (await c.req.json()) as Record<string, unknown>;
         return c.json({

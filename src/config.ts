@@ -39,7 +39,7 @@ export type ResolvedModelConfig = {
   rewriteBlockTtl: TriState;
   sessionId: TriState;
   normalizeResponses: TriState;
-  normalizeMessages: TriState;
+  normalizeMessages: boolean;
   normalizeVolatileSystem: boolean;
   matchedOverride?: string;
 };

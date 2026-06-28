@@ -12,22 +12,19 @@ function roles(body: Record<string, unknown>): string[] {
 // ---------------------------------------------------------------------------
 
 describe('shouldNormalizeMessages', () => {
-  it('returns false for skip regardless of path', () => {
-    expect(shouldNormalizeMessages('skip', '/v1/messages')).toBe(false);
+  it('returns false when disabled, regardless of path', () => {
+    expect(shouldNormalizeMessages(false, '/v1/messages')).toBe(false);
+    expect(shouldNormalizeMessages(false, '/v1/chat/completions')).toBe(false);
   });
 
-  it('returns true for always regardless of path', () => {
-    expect(shouldNormalizeMessages('always', '/v1/chat/completions')).toBe(true);
-  });
-
-  it('returns true for auto only on /v1/messages', () => {
-    expect(shouldNormalizeMessages('auto', '/v1/messages')).toBe(true);
-    expect(shouldNormalizeMessages('auto', '/v1/chat/completions')).toBe(false);
-    expect(shouldNormalizeMessages('auto', '/v1/responses')).toBe(false);
+  it('returns true only on /v1/messages when enabled', () => {
+    expect(shouldNormalizeMessages(true, '/v1/messages')).toBe(true);
+    expect(shouldNormalizeMessages(true, '/v1/chat/completions')).toBe(false);
+    expect(shouldNormalizeMessages(true, '/v1/responses')).toBe(false);
   });
 
   it('ignores a query string when classifying the path', () => {
-    expect(shouldNormalizeMessages('auto', '/v1/messages?beta=true')).toBe(true);
+    expect(shouldNormalizeMessages(true, '/v1/messages?beta=true')).toBe(true);
   });
 });
 
@@ -87,6 +84,28 @@ describe('liftSystemMessages', () => {
       { type: 'text', text: 'second' },
     ]);
     expect(body.messages).toHaveLength(0);
+  });
+
+  it('preserves a stray single-block system object instead of discarding it', () => {
+    // Arrange — a malformed but parseable `system` value (bare block object,
+    // not a string or array). The lifted text must be appended, not overwrite
+    // and silently drop the existing system content.
+    const body: Record<string, unknown> = {
+      system: { type: 'text', text: 'base' },
+      messages: [
+        { role: 'system', content: 'lifted' },
+        { role: 'user', content: 'hi' },
+      ],
+    };
+    // Act
+    const changed = liftSystemMessages(body);
+    // Assert — object is wrapped as a one-element array, then the block is appended.
+    expect(changed).toBe(true);
+    expect(body.system).toEqual([
+      { type: 'text', text: 'base' },
+      { type: 'text', text: 'lifted' },
+    ]);
+    expect(roles(body)).toEqual(['user']);
   });
 
   it('creates a top-level system string when none existed', () => {
