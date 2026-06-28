@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { DEFAULTS, readConfigFileRaw } from '../../config.js';
-import { requireConfigPath, setGlobalConfigField } from './config.js';
-import { askTriState, NORMALIZE_RESPONSES_HINTS } from './prompts.js';
+import { requireConfigPath, setGlobalConfigFields } from './config.js';
+import { askNormalizeResponses } from './prompts.js';
 
 export async function normalizeResponsesCommand(opts?: {
   configPath?: string;
@@ -12,25 +12,23 @@ export async function normalizeResponsesCommand(opts?: {
   const effective = raw ?? DEFAULTS.normalizeResponses;
 
   clack.log.info(
-    `Current: normalizeResponses = ${raw === undefined ? `(default -> ${effective})` : effective}`,
+    `Current: normalizeResponses = ${raw === undefined ? `(default -> ${effective ? 'on' : 'off'})` : effective}`,
   );
 
-  const result = await askTriState(
-    'normalizeResponses mode',
+  const choice = await askNormalizeResponses(
+    'Repair /v1/responses request bodies for OpenRouter (tag input types, lift role:"system" into instructions, synthesize assistant id/status)? Acts on /v1/responses only.',
     raw,
-    NORMALIZE_RESPONSES_HINTS,
     {
       removable: true,
+      resetHint: `remove (default: ${DEFAULTS.normalizeResponses ? 'on' : 'off'})`,
     },
   );
+  if (typeof choice === 'symbol') return; // cancelled
 
-  if (typeof result === 'symbol') return;
+  const fields: Record<string, unknown> = {};
+  fields.normalizeResponses = choice === 'reset' ? undefined : choice;
+  setGlobalConfigFields(configPath, fields);
 
-  if (result === 'reset') {
-    setGlobalConfigField(configPath, 'normalizeResponses', undefined);
-    clack.log.success('normalizeResponses reset to default (auto)');
-    return;
-  }
-  setGlobalConfigField(configPath, 'normalizeResponses', result);
-  clack.log.success(`normalizeResponses set to ${result}`);
+  const label = choice === 'reset' ? `(default: ${DEFAULTS.normalizeResponses})` : choice;
+  clack.log.success(`normalizeResponses set to ${label}`);
 }

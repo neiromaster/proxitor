@@ -2,10 +2,10 @@ import type { TriState } from '../../config-schema.js';
 import {
   askCacheControlTtl,
   askNormalizeMessages,
+  askNormalizeResponses,
   askNormalizeVolatileSystem,
   askTriState,
   CACHE_HINTS,
-  NORMALIZE_RESPONSES_HINTS,
   REWRITE_HINTS,
   SESSION_HINTS,
 } from './prompts.js';
@@ -35,17 +35,12 @@ export async function collectSessionTriState(
   return { sessionId: { value: sid } };
 }
 
-export async function collectNormalizeResponsesTriState(
-  currentNr?: TriState,
-): Promise<{ normalizeResponses: ResolvedField<TriState> } | null> {
-  const nr = await askTriState(
-    'normalizeResponses mode',
-    currentNr,
-    NORMALIZE_RESPONSES_HINTS,
-    {
-      removable: true,
-    },
-  );
+export async function collectNormalizeResponses(
+  currentNr?: boolean,
+): Promise<{ normalizeResponses: ResolvedField<boolean> } | null> {
+  const nr = await askNormalizeResponses('Repair /v1/responses bodies', currentNr, {
+    removable: true,
+  });
   if (typeof nr === 'symbol') return null; // cancelled
   if (nr === 'reset') return { normalizeResponses: { remove: true } };
   return { normalizeResponses: { value: nr } };

@@ -63,7 +63,7 @@ export async function globalFixesMenu(opts?: { configPath?: string }): Promise<v
     renderNote: () => {
       const raw = readConfigFileRaw(configPath);
       return [
-        `normalizeResponses: ${raw.normalizeResponses ?? '(default → auto)'}`,
+        `normalizeResponses: ${raw.normalizeResponses ?? '(default → on)'}`,
         `normalizeMessages: ${raw.normalizeMessages ?? '(default → off)'}`,
       ].join('\n');
     },

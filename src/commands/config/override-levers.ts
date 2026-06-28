@@ -4,7 +4,7 @@ import {
   applyField,
   collectCacheTriState,
   collectNormalizeMessages,
-  collectNormalizeResponsesTriState,
+  collectNormalizeResponses,
   collectNormalizeVolatileSystem,
   collectSessionTriState,
 } from './tri-state.js';
@@ -37,8 +37,8 @@ export async function editSessionId(current: ModelOverride): Promise<ModelOverri
 export async function editNormalizeResponses(
   current: ModelOverride,
 ): Promise<ModelOverride> {
-  const result = await collectNormalizeResponsesTriState(
-    current.normalizeResponses as TriState | undefined,
+  const result = await collectNormalizeResponses(
+    current.normalizeResponses as boolean | undefined,
   );
   if (result === null) return current;
 

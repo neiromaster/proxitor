@@ -141,12 +141,36 @@ export const REWRITE_HINTS: Record<TriState, string> = {
   skip: 'Leave client block ttl as-is (may mismatch root)',
 };
 
-/** Shared hint texts for the normalize-responses tri-state — used in the Fixes menu + override editor. */
-export const NORMALIZE_RESPONSES_HINTS: Record<TriState, string> = {
-  auto: '/v1/responses only (default)',
-  always: 'All endpoints',
-  skip: 'Off — raw passthrough (OpenRouter may reject)',
-};
+/** Hint texts for the normalize-responses on/off toggle — repairs /v1/responses bodies for OpenRouter. */
+export const NORMALIZE_RESPONSES_HINTS = {
+  on: 'Repair /v1/responses bodies (type tagging, system→instructions, id/status)',
+  off: 'Raw passthrough (OpenRouter may reject malformed /v1/responses)',
+} as const;
+
+export async function askNormalizeResponses(
+  message: string,
+  current: boolean | undefined,
+  opts?: { removable?: boolean; resetHint?: string },
+): Promise<boolean | 'reset' | symbol> {
+  const options: { value: boolean | 'reset'; label: string; hint: string }[] = [
+    { value: true, label: 'On', hint: NORMALIZE_RESPONSES_HINTS.on },
+    { value: false, label: 'Off', hint: NORMALIZE_RESPONSES_HINTS.off },
+  ];
+  if (opts?.removable) {
+    options.push({
+      value: 'reset',
+      label: 'Reset / inherit',
+      hint: opts.resetHint ?? 'Remove override',
+    });
+  }
+  // Unset (inheriting) → highlight "Reset / inherit".
+  const result = await clack.select({
+    message,
+    initialValue: current ?? (opts?.removable ? 'reset' : false),
+    options,
+  });
+  return result as boolean | 'reset' | symbol; // symbol = clack cancel
+}
 
 /** Hint texts for the normalize-messages on/off toggle — lifts stray role:"system" out of /v1/messages. */
 export const NORMALIZE_MESSAGES_HINTS = {

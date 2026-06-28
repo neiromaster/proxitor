@@ -1,15 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { TriState } from '../../config-schema.js';
 import { classifyEndpoint } from '../paths.js';
 
 /**
- * Whether to normalize a Responses-api body. Mirrors the other tri-states:
- * `auto` acts only on /v1/responses, `always` acts everywhere, `skip` never.
+ * Whether to normalize a Responses-api body. The lift is only valid on
+ * /v1/responses — never on messages or chat-completions — so it is gated by
+ * endpoint regardless of the on/off setting.
  */
-export function shouldNormalizeResponses(mode: TriState, path: string): boolean {
-  if (mode === 'skip') return false;
-  if (mode === 'always') return true;
-  return classifyEndpoint(path) === 'responses';
+export function shouldNormalizeResponses(enabled: boolean, path: string): boolean {
+  return enabled && classifyEndpoint(path) === 'responses';
 }
 
 type NormalizerState = { instructions: unknown; next: unknown[] };

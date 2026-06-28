@@ -200,13 +200,13 @@ modelOverrides:
     rewriteBlockTtl: skip   # leave Opus block TTLs as the client sends them
 ```
 
-**`normalizeResponses`** (`auto` / `always` / `skip`, default `auto`) — repairs `/v1/responses` bodies so they satisfy OpenRouter's strict `input` schema. OpenRouter validates each `input` item as a union discriminated by `type`; clients that omit `type` on message items (legal on OpenAI, which infers `message`) get `400 invalid_prompt | Invalid Responses API request`. The normalizer:
+**`normalizeResponses`** (`true` / `false`, default `true`) — repairs `/v1/responses` bodies so they satisfy OpenRouter's strict `input` schema. OpenRouter validates each `input` item as a union discriminated by `type`; clients that omit `type` on message items (legal on OpenAI, which infers `message`) get `400 invalid_prompt | Invalid Responses API request`. The normalizer:
 
 - tags role-bearing items lacking `type` with `type: "message"`;
 - lifts `role: "system"` items into the top-level `instructions` field (OpenRouter Responses has no system role in `input`);
 - synthesizes the `id` / `status` OpenRouter requires on assistant history items.
 
-It is idempotent and only touches items that need it. `auto` acts on `/v1/responses`; `always` acts everywhere; `skip` is raw passthrough (such client requests then fail at OpenRouter). Set per-model in the override editor.
+It is idempotent, only touches items that need it, and acts on `/v1/responses` only. Off (`false`) is raw passthrough (such client requests then fail at OpenRouter). Set per-model in the override editor.
 
 **`normalizeMessages`** (`true` / `false`, default `false`) — lifts stray `role:"system"` items out of the `messages` array on `/v1/messages`. The Anthropic Messages API allows only `user`/`assistant` in `messages`; a mid-thread `role:"system"` (e.g. an injected `SessionStart` hook payload) is rejected by strict Anthropic-format providers (OpenRouter → GLM and others) with `400 ... messages[n].role: Input should be 'user' or 'assistant'`. The normalizer:
 

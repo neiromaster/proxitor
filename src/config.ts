@@ -38,7 +38,7 @@ export type ResolvedModelConfig = {
   cacheControlTtl?: '5m' | '1h' | 'omit' | 'skip';
   rewriteBlockTtl: TriState;
   sessionId: TriState;
-  normalizeResponses: TriState;
+  normalizeResponses: boolean;
   normalizeMessages: boolean;
   normalizeVolatileSystem: boolean;
   matchedOverride?: string;
