@@ -200,13 +200,21 @@ modelOverrides:
     rewriteBlockTtl: skip   # оставить блочный TTL Opus как шлёт клиент
 ```
 
-**`normalizeResponses`** (`auto` / `always` / `skip`, по умолчанию `auto`) — чинит тела запросов `/v1/responses`, чтобы они соответствовали строгой схеме `input` в OpenRouter. OpenRouter валидирует каждый айтем `input` как объединение, различаемое полем `type`; клиенты, опускающие `type` у message-айтемов (допустимо у OpenAI, где выводится `message`), получают `400 invalid_prompt | Invalid Responses API request`. Нормализатор:
+**`normalizeResponses`** (`true` / `false`, по умолчанию `true`) — чинит тела запросов `/v1/responses`, чтобы они соответствовали строгой схеме `input` в OpenRouter. OpenRouter валидирует каждый айтем `input` как объединение, различаемое полем `type`; клиенты, опускающие `type` у message-айтемов (допустимо у OpenAI, где выводится `message`), получают `400 invalid_prompt | Invalid Responses API request`. Нормализатор:
 
 - проставляет айтемам с ролью без `type` поле `type: "message"`;
 - переносит айтемы `role: "system"` в top-level поле `instructions` (в Responses у OpenRouter нет роли system в `input`);
 - генерирует `id` / `status`, которые OpenRouter требует для assistant-истории.
 
-Идемпотентен, меняет только то, что нужно. `auto` действует на `/v1/responses`; `always` — везде; `skip` — чистый passthrough (такие клиентские запросы затем падают в OpenRouter). Поключается и через override-редактор по модели.
+Идемпотентен, меняет только то, что нужно, и действует только на `/v1/responses`. Выкл (`false`) — чистый passthrough (такие клиентские запросы затем падают в OpenRouter). Поключается и через override-редактор по модели.
+
+**`normalizeMessages`** (`true` / `false`, по умолчанию `false`) — поднимает случайные айтемы `role:"system"` из массива `messages` в запросах `/v1/messages`. Anthropic Messages API разрешает в `messages` только `user`/`assistant`; айтем `role:"system"` в середине треда (например, внедрённый вывод хука `SessionStart`) режектится строгими Anthropic-формат провайдерами (OpenRouter → GLM и др.) с `400 ... messages[n].role: Input should be 'user' or 'assistant'`. Нормализатор:
+
+- переносит текст каждого system-айтема в top-level поле `system` (строка остаётся строкой, массив блоков дополняется новым блоком `{type:"text"}`);
+- убирает айтем из `messages`, что заодно сохраняет чередование `user`/`assistant`;
+- выкидывает system-айтемы, у которых нет извлекаемого текста.
+
+Идемпотентен и действует только на `/v1/messages` — перенос никогда не валиден на chat-completions (там `system` принадлежит `messages`) или responses, поэтому гейтится по эндпоинту вне зависимости от настройки. По умолчанию выкл; включается глобально или по модели через override-редактор.
 
 **`sessionId`** — внедряет `session_id` для «липкой» маршрутизации к провайдеру. Без него OpenRouter привязывается к провайдеру только после фиксации попадания в кэш. С ним маршрутизация липнет с **первого запроса** — критично для моделей OpenAI, где отложенное кэширование означает 0 закэшированных токенов на первых 1-2 запросах.
 

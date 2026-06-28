@@ -197,7 +197,9 @@ Common flags: `--port`, `--host`, `--config <path>`, `--openrouter-key <key>` / 
 
 **Anthropic returns `400` about mixed TTLs when `cacheControlTtl: 1h`.** Set `rewriteBlockTtl: auto` (or `always`) to normalize the client's block-level `cache_control` breakpoints to the same TTL — see the [configuration reference](./docs/configuration.md#prompt-caching).
 
-**OpenRouter returns `400 invalid_prompt | Invalid Responses API request` on `/v1/responses`.** Some clients send Responses `input` items without the `type` field OpenRouter requires. `normalizeResponses: auto` (the default) tags them, lifts `role:"system"` into `instructions`, and adds the `id`/`status` OpenRouter wants on assistant history. Set it to `skip` only for raw passthrough.
+**OpenRouter returns `400 invalid_prompt | Invalid Responses API request` on `/v1/responses`.** Some clients send Responses `input` items without the `type` field OpenRouter requires. `normalizeResponses: true` (the default; off only for raw passthrough) tags them, lifts `role:"system"` into `instructions`, and adds the `id`/`status` OpenRouter wants on assistant history. It acts on `/v1/responses` only.
+
+**Strict providers reject `role:"system"` inside `/v1/messages`.** Some clients (e.g. an injected `SessionStart` hook payload) place a `role:"system"` item mid-thread in `messages`; the Anthropic Messages API allows only `user`/`assistant` there, so providers like OpenRouter → GLM return `400 ... messages[n].role: Input should be 'user' or 'assistant'`. Enable `normalizeMessages: true` (off by default; Fixes menu or per-model override) to lift each such item's text into the top-level `system` field and drop it from `messages`. It acts on `/v1/messages` only.
 
 **The provider keeps switching between requests.** Make sure `sessionId` is not `skip` — both `auto` (default) and `always` inject a sticky session ID; without it OpenRouter only pins after the first cache hit.
 

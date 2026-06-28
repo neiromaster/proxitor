@@ -6,22 +6,19 @@ import { normalizeResponsesInput, shouldNormalizeResponses } from './responses-i
 // ---------------------------------------------------------------------------
 
 describe('shouldNormalizeResponses', () => {
-  it('returns false for skip regardless of path', () => {
-    expect(shouldNormalizeResponses('skip', '/v1/responses')).toBe(false);
+  it('returns false when disabled, regardless of path', () => {
+    expect(shouldNormalizeResponses(false, '/v1/responses')).toBe(false);
+    expect(shouldNormalizeResponses(false, '/v1/chat/completions')).toBe(false);
   });
 
-  it('returns true for always regardless of path', () => {
-    expect(shouldNormalizeResponses('always', '/v1/chat/completions')).toBe(true);
-  });
-
-  it('returns true for auto only on /v1/responses', () => {
-    expect(shouldNormalizeResponses('auto', '/v1/responses')).toBe(true);
-    expect(shouldNormalizeResponses('auto', '/v1/chat/completions')).toBe(false);
-    expect(shouldNormalizeResponses('auto', '/v1/messages')).toBe(false);
+  it('returns true only on /v1/responses when enabled', () => {
+    expect(shouldNormalizeResponses(true, '/v1/responses')).toBe(true);
+    expect(shouldNormalizeResponses(true, '/v1/chat/completions')).toBe(false);
+    expect(shouldNormalizeResponses(true, '/v1/messages')).toBe(false);
   });
 
   it('ignores a query string when classifying the path', () => {
-    expect(shouldNormalizeResponses('auto', '/v1/responses?foo=bar')).toBe(true);
+    expect(shouldNormalizeResponses(true, '/v1/responses?foo=bar')).toBe(true);
   });
 });
 

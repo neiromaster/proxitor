@@ -197,7 +197,9 @@ proxitor doctor   # проверяет окружение, конфиг, клю�
 
 **Anthropic возвращает `400` про смешанные TTL при `cacheControlTtl: 1h`.** Поставьте `rewriteBlockTtl: auto` (или `always`), чтобы привести клиентские блочные `cache_control`-брейкпойнты к тому же TTL — см. [справочник по конфигурации](./configuration.ru.md#кэширование-подсказок).
 
-**OpenRouter возвращает `400 invalid_prompt | Invalid Responses API request` на `/v1/responses`.** Некоторые клиенты отправляют айтемы `input` без поля `type`, которое требует OpenRouter. `normalizeResponses: auto` (по умолчанию) проставляет его, переносит `role:"system"` в `instructions` и добавляет `id`/`status`, которые OpenRouter ждёт от assistant-истории. Ставьте `skip` только для чистого passthrough.
+**OpenRouter возвращает `400 invalid_prompt | Invalid Responses API request` на `/v1/responses`.** Некоторые клиенты отправляют айтемы `input` без поля `type`, которое требует OpenRouter. `normalizeResponses: true` (по умолчанию; выкл только для чистого passthrough) проставляет его, переносит `role:"system"` в `instructions` и добавляет `id`/`status`, которые OpenRouter ждёт от assistant-истории. Действует только на `/v1/responses`.
+
+**Строгие провайдеры режектят `role:"system"` внутри `/v1/messages`.** Некоторые клиенты (например, внедрённый вывод хука `SessionStart`) ставят айтем `role:"system"` в середину треда в `messages`; Anthropic Messages API разрешает там только `user`/`assistant`, поэтому провайдеры вроде OpenRouter → GLM возвращают `400 ... messages[n].role: Input should be 'user' or 'assistant'`. Включите `normalizeMessages: true` (по умолчанию выкл; меню Fixes или per-model override), чтобы перенести текст такого айтема в top-level поле `system` и убрать его из `messages`. Действует только на `/v1/messages`.
 
 **Провайдер переключается между запросами.** Убедитесь, что `sessionId` не `skip` — и `auto` (по умолчанию), и `always` инжектят липкий session ID; без него OpenRouter закрепляет провайдера только после первого попадания в кэш.
 

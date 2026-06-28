@@ -38,7 +38,8 @@ export type ResolvedModelConfig = {
   cacheControlTtl?: '5m' | '1h' | 'omit' | 'skip';
   rewriteBlockTtl: TriState;
   sessionId: TriState;
-  normalizeResponses: TriState;
+  normalizeResponses: boolean;
+  normalizeMessages: boolean;
   normalizeVolatileSystem: boolean;
   matchedOverride?: string;
 };
@@ -159,6 +160,7 @@ export function resolveModelConfig(
     rewriteBlockTtl: config.rewriteBlockTtl,
     sessionId: config.sessionId,
     normalizeResponses: config.normalizeResponses,
+    normalizeMessages: config.normalizeMessages,
     normalizeVolatileSystem: config.normalizeVolatileSystem,
   };
 
@@ -202,6 +204,9 @@ function applyOverride(result: ResolvedModelConfig, override?: ModelOverride): v
   if (override.sessionId !== undefined) result.sessionId = override.sessionId;
   if (override.normalizeResponses !== undefined) {
     result.normalizeResponses = override.normalizeResponses;
+  }
+  if (override.normalizeMessages !== undefined) {
+    result.normalizeMessages = override.normalizeMessages;
   }
   if (override.normalizeVolatileSystem !== undefined) {
     result.normalizeVolatileSystem = override.normalizeVolatileSystem;

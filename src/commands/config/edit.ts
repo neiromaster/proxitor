@@ -15,7 +15,7 @@ import {
 
 type EditField = 'provider' | 'caching' | 'fixes' | 'done';
 
-function nvsHint(value: boolean | undefined): string {
+function toggleHint(value: boolean | undefined): string {
   if (value === undefined) return '(inherit)';
   return value ? 'on' : 'off';
 }
@@ -30,8 +30,9 @@ function formatOverrideHint(override: ModelOverride | undefined): string {
   if (override.sessionId) parts.push(`session: ${override.sessionId}`);
   if (override.cacheControl) parts.push(`cache: ${override.cacheControl}`);
   if (override.normalizeVolatileSystem !== undefined)
-    parts.push(`normalize: ${nvsHint(override.normalizeVolatileSystem)}`);
-  if (override.normalizeResponses) parts.push(`fix: ${override.normalizeResponses}`);
+    parts.push(`normalize: ${toggleHint(override.normalizeVolatileSystem)}`);
+  if (override.normalizeResponses !== undefined)
+    parts.push(`fix: ${toggleHint(override.normalizeResponses)}`);
   if (override.headers) parts.push(`${Object.keys(override.headers).length} header(s)`);
   return parts.join(', ') || '(empty)';
 }
@@ -40,7 +41,7 @@ function formatCachingHint(current: ModelOverride): string {
   const cc = current.cacheControl ?? 'inherit';
   const ttl = current.cacheControlTtl ? describeTtl(current.cacheControlTtl) : 'inherit';
   const sid = current.sessionId ?? 'inherit';
-  const nvs = nvsHint(current.normalizeVolatileSystem);
+  const nvs = toggleHint(current.normalizeVolatileSystem);
   return `cc ${cc} · ttl ${ttl} · sid ${sid} · nvs ${nvs}`;
 }
 
