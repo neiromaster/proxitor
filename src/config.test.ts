@@ -9,6 +9,7 @@ import {
   DEFAULTS,
   detectSlugCollisions,
   findConfigFile,
+  fixBaseline,
   formatSlugCollisionWarning,
   getConfigSearchPaths,
   loadConfig,
@@ -1147,5 +1148,28 @@ describe('rewriteBlockTtl', () => {
   it('rejects an invalid rewriteBlockTtl value', () => {
     const result = proxyConfigFileSchema.safeParse({ rewriteBlockTtl: 'sometimes' });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('fixBaseline', () => {
+  it('returns OFF values when recommended is false', () => {
+    const base = fixBaseline(false);
+    expect(base.cacheControl).toBe('skip');
+    expect(base.sessionId).toBe('skip');
+    expect(base.rewriteBlockTtl).toBe('skip');
+    expect(base.normalizeResponses).toBe(false);
+    expect(base.normalizeMessages).toBe(false);
+    expect(base.normalizeVolatileSystem).toBe(false);
+  });
+
+  it('enables the base-4 preset when recommended is true', () => {
+    const base = fixBaseline(true);
+    expect(base.cacheControl).toBe('auto');
+    expect(base.sessionId).toBe('auto');
+    expect(base.normalizeResponses).toBe(true);
+    expect(base.normalizeVolatileSystem).toBe(true);
+    // not in the preset — stay OFF
+    expect(base.rewriteBlockTtl).toBe('skip');
+    expect(base.normalizeMessages).toBe(false);
   });
 });

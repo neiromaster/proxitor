@@ -44,6 +44,41 @@ export type ResolvedModelConfig = {
   matchedOverride?: string;
 };
 
+/** The six "caching + fixes" fields gated by `recommended` / explicit flags. */
+export type FixField =
+  | 'cacheControl'
+  | 'rewriteBlockTtl'
+  | 'sessionId'
+  | 'normalizeResponses'
+  | 'normalizeMessages'
+  | 'normalizeVolatileSystem';
+
+/** Effective value of each fix field when unset and `recommended` is false (pure passthrough). */
+export const FIX_OFF: Readonly<Record<FixField, TriState | boolean>> = {
+  cacheControl: 'skip',
+  rewriteBlockTtl: 'skip',
+  sessionId: 'skip',
+  normalizeResponses: false,
+  normalizeMessages: false,
+  normalizeVolatileSystem: false,
+};
+
+/** The curated preset enabled by `recommended: true`. Four fields differ from FIX_OFF. */
+export const RECOMMENDED_PRESET: Readonly<Record<FixField, TriState | boolean>> = {
+  ...FIX_OFF,
+  cacheControl: 'auto',
+  sessionId: 'auto',
+  normalizeResponses: true,
+  normalizeVolatileSystem: true,
+};
+
+/** Effective value for an unset fix field, given the `recommended` flag. */
+export function fixBaseline(
+  recommended: boolean,
+): Readonly<Record<FixField, TriState | boolean>> {
+  return recommended ? RECOMMENDED_PRESET : FIX_OFF;
+}
+
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'only', apiName: 'only' },
   { key: 'order', apiName: 'order' },
