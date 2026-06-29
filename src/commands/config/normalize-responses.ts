@@ -1,5 +1,5 @@
 import * as clack from '@clack/prompts';
-import { DEFAULTS, readConfigFileRaw } from '../../config.js';
+import { fixBaseline, readConfigFileRaw } from '../../config.js';
 import { requireConfigPath, setGlobalConfigFields } from './config.js';
 import { askNormalizeResponses } from './prompts.js';
 
@@ -9,7 +9,8 @@ export async function normalizeResponsesCommand(opts?: {
   const configPath = requireConfigPath(opts?.configPath);
   const cfg = readConfigFileRaw(configPath);
   const raw = cfg.normalizeResponses;
-  const effective = raw ?? DEFAULTS.normalizeResponses;
+  const base = fixBaseline(cfg.recommended ?? false);
+  const effective = raw ?? (base.normalizeResponses as boolean);
 
   clack.log.info(
     `Current: normalizeResponses = ${raw === undefined ? `(default -> ${effective ? 'on' : 'off'})` : effective}`,
@@ -20,7 +21,7 @@ export async function normalizeResponsesCommand(opts?: {
     raw,
     {
       removable: true,
-      resetHint: `remove (default: ${DEFAULTS.normalizeResponses ? 'on' : 'off'})`,
+      resetHint: `remove (default: ${base.normalizeResponses ? 'on' : 'off'})`,
     },
   );
   if (typeof choice === 'symbol') return; // cancelled
@@ -29,6 +30,7 @@ export async function normalizeResponsesCommand(opts?: {
   fields.normalizeResponses = choice === 'reset' ? undefined : choice;
   setGlobalConfigFields(configPath, fields);
 
-  const label = choice === 'reset' ? `(default: ${DEFAULTS.normalizeResponses})` : choice;
+  const label =
+    choice === 'reset' ? `(default: ${base.normalizeResponses ? 'on' : 'off'})` : choice;
   clack.log.success(`normalizeResponses set to ${label}`);
 }

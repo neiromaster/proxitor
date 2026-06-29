@@ -72,6 +72,7 @@ export async function createTestEnv(
     normalizeVolatileSystem: false,
     observability: { ...DEFAULTS.observability },
     verbose: false,
+    recommended: false,
     bodyLimit: '50mb',
     attributionReferer: 'https://github.com/neiromaster/proxitor',
     attributionTitle: 'proxitor-test',

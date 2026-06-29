@@ -22,16 +22,17 @@ describe('formatGlobalCachingSummary', () => {
   it('shows resolved defaults when fields are absent', () => {
     const out = formatGlobalCachingSummary(
       asConfig({
+        recommended: false,
         cacheControl: undefined,
         cacheControlTtl: undefined,
         sessionId: undefined,
         normalizeVolatileSystem: undefined,
       }),
     );
-    expect(out).toContain('cacheControl            = (default -> auto)');
+    expect(out).toContain('cacheControl            = (default -> skip)');
     expect(out).toContain('cacheControlTtl         = (default)');
     expect(out).toContain('rewriteBlockTtl         = (default -> skip)');
-    expect(out).toContain('sessionId               = (default -> auto)');
+    expect(out).toContain('sessionId               = (default -> skip)');
     expect(out).toContain('normalizeVolatileSystem = (default -> off)');
     expect(out).toContain('Anthropic');
     expect(out).toContain('all 3');

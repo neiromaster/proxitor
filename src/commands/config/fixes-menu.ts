@@ -1,6 +1,6 @@
 import * as clack from '@clack/prompts';
 import { isCancel } from '@clack/prompts';
-import { readConfigFileRaw } from '../../config.js';
+import { fixBaseline, readConfigFileRaw } from '../../config.js';
 import type { ModelOverride } from '../../config-schema.js';
 import { requireConfigPath, setModelOverride } from './config.js';
 import { overridesEqual } from './equality.js';
@@ -62,9 +62,10 @@ export async function globalFixesMenu(opts?: { configPath?: string }): Promise<v
     backLabel: '← Back',
     renderNote: () => {
       const raw = readConfigFileRaw(configPath);
+      const base = fixBaseline(raw.recommended ?? false);
       return [
-        `normalizeResponses: ${raw.normalizeResponses ?? '(default → on)'}`,
-        `normalizeMessages: ${raw.normalizeMessages ?? '(default → off)'}`,
+        `normalizeResponses: ${raw.normalizeResponses ?? `(default → ${base.normalizeResponses ? 'on' : 'off'})`}`,
+        `normalizeMessages: ${raw.normalizeMessages ?? `(default → ${base.normalizeMessages ? 'on' : 'off'})`}`,
       ].join('\n');
     },
     onLever: lever => lever.global(configPath),

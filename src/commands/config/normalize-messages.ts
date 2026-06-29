@@ -1,5 +1,5 @@
 import * as clack from '@clack/prompts';
-import { DEFAULTS, readConfigFileRaw } from '../../config.js';
+import { fixBaseline, readConfigFileRaw } from '../../config.js';
 import { requireConfigPath, setGlobalConfigFields } from './config.js';
 import { askNormalizeMessages } from './prompts.js';
 
@@ -9,7 +9,8 @@ export async function normalizeMessagesCommand(opts?: {
   const configPath = requireConfigPath(opts?.configPath);
   const cfg = readConfigFileRaw(configPath);
   const raw = cfg.normalizeMessages;
-  const effective = raw ?? DEFAULTS.normalizeMessages;
+  const base = fixBaseline(cfg.recommended ?? false);
+  const effective = raw ?? (base.normalizeMessages as boolean);
 
   clack.log.info(
     `Current: normalizeMessages = ${raw === undefined ? `(default -> ${effective ? 'on' : 'off'})` : effective}`,
@@ -20,7 +21,7 @@ export async function normalizeMessagesCommand(opts?: {
     raw,
     {
       removable: true,
-      resetHint: `remove (default: ${DEFAULTS.normalizeMessages ? 'on' : 'off'})`,
+      resetHint: `remove (default: ${base.normalizeMessages ? 'on' : 'off'})`,
     },
   );
   if (typeof choice === 'symbol') return; // cancelled
@@ -29,6 +30,7 @@ export async function normalizeMessagesCommand(opts?: {
   fields.normalizeMessages = choice === 'reset' ? undefined : choice;
   setGlobalConfigFields(configPath, fields);
 
-  const label = choice === 'reset' ? `(default: ${DEFAULTS.normalizeMessages})` : choice;
+  const label =
+    choice === 'reset' ? `(default: ${base.normalizeMessages ? 'on' : 'off'})` : choice;
   clack.log.success(`normalizeMessages set to ${label}`);
 }

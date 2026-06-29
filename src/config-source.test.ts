@@ -13,13 +13,13 @@ describe('summarizeChanges', () => {
   it('reports a scalar field change', () => {
     const prev = base();
     const next: ProxyConfig = { ...base(), cacheControl: 'always' };
-    expect(summarizeChanges(prev, next)).toBe('cacheControl: auto→always');
+    expect(summarizeChanges(prev, next)).toBe('cacheControl: unset→always');
   });
 
   it('formats booleans as on/off', () => {
     const prev = base();
     const next: ProxyConfig = { ...base(), normalizeVolatileSystem: true };
-    expect(summarizeChanges(prev, next)).toBe('normalizeVolatileSystem: off→on');
+    expect(summarizeChanges(prev, next)).toBe('normalizeVolatileSystem: unset→on');
   });
 
   it('formats undefined as unset', () => {
@@ -153,7 +153,7 @@ describe('summarizeChanges', () => {
       normalizeVolatileSystem: true,
     };
     expect(summarizeChanges(prev, next)).toBe(
-      'cacheControl: auto→always, normalizeVolatileSystem: off→on',
+      'cacheControl: unset→always, normalizeVolatileSystem: unset→on',
     );
   });
 });

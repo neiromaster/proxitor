@@ -187,16 +187,18 @@ export function resolveModelConfig(
   config: ProxyConfig,
   modelName?: string,
 ): ResolvedModelConfig {
+  const base = fixBaseline(config.recommended);
   const result: ResolvedModelConfig = {
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
-    cacheControl: config.cacheControl,
+    cacheControl: config.cacheControl ?? (base.cacheControl as TriState),
     cacheControlTtl: config.cacheControlTtl,
-    rewriteBlockTtl: config.rewriteBlockTtl,
-    sessionId: config.sessionId,
-    normalizeResponses: config.normalizeResponses,
-    normalizeMessages: config.normalizeMessages,
-    normalizeVolatileSystem: config.normalizeVolatileSystem,
+    rewriteBlockTtl: config.rewriteBlockTtl ?? (base.rewriteBlockTtl as TriState),
+    sessionId: config.sessionId ?? (base.sessionId as TriState),
+    normalizeResponses: config.normalizeResponses ?? (base.normalizeResponses as boolean),
+    normalizeMessages: config.normalizeMessages ?? (base.normalizeMessages as boolean),
+    normalizeVolatileSystem:
+      config.normalizeVolatileSystem ?? (base.normalizeVolatileSystem as boolean),
   };
 
   if (!modelName || !config.modelOverrides) return result;
