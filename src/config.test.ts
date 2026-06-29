@@ -19,6 +19,7 @@ import {
   readConfigFile,
   readConfigFileRaw,
   resolveModelConfig,
+  resolveRecommendedOption,
   tryFindConfigFile,
 } from './config.js';
 import { proxyConfigFileSchema } from './config-schema.js';
@@ -72,6 +73,50 @@ describe('loadConfig', () => {
       process.chdir(savedCwd);
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  it('threads recommended from the CLI option (true)', async () => {
+    const config = await loadConfig({
+      noConfig: true,
+      openrouterKey: 'test-key',
+      recommended: true,
+    });
+    expect(config.recommended).toBe(true);
+  });
+
+  it('threads recommended from the CLI option (false) overriding a file value', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-rec-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterKey: file-key\nrecommended: true\n');
+    try {
+      const config = await loadConfig({ configPath, recommended: false });
+      expect(config.recommended).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults recommended to false when nothing is set', async () => {
+    const config = await loadConfig({ noConfig: true, openrouterKey: 'test-key' });
+    expect(config.recommended).toBe(false);
+  });
+});
+
+describe('resolveRecommendedOption', () => {
+  it('returns undefined when neither flag is set (inherit from file)', () => {
+    expect(resolveRecommendedOption(false, false)).toBeUndefined();
+  });
+
+  it('returns true when --recommended is set', () => {
+    expect(resolveRecommendedOption(true, false)).toBe(true);
+  });
+
+  it('returns false when --no-recommended is set', () => {
+    expect(resolveRecommendedOption(false, true)).toBe(false);
+  });
+
+  it('--no-recommended wins when both flags are set', () => {
+    expect(resolveRecommendedOption(true, true)).toBe(false);
   });
 });
 

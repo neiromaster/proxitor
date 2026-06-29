@@ -25,7 +25,7 @@ import { validateConfigCommand } from './commands/config/validate.js';
 import { runWizard } from './commands/config/wizard.js';
 import { runConfigMenu } from './commands/config.js';
 import { doctorCommand } from './commands/doctor.js';
-import { DEFAULTS, loadConfig } from './config.js';
+import { DEFAULTS, loadConfig, resolveRecommendedOption } from './config.js';
 import { createConfigSource } from './config-source.js';
 import { logger } from './logger.js';
 import { OpenRouterDataClient } from './openrouter/data-client.js';
@@ -129,10 +129,36 @@ export const startCommand = command({
     noConfig: flag({ long: 'no-config', description: 'Skip config file discovery' }),
     openrouterKey: configArgs.openrouterKey,
     verbose: flag({ long: 'verbose', description: 'Enable verbose logging' }),
+    recommended: flag({
+      long: 'recommended',
+      description: 'Enable the recommended set of caching + fixes',
+    }),
+    noRecommended: flag({
+      long: 'no-recommended',
+      description: 'Disable the recommended preset (overrides config file)',
+    }),
   },
-  handler: async ({ configPath, port, host, noConfig, openrouterKey, verbose }) => {
+  handler: async ({
+    configPath,
+    port,
+    host,
+    noConfig,
+    openrouterKey,
+    verbose,
+    recommended,
+    noRecommended,
+  }) => {
     try {
-      const loadOptions = { configPath, noConfig, port, host, openrouterKey, verbose };
+      const recommendedOption = resolveRecommendedOption(recommended, noRecommended);
+      const loadOptions = {
+        configPath,
+        noConfig,
+        port,
+        host,
+        openrouterKey,
+        verbose,
+        recommended: recommendedOption,
+      };
       const cfg = await loadConfig(loadOptions);
       const source = createConfigSource({ loadOptions, initial: cfg });
       source.start();

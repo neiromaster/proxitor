@@ -79,6 +79,22 @@ export function fixBaseline(
   return recommended ? RECOMMENDED_PRESET : FIX_OFF;
 }
 
+/**
+ * Resolve the `recommended` loadConfig option from the two CLI flags.
+ * A cmd-ts `flag()` is `false` when absent, so explicitly map the
+ * "neither flag" case to `undefined` — letting a config file's
+ * `recommended: true` inherit. `--recommended` forces true;
+ * `--no-recommended` forces false and wins on conflict.
+ */
+export function resolveRecommendedOption(
+  recommended: boolean,
+  noRecommended: boolean,
+): boolean | undefined {
+  if (noRecommended) return false;
+  if (recommended) return true;
+  return undefined;
+}
+
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'only', apiName: 'only' },
   { key: 'order', apiName: 'order' },
@@ -267,6 +283,7 @@ export type LoadConfigOptions = {
   host?: string;
   openrouterKey?: string;
   port?: number;
+  recommended?: boolean;
   verbose?: boolean;
 };
 
@@ -285,6 +302,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     ...(options.host !== undefined ? { host: options.host } : {}),
     ...(options.port !== undefined ? { port: options.port } : {}),
     ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
+    ...(options.recommended !== undefined ? { recommended: options.recommended } : {}),
     openrouterKey:
       options.openrouterKey ||
       fileConfig.openrouterKey ||
