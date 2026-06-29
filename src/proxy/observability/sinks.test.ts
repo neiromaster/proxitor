@@ -63,8 +63,17 @@ describe('colorizeLabel', () => {
   it('returns plain label when useColor false', () => {
     expect(colorizeLabel('HIT', false)).toBe('HIT');
   });
-  it('wraps with ANSI when useColor true', () => {
-    expect(colorizeLabel('MISS', true)).toBe('\x1b[31mMISS\x1b[0m');
+  it('paints the label with ANSI when useColor is true', () => {
+    // styleText defers to Node's color detection (TTY/FORCE_COLOR/NO_COLOR); the
+    // test runner's stdout is non-TTY, so force it on to exercise the paint path.
+    const prev = process.env.FORCE_COLOR;
+    process.env.FORCE_COLOR = '1';
+    try {
+      expect(colorizeLabel('MISS', true)).toBe('\x1b[31mMISS\x1b[39m');
+    } finally {
+      if (prev === undefined) delete process.env.FORCE_COLOR;
+      else process.env.FORCE_COLOR = prev;
+    }
   });
 });
 
