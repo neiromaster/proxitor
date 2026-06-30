@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.20.0
+
+### Minor Changes
+
+- e1539de: Add a `recommended` config flag (and `--recommended` / `--no-recommended` CLI flags) that
+  enables a curated set of caching + fixes. The proxy is now a pure passthrough by default:
+  `cacheControl`, `sessionId`, and `normalizeResponses` are no longer on out of the box — set
+  `recommended: true` (or each flag individually) to turn them on. `normalizeVolatileSystem` is
+  part of the recommended preset.
+
 ## 0.19.1
 
 ### Patch Changes
