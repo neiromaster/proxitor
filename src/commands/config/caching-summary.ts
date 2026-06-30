@@ -40,17 +40,11 @@ function perModelTtl(current: ModelOverride, globalCfg: Partial<ProxyConfig>): s
 }
 
 export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
-  const base = fixBaseline(cfg.recommended ?? false);
-  const cc = globalTriStateLabel(cfg.cacheControl, base.cacheControl as TriState);
-  const rewrite = globalTriStateLabel(
-    cfg.rewriteBlockTtl,
-    base.rewriteBlockTtl as TriState,
-  );
-  const sid = globalTriStateLabel(cfg.sessionId, base.sessionId as TriState);
-  const nvs = globalNvsLabel(
-    cfg.normalizeVolatileSystem,
-    base.normalizeVolatileSystem as boolean,
-  );
+  const base = fixBaseline(cfg.recommended);
+  const cc = globalTriStateLabel(cfg.cacheControl, base.cacheControl);
+  const rewrite = globalTriStateLabel(cfg.rewriteBlockTtl, base.rewriteBlockTtl);
+  const sid = globalTriStateLabel(cfg.sessionId, base.sessionId);
+  const nvs = globalNvsLabel(cfg.normalizeVolatileSystem, base.normalizeVolatileSystem);
 
   return [
     'Three settings shape the request so cache survives.',
@@ -70,12 +64,11 @@ export function formatPerModelCachingSummary(
   current: ModelOverride,
   globalCfg: Partial<ProxyConfig>,
 ): string {
-  const base = fixBaseline(globalCfg.recommended ?? false);
-  const gCc = globalCfg.cacheControl ?? (base.cacheControl as TriState);
-  const gRewrite = globalCfg.rewriteBlockTtl ?? (base.rewriteBlockTtl as TriState);
-  const gSid = globalCfg.sessionId ?? (base.sessionId as TriState);
-  const gNvs =
-    globalCfg.normalizeVolatileSystem ?? (base.normalizeVolatileSystem as boolean);
+  const base = fixBaseline(globalCfg.recommended);
+  const gCc = globalCfg.cacheControl ?? base.cacheControl;
+  const gRewrite = globalCfg.rewriteBlockTtl ?? base.rewriteBlockTtl;
+  const gSid = globalCfg.sessionId ?? base.sessionId;
+  const gNvs = globalCfg.normalizeVolatileSystem ?? base.normalizeVolatileSystem;
 
   const cc = current.cacheControl ?? `(inherit -> ${gCc})`;
   const ttl = perModelTtl(current, globalCfg);

@@ -36,9 +36,9 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   const rawCc = cfg.cacheControl as TriState | undefined;
   const rawTtl = cfg.cacheControlTtl as '5m' | '1h' | 'omit' | 'skip' | undefined;
   const rawRewrite = cfg.rewriteBlockTtl as TriState | undefined;
-  const base = fixBaseline(cfg.recommended ?? false);
-  const effectiveCc = rawCc ?? (base.cacheControl as TriState);
-  const effectiveRewrite = rawRewrite ?? (base.rewriteBlockTtl as TriState);
+  const base = fixBaseline(cfg.recommended);
+  const effectiveCc = rawCc ?? base.cacheControl;
+  const effectiveRewrite = rawRewrite ?? base.rewriteBlockTtl;
 
   clack.log.info(
     `Current: cacheControl = ${rawCc === undefined ? `(default -> ${effectiveCc})` : effectiveCc}`,

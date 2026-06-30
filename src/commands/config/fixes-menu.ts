@@ -62,7 +62,7 @@ export async function globalFixesMenu(opts?: { configPath?: string }): Promise<v
     backLabel: '← Back',
     renderNote: () => {
       const raw = readConfigFileRaw(configPath);
-      const base = fixBaseline(raw.recommended ?? false);
+      const base = fixBaseline(raw.recommended);
       return [
         `normalizeResponses: ${raw.normalizeResponses ?? `(default → ${base.normalizeResponses ? 'on' : 'off'})`}`,
         `normalizeMessages: ${raw.normalizeMessages ?? `(default → ${base.normalizeMessages ? 'on' : 'off'})`}`,

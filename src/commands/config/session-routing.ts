@@ -1,6 +1,5 @@
 import * as clack from '@clack/prompts';
 import { fixBaseline, readConfigFileRaw } from '../../config.js';
-import type { TriState } from '../../config-schema.js';
 import { requireConfigPath, setGlobalConfigField } from './config.js';
 import { askTriState, SESSION_HINTS } from './prompts.js';
 
@@ -10,8 +9,8 @@ export async function sessionRoutingCommand(opts?: {
   const configPath = requireConfigPath(opts?.configPath);
   const cfg = readConfigFileRaw(configPath);
   const raw = cfg.sessionId;
-  const base = fixBaseline(cfg.recommended ?? false);
-  const effective = raw ?? (base.sessionId as TriState);
+  const base = fixBaseline(cfg.recommended);
+  const effective = raw ?? base.sessionId;
 
   clack.log.info(
     `Current: sessionId = ${raw === undefined ? `(default -> ${effective})` : effective}`,
@@ -25,7 +24,7 @@ export async function sessionRoutingCommand(opts?: {
 
   if (result === 'reset') {
     setGlobalConfigField(configPath, 'sessionId', undefined);
-    clack.log.success(`sessionId reset to default (${base.sessionId as TriState})`);
+    clack.log.success(`sessionId reset to default (${base.sessionId})`);
     return;
   }
   setGlobalConfigField(configPath, 'sessionId', result);

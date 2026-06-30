@@ -44,17 +44,19 @@ export type ResolvedModelConfig = {
   matchedOverride?: string;
 };
 
-/** The six "caching + fixes" fields gated by `recommended` / explicit flags. */
-export type FixField =
-  | 'cacheControl'
-  | 'rewriteBlockTtl'
-  | 'sessionId'
-  | 'normalizeResponses'
-  | 'normalizeMessages'
-  | 'normalizeVolatileSystem';
+/** Effective value of each of the six "caching + fixes" fields, with per-field
+ * types preserved so callers need no `as TriState` / `as boolean` casts. */
+export type FixBaseline = {
+  cacheControl: TriState;
+  rewriteBlockTtl: TriState;
+  sessionId: TriState;
+  normalizeResponses: boolean;
+  normalizeMessages: boolean;
+  normalizeVolatileSystem: boolean;
+};
 
 /** Effective value of each fix field when unset and `recommended` is false (pure passthrough). */
-export const FIX_OFF: Readonly<Record<FixField, TriState | boolean>> = {
+export const FIX_OFF: FixBaseline = {
   cacheControl: 'skip',
   rewriteBlockTtl: 'skip',
   sessionId: 'skip',
@@ -64,7 +66,7 @@ export const FIX_OFF: Readonly<Record<FixField, TriState | boolean>> = {
 };
 
 /** The curated preset enabled by `recommended: true`. Four fields differ from FIX_OFF. */
-export const RECOMMENDED_PRESET: Readonly<Record<FixField, TriState | boolean>> = {
+export const RECOMMENDED_PRESET: FixBaseline = {
   ...FIX_OFF,
   cacheControl: 'auto',
   sessionId: 'auto',
@@ -72,10 +74,12 @@ export const RECOMMENDED_PRESET: Readonly<Record<FixField, TriState | boolean>> 
   normalizeVolatileSystem: true,
 };
 
-/** Effective value for an unset fix field, given the `recommended` flag. */
-export function fixBaseline(
-  recommended: boolean,
-): Readonly<Record<FixField, TriState | boolean>> {
+/**
+ * Effective value for an unset fix field, given the `recommended` flag.
+ * Accepts `undefined` so callers can pass `cfg.recommended` straight from a
+ * `Partial<ProxyConfig>` — absent ⇒ treated as false (pure passthrough).
+ */
+export function fixBaseline(recommended: boolean | undefined): FixBaseline {
   return recommended ? RECOMMENDED_PRESET : FIX_OFF;
 }
 
@@ -207,14 +211,14 @@ export function resolveModelConfig(
   const result: ResolvedModelConfig = {
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
-    cacheControl: config.cacheControl ?? (base.cacheControl as TriState),
+    cacheControl: config.cacheControl ?? base.cacheControl,
     cacheControlTtl: config.cacheControlTtl,
-    rewriteBlockTtl: config.rewriteBlockTtl ?? (base.rewriteBlockTtl as TriState),
-    sessionId: config.sessionId ?? (base.sessionId as TriState),
-    normalizeResponses: config.normalizeResponses ?? (base.normalizeResponses as boolean),
-    normalizeMessages: config.normalizeMessages ?? (base.normalizeMessages as boolean),
+    rewriteBlockTtl: config.rewriteBlockTtl ?? base.rewriteBlockTtl,
+    sessionId: config.sessionId ?? base.sessionId,
+    normalizeResponses: config.normalizeResponses ?? base.normalizeResponses,
+    normalizeMessages: config.normalizeMessages ?? base.normalizeMessages,
     normalizeVolatileSystem:
-      config.normalizeVolatileSystem ?? (base.normalizeVolatileSystem as boolean),
+      config.normalizeVolatileSystem ?? base.normalizeVolatileSystem,
   };
 
   if (!modelName || !config.modelOverrides) return result;
