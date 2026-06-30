@@ -156,6 +156,18 @@ describe('summarizeChanges', () => {
       'cacheControl: unset→always, normalizeVolatileSystem: unset→on',
     );
   });
+
+  it('reports a recommended preset flip', () => {
+    const prev = base();
+    const next: ProxyConfig = { ...base(), recommended: true };
+    expect(summarizeChanges(prev, next)).toBe('recommended: off→on');
+  });
+
+  it('reports a direct normalizeResponses flip (not just the preset)', () => {
+    const prev = base();
+    const next: ProxyConfig = { ...base(), normalizeResponses: true };
+    expect(summarizeChanges(prev, next)).toBe('normalizeResponses: unset→on');
+  });
 });
 
 describe('FileWatchingConfigSource.reload', () => {
