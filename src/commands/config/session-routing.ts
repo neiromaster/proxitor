@@ -25,7 +25,7 @@ export async function sessionRoutingCommand(opts?: {
 
   if (result === 'reset') {
     setGlobalConfigField(configPath, 'sessionId', undefined);
-    clack.log.success('sessionId reset to default (auto)');
+    clack.log.success(`sessionId reset to default (${base.sessionId as TriState})`);
     return;
   }
   setGlobalConfigField(configPath, 'sessionId', result);
