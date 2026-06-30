@@ -38,8 +38,13 @@ const CACHE_LEVER_KEYS = [
   'normalizeVolatileSystem',
 ] as const;
 
+// Scalar fields surfaced in the reload diff; extends CACHE_LEVER_KEYS with the remaining fix fields + `recommended`.
 const SCALAR_KEYS = [
   ...CACHE_LEVER_KEYS,
+  'rewriteBlockTtl',
+  'normalizeResponses',
+  'normalizeMessages',
+  'recommended',
   'authType',
   'verbose',
   'bodyLimit',

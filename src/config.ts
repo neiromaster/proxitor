@@ -44,6 +44,57 @@ export type ResolvedModelConfig = {
   matchedOverride?: string;
 };
 
+/** Effective value of each of the six "caching + fixes" fields. */
+export type FixBaseline = {
+  readonly cacheControl: TriState;
+  readonly rewriteBlockTtl: TriState;
+  readonly sessionId: TriState;
+  readonly normalizeResponses: boolean;
+  readonly normalizeMessages: boolean;
+  readonly normalizeVolatileSystem: boolean;
+};
+
+/** Effective value of each fix field when unset and `recommended` is false (pure passthrough). */
+export const FIX_OFF: FixBaseline = {
+  cacheControl: 'skip',
+  rewriteBlockTtl: 'skip',
+  sessionId: 'skip',
+  normalizeResponses: false,
+  normalizeMessages: false,
+  normalizeVolatileSystem: false,
+};
+
+/** The curated preset enabled by `recommended: true`. Four fields differ from FIX_OFF. */
+export const RECOMMENDED_PRESET: FixBaseline = {
+  ...FIX_OFF,
+  cacheControl: 'auto',
+  sessionId: 'auto',
+  normalizeResponses: true,
+  normalizeVolatileSystem: true,
+};
+
+/**
+ * Effective value for an unset fix field given `recommended`.
+ * Accepts `undefined` (absent ⇒ OFF) so callers can pass `cfg.recommended` directly.
+ */
+export function fixBaseline(recommended: boolean | undefined): FixBaseline {
+  return recommended ? RECOMMENDED_PRESET : FIX_OFF;
+}
+
+/**
+ * Map the two CLI flags to a `recommended` option. Returns `undefined` when
+ * neither is set so a config file's `recommended` inherits (cmd-ts `flag()`
+ * is `false` when absent, which would otherwise override the file).
+ */
+export function resolveRecommendedOption(
+  recommended: boolean,
+  noRecommended: boolean,
+): boolean | undefined {
+  if (noRecommended) return false;
+  if (recommended) return true;
+  return undefined;
+}
+
 const ARRAY_FIELDS: ReadonlyArray<{ key: keyof ProviderConfig; apiName: string }> = [
   { key: 'only', apiName: 'only' },
   { key: 'order', apiName: 'order' },
@@ -152,16 +203,18 @@ export function resolveModelConfig(
   config: ProxyConfig,
   modelName?: string,
 ): ResolvedModelConfig {
+  const base = fixBaseline(config.recommended);
   const result: ResolvedModelConfig = {
     provider: config.provider,
     headers: config.headers ? { ...config.headers } : undefined,
-    cacheControl: config.cacheControl,
+    cacheControl: config.cacheControl ?? base.cacheControl,
     cacheControlTtl: config.cacheControlTtl,
-    rewriteBlockTtl: config.rewriteBlockTtl,
-    sessionId: config.sessionId,
-    normalizeResponses: config.normalizeResponses,
-    normalizeMessages: config.normalizeMessages,
-    normalizeVolatileSystem: config.normalizeVolatileSystem,
+    rewriteBlockTtl: config.rewriteBlockTtl ?? base.rewriteBlockTtl,
+    sessionId: config.sessionId ?? base.sessionId,
+    normalizeResponses: config.normalizeResponses ?? base.normalizeResponses,
+    normalizeMessages: config.normalizeMessages ?? base.normalizeMessages,
+    normalizeVolatileSystem:
+      config.normalizeVolatileSystem ?? base.normalizeVolatileSystem,
   };
 
   if (!modelName || !config.modelOverrides) return result;
@@ -230,6 +283,7 @@ export type LoadConfigOptions = {
   host?: string;
   openrouterKey?: string;
   port?: number;
+  recommended?: boolean;
   verbose?: boolean;
 };
 
@@ -248,6 +302,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ProxyConfi
     ...(options.host !== undefined ? { host: options.host } : {}),
     ...(options.port !== undefined ? { port: options.port } : {}),
     ...(options.verbose !== undefined ? { verbose: options.verbose } : {}),
+    ...(options.recommended !== undefined ? { recommended: options.recommended } : {}),
     openrouterKey:
       options.openrouterKey ||
       fileConfig.openrouterKey ||

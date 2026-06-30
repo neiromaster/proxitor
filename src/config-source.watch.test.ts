@@ -76,7 +76,7 @@ describe('FileWatchingConfigSource file watching', () => {
 
     fire(stat(0, 0), stat(1)); // file deleted
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('disappeared'));
-    expect(source.get().cacheControl).toBe('auto'); // unchanged
+    expect(source.get().cacheControl).toBeUndefined(); // unchanged
     expect(load).not.toHaveBeenCalled();
 
     warn.mockRestore();

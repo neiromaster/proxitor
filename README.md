@@ -141,6 +141,25 @@ Prefer to edit a file? The full **[configuration reference](./docs/configuration
 
 **Environment variables** — `OPENROUTER_API_KEY` is used when the config key is empty; `XDG_CONFIG_HOME` overrides the user-config directory on Linux/macOS. CLI flags take precedence over both.
 
+### Recommended preset
+
+By default proxitor is a **pure passthrough** — it does not modify request bodies. Set `recommended: true` to enable a curated set of caching + fixes:
+
+| Setting | Value under `recommended: true` |
+| --- | --- |
+| `cacheControl` | `auto` |
+| `sessionId` | `auto` |
+| `normalizeResponses` | `true` |
+| `normalizeVolatileSystem` | `true` |
+
+`rewriteBlockTtl` and `normalizeMessages` stay off under the preset. Any single flag you set explicitly overrides the preset, e.g. `recommended: true` + `normalizeVolatileSystem: false`.
+
+```yaml
+recommended: true
+```
+
+Or via CLI: `proxitor --recommended` (and `proxitor --no-recommended` to force it off).
+
 ## Diagnostics
 
 ```sh

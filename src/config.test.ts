@@ -9,6 +9,7 @@ import {
   DEFAULTS,
   detectSlugCollisions,
   findConfigFile,
+  fixBaseline,
   formatSlugCollisionWarning,
   getConfigSearchPaths,
   loadConfig,
@@ -18,6 +19,7 @@ import {
   readConfigFile,
   readConfigFileRaw,
   resolveModelConfig,
+  resolveRecommendedOption,
   tryFindConfigFile,
 } from './config.js';
 import { proxyConfigFileSchema } from './config-schema.js';
@@ -71,6 +73,50 @@ describe('loadConfig', () => {
       process.chdir(savedCwd);
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  it('threads recommended from the CLI option (true)', async () => {
+    const config = await loadConfig({
+      noConfig: true,
+      openrouterKey: 'test-key',
+      recommended: true,
+    });
+    expect(config.recommended).toBe(true);
+  });
+
+  it('threads recommended from the CLI option (false) overriding a file value', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'proxitor-rec-'));
+    const configPath = join(dir, 'proxitor.config.yaml');
+    writeFileSync(configPath, 'openrouterKey: file-key\nrecommended: true\n');
+    try {
+      const config = await loadConfig({ configPath, recommended: false });
+      expect(config.recommended).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults recommended to false when nothing is set', async () => {
+    const config = await loadConfig({ noConfig: true, openrouterKey: 'test-key' });
+    expect(config.recommended).toBe(false);
+  });
+});
+
+describe('resolveRecommendedOption', () => {
+  it('returns undefined when neither flag is set (inherit from file)', () => {
+    expect(resolveRecommendedOption(false, false)).toBeUndefined();
+  });
+
+  it('returns true when --recommended is set', () => {
+    expect(resolveRecommendedOption(true, false)).toBe(true);
+  });
+
+  it('returns false when --no-recommended is set', () => {
+    expect(resolveRecommendedOption(false, true)).toBe(false);
+  });
+
+  it('--no-recommended wins when both flags are set', () => {
+    expect(resolveRecommendedOption(true, true)).toBe(false);
   });
 });
 
@@ -445,6 +491,7 @@ describe('resolveModelConfig', () => {
     observability: { ...DEFAULTS.observability },
     provider: { only: 'deepinfra' },
     headers: { 'X-Global': 'global-value' },
+    recommended: false,
   };
 
   it('should return global config when no model name', () => {
@@ -796,9 +843,9 @@ describe('readConfigFileRaw', () => {
     expect(raw.normalizeVolatileSystem).toBeUndefined();
     expect(raw.cacheControl).toBeUndefined();
     expect(raw.sessionId).toBeUndefined();
-    // readConfigFile, by contrast, collapses absent → schema default:
-    expect(readConfigFile(configPath).normalizeVolatileSystem).toBe(false);
-    expect(readConfigFile(configPath).cacheControl).toBe('auto');
+    // readConfigFile no longer applies defaults to the (now optional) fix fields:
+    expect(readConfigFile(configPath).normalizeVolatileSystem).toBeUndefined();
+    expect(readConfigFile(configPath).cacheControl).toBeUndefined();
   });
 
   it('returns explicitly set values unchanged', () => {
@@ -832,6 +879,7 @@ describe('cacheControl and sessionId config', () => {
     normalizeMessages: false,
     normalizeVolatileSystem: false,
     observability: { ...DEFAULTS.observability },
+    recommended: false,
   };
 
   it('accepts cacheControl: auto', () => {
@@ -869,14 +917,11 @@ describe('cacheControl and sessionId config', () => {
     expect(result.success).toBe(false);
   });
 
-  it('defaults cacheControl to auto', async () => {
+  it('leaves cacheControl unset (pure passthrough) by default', async () => {
     const config = await loadConfig({ noConfig: true, openrouterKey: 'test-key' });
-    expect(config.cacheControl).toBe('auto');
-  });
-
-  it('defaults sessionId to auto', async () => {
-    const config = await loadConfig({ noConfig: true, openrouterKey: 'test-key' });
-    expect(config.sessionId).toBe('auto');
+    expect(config.cacheControl).toBeUndefined();
+    expect(config.sessionId).toBeUndefined();
+    expect(config.recommended).toBe(false);
   });
 
   it('allows per-model cacheControl override', () => {
@@ -1112,8 +1157,8 @@ describe('throwIfV1Suffix (via loadConfig)', () => {
 });
 
 describe('rewriteBlockTtl', () => {
-  it('defaults to "skip" globally', () => {
-    expect(DEFAULTS.rewriteBlockTtl).toBe('skip');
+  it('leaves rewriteBlockTtl unset by default (resolves to skip via fixBaseline)', () => {
+    expect(DEFAULTS.rewriteBlockTtl).toBeUndefined();
   });
 
   it('is resolved from global config', () => {
@@ -1147,5 +1192,104 @@ describe('rewriteBlockTtl', () => {
   it('rejects an invalid rewriteBlockTtl value', () => {
     const result = proxyConfigFileSchema.safeParse({ rewriteBlockTtl: 'sometimes' });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('fixBaseline', () => {
+  it('returns OFF values when recommended is false', () => {
+    const base = fixBaseline(false);
+    expect(base.cacheControl).toBe('skip');
+    expect(base.sessionId).toBe('skip');
+    expect(base.rewriteBlockTtl).toBe('skip');
+    expect(base.normalizeResponses).toBe(false);
+    expect(base.normalizeMessages).toBe(false);
+    expect(base.normalizeVolatileSystem).toBe(false);
+  });
+
+  it('enables the base-4 preset when recommended is true', () => {
+    const base = fixBaseline(true);
+    expect(base.cacheControl).toBe('auto');
+    expect(base.sessionId).toBe('auto');
+    expect(base.normalizeResponses).toBe(true);
+    expect(base.normalizeVolatileSystem).toBe(true);
+    // not in the preset — stay OFF
+    expect(base.rewriteBlockTtl).toBe('skip');
+    expect(base.normalizeMessages).toBe(false);
+  });
+});
+
+describe('resolveModelConfig — recommended preset', () => {
+  const minimalConfig: ProxyConfig = {
+    host: '0.0.0.0',
+    port: 8828,
+    openrouterKey: 'test-key',
+    openrouterBaseUrl: 'https://openrouter.ai/api',
+    authType: 'bearer',
+    verbose: false,
+    bodyLimit: '50mb',
+    attributionReferer: 'https://github.com/neiromaster/proxitor',
+    attributionTitle: 'proxitor',
+    observability: { ...DEFAULTS.observability },
+    recommended: false,
+  };
+
+  it('is pure passthrough when recommended is false and no fixes are set', () => {
+    const resolved = resolveModelConfig(minimalConfig, 'gpt-4o');
+    expect(resolved.cacheControl).toBe('skip');
+    expect(resolved.sessionId).toBe('skip');
+    expect(resolved.rewriteBlockTtl).toBe('skip');
+    expect(resolved.normalizeResponses).toBe(false);
+    expect(resolved.normalizeMessages).toBe(false);
+    expect(resolved.normalizeVolatileSystem).toBe(false);
+  });
+
+  it('enables the base-4 preset when recommended is true', () => {
+    const resolved = resolveModelConfig(
+      { ...minimalConfig, recommended: true },
+      'gpt-4o',
+    );
+    expect(resolved.cacheControl).toBe('auto');
+    expect(resolved.sessionId).toBe('auto');
+    expect(resolved.normalizeResponses).toBe(true);
+    expect(resolved.normalizeVolatileSystem).toBe(true);
+    // not in preset
+    expect(resolved.rewriteBlockTtl).toBe('skip');
+    expect(resolved.normalizeMessages).toBe(false);
+  });
+
+  it('explicit flag overrides the recommended preset', () => {
+    const resolved = resolveModelConfig(
+      {
+        ...minimalConfig,
+        recommended: true,
+        cacheControl: 'skip',
+        normalizeVolatileSystem: false,
+      },
+      'gpt-4o',
+    );
+    expect(resolved.cacheControl).toBe('skip');
+    expect(resolved.normalizeVolatileSystem).toBe(false);
+    // untouched fields still come from the preset
+    expect(resolved.sessionId).toBe('auto');
+    expect(resolved.normalizeResponses).toBe(true);
+  });
+
+  it('explicit flag still wins when recommended is false', () => {
+    const resolved = resolveModelConfig(
+      { ...minimalConfig, recommended: false, cacheControl: 'always' },
+      'gpt-4o',
+    );
+    expect(resolved.cacheControl).toBe('always');
+  });
+
+  it('model override inherits the recommended baseline and can override one field', () => {
+    const config: ProxyConfig = {
+      ...minimalConfig,
+      recommended: true,
+      modelOverrides: { 'qwen-*': { cacheControl: 'skip' } },
+    };
+    const resolved = resolveModelConfig(config, 'qwen-plus');
+    expect(resolved.cacheControl).toBe('skip'); // override wins
+    expect(resolved.normalizeVolatileSystem).toBe(true); // inherited preset
   });
 });

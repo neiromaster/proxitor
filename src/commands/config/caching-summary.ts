@@ -1,4 +1,4 @@
-import { DEFAULTS } from '../../config.js';
+import { fixBaseline } from '../../config.js';
 import type { ModelOverride, ProxyConfig, TriState } from '../../config-schema.js';
 
 type TtlValue = '5m' | '1h' | 'omit' | 'skip' | undefined;
@@ -12,9 +12,9 @@ export function describeTtl(value: TtlValue): string {
 }
 
 /** Global NVS: distinguish absent (default-origin) from an explicit on/off. */
-function globalNvsLabel(value: boolean | undefined): string {
+function globalNvsLabel(value: boolean | undefined, fallback: boolean): string {
   if (value === undefined) {
-    return `(default -> ${DEFAULTS.normalizeVolatileSystem ? 'on' : 'off'})`;
+    return `(default -> ${fallback ? 'on' : 'off'})`;
   }
   return value ? 'on' : 'off';
 }
@@ -40,10 +40,11 @@ function perModelTtl(current: ModelOverride, globalCfg: Partial<ProxyConfig>): s
 }
 
 export function formatGlobalCachingSummary(cfg: Partial<ProxyConfig>): string {
-  const cc = globalTriStateLabel(cfg.cacheControl, DEFAULTS.cacheControl);
-  const rewrite = globalTriStateLabel(cfg.rewriteBlockTtl, DEFAULTS.rewriteBlockTtl);
-  const sid = globalTriStateLabel(cfg.sessionId, DEFAULTS.sessionId);
-  const nvs = globalNvsLabel(cfg.normalizeVolatileSystem);
+  const base = fixBaseline(cfg.recommended);
+  const cc = globalTriStateLabel(cfg.cacheControl, base.cacheControl);
+  const rewrite = globalTriStateLabel(cfg.rewriteBlockTtl, base.rewriteBlockTtl);
+  const sid = globalTriStateLabel(cfg.sessionId, base.sessionId);
+  const nvs = globalNvsLabel(cfg.normalizeVolatileSystem, base.normalizeVolatileSystem);
 
   return [
     'Three settings shape the request so cache survives.',
@@ -63,10 +64,11 @@ export function formatPerModelCachingSummary(
   current: ModelOverride,
   globalCfg: Partial<ProxyConfig>,
 ): string {
-  const gCc = globalCfg.cacheControl ?? DEFAULTS.cacheControl;
-  const gRewrite = globalCfg.rewriteBlockTtl ?? DEFAULTS.rewriteBlockTtl;
-  const gSid = globalCfg.sessionId ?? DEFAULTS.sessionId;
-  const gNvs = globalCfg.normalizeVolatileSystem ?? DEFAULTS.normalizeVolatileSystem;
+  const base = fixBaseline(globalCfg.recommended);
+  const gCc = globalCfg.cacheControl ?? base.cacheControl;
+  const gRewrite = globalCfg.rewriteBlockTtl ?? base.rewriteBlockTtl;
+  const gSid = globalCfg.sessionId ?? base.sessionId;
+  const gNvs = globalCfg.normalizeVolatileSystem ?? base.normalizeVolatileSystem;
 
   const cc = current.cacheControl ?? `(inherit -> ${gCc})`;
   const ttl = perModelTtl(current, globalCfg);

@@ -1,5 +1,5 @@
 import * as clack from '@clack/prompts';
-import { DEFAULTS, readConfigFileRaw } from '../../config.js';
+import { fixBaseline, readConfigFileRaw } from '../../config.js';
 import type { TriState } from '../../config-schema.js';
 import { requireConfigPath, setGlobalConfigFields } from './config.js';
 import { collectCacheTriState, type ResolvedField } from './tri-state.js';
@@ -36,8 +36,9 @@ export async function cacheControlCommand(opts?: { configPath?: string }): Promi
   const rawCc = cfg.cacheControl as TriState | undefined;
   const rawTtl = cfg.cacheControlTtl as '5m' | '1h' | 'omit' | 'skip' | undefined;
   const rawRewrite = cfg.rewriteBlockTtl as TriState | undefined;
-  const effectiveCc = rawCc ?? DEFAULTS.cacheControl;
-  const effectiveRewrite = rawRewrite ?? DEFAULTS.rewriteBlockTtl;
+  const base = fixBaseline(cfg.recommended);
+  const effectiveCc = rawCc ?? base.cacheControl;
+  const effectiveRewrite = rawRewrite ?? base.rewriteBlockTtl;
 
   clack.log.info(
     `Current: cacheControl = ${rawCc === undefined ? `(default -> ${effectiveCc})` : effectiveCc}`,
