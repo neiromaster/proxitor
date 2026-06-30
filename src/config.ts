@@ -44,8 +44,7 @@ export type ResolvedModelConfig = {
   matchedOverride?: string;
 };
 
-/** Effective value of each of the six "caching + fixes" fields, with per-field
- * types preserved so callers need no `as TriState` / `as boolean` casts. */
+/** Effective value of each of the six "caching + fixes" fields. */
 export type FixBaseline = {
   readonly cacheControl: TriState;
   readonly rewriteBlockTtl: TriState;
@@ -75,20 +74,17 @@ export const RECOMMENDED_PRESET: FixBaseline = {
 };
 
 /**
- * Effective value for an unset fix field, given the `recommended` flag.
- * Accepts `undefined` so callers can pass `cfg.recommended` straight from a
- * `Partial<ProxyConfig>` — absent ⇒ treated as false (pure passthrough).
+ * Effective value for an unset fix field given `recommended`.
+ * Accepts `undefined` (absent ⇒ OFF) so callers can pass `cfg.recommended` directly.
  */
 export function fixBaseline(recommended: boolean | undefined): FixBaseline {
   return recommended ? RECOMMENDED_PRESET : FIX_OFF;
 }
 
 /**
- * Resolve the `recommended` loadConfig option from the two CLI flags.
- * A cmd-ts `flag()` is `false` when absent, so explicitly map the
- * "neither flag" case to `undefined` — letting a config file's
- * `recommended: true` inherit. `--recommended` forces true;
- * `--no-recommended` forces false and wins on conflict.
+ * Map the two CLI flags to a `recommended` option. Returns `undefined` when
+ * neither is set so a config file's `recommended` inherits (cmd-ts `flag()`
+ * is `false` when absent, which would otherwise override the file).
  */
 export function resolveRecommendedOption(
   recommended: boolean,

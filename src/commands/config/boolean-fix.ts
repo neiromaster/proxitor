@@ -2,7 +2,6 @@ import * as clack from '@clack/prompts';
 import { fixBaseline, readConfigFileRaw } from '../../config.js';
 import { requireConfigPath, setGlobalConfigFields } from './config.js';
 
-/** The boolean (on/off) fix toggles that share an identical command body. */
 type BooleanFixField =
   | 'normalizeMessages'
   | 'normalizeResponses'
@@ -16,12 +15,7 @@ type AskBooleanFix = (
 
 const onOff = (value: boolean): 'on' | 'off' => (value ? 'on' : 'off');
 
-/**
- * Shared body for the on/off fix toggles (normalize-messages/responses/system).
- * Shows the effective value (explicit override, else the `recommended` preset
- * default), asks via the supplied prompt, and writes the choice back. `reset`
- * removes the key so it inherits the preset again.
- */
+/** Shared body for the on/off fix toggles. `reset` removes the key so it inherits the preset. */
 export async function runBooleanFixCommand(params: {
   configPath?: string;
   field: BooleanFixField;

@@ -38,10 +38,7 @@ const CACHE_LEVER_KEYS = [
   'normalizeVolatileSystem',
 ] as const;
 
-// All scalar fields whose change affects runtime behavior and should appear in
-// the reload diff. Includes the rest of the fix fields (the preset switch
-// `recommended` plus the ones not in CACHE_LEVER_KEYS) so flipping any of them
-// is reported instead of silently absorbed.
+// Scalar fields surfaced in the reload diff; extends CACHE_LEVER_KEYS with the remaining fix fields + `recommended`.
 const SCALAR_KEYS = [
   ...CACHE_LEVER_KEYS,
   'rewriteBlockTtl',
