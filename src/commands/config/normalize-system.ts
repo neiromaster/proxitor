@@ -1,38 +1,14 @@
-import * as clack from '@clack/prompts';
-import { fixBaseline, readConfigFileRaw } from '../../config.js';
-import { requireConfigPath, setGlobalConfigFields } from './config.js';
+import { runBooleanFixCommand } from './boolean-fix.js';
 import { askNormalizeVolatileSystem } from './prompts.js';
 
 export async function normalizeVolatileSystemCommand(opts?: {
   configPath?: string;
 }): Promise<void> {
-  const configPath = requireConfigPath(opts?.configPath);
-  const cfg = readConfigFileRaw(configPath);
-  const raw = cfg.normalizeVolatileSystem;
-  const base = fixBaseline(cfg.recommended ?? false);
-  const effective = raw ?? (base.normalizeVolatileSystem as boolean);
-
-  clack.log.info(
-    `Current: normalizeVolatileSystem = ${raw === undefined ? `(default -> ${effective ? 'on' : 'off'})` : effective}`,
-  );
-
-  const choice = await askNormalizeVolatileSystem(
-    "Normalize Claude Code's volatile cch and cc_version hashes in the system prompt? Stabilizes the prefix cache for non-Anthropic providers (qwen/glm/etc.).",
-    raw,
-    {
-      removable: true,
-      resetHint: `remove (default: ${base.normalizeVolatileSystem ? 'on' : 'off'})`,
-    },
-  );
-  if (typeof choice === 'symbol') return; // cancelled
-
-  const fields: Record<string, unknown> = {};
-  fields.normalizeVolatileSystem = choice === 'reset' ? undefined : choice;
-  setGlobalConfigFields(configPath, fields);
-
-  const label =
-    choice === 'reset'
-      ? `(default: ${base.normalizeVolatileSystem ? 'on' : 'off'})`
-      : choice;
-  clack.log.success(`normalizeVolatileSystem set to ${label}`);
+  return runBooleanFixCommand({
+    configPath: opts?.configPath,
+    field: 'normalizeVolatileSystem',
+    message:
+      "Normalize Claude Code's volatile cch and cc_version hashes in the system prompt? Stabilizes the prefix cache for non-Anthropic providers (qwen/glm/etc.).",
+    ask: askNormalizeVolatileSystem,
+  });
 }

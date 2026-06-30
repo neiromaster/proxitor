@@ -1,36 +1,14 @@
-import * as clack from '@clack/prompts';
-import { fixBaseline, readConfigFileRaw } from '../../config.js';
-import { requireConfigPath, setGlobalConfigFields } from './config.js';
+import { runBooleanFixCommand } from './boolean-fix.js';
 import { askNormalizeMessages } from './prompts.js';
 
 export async function normalizeMessagesCommand(opts?: {
   configPath?: string;
 }): Promise<void> {
-  const configPath = requireConfigPath(opts?.configPath);
-  const cfg = readConfigFileRaw(configPath);
-  const raw = cfg.normalizeMessages;
-  const base = fixBaseline(cfg.recommended ?? false);
-  const effective = raw ?? (base.normalizeMessages as boolean);
-
-  clack.log.info(
-    `Current: normalizeMessages = ${raw === undefined ? `(default -> ${effective ? 'on' : 'off'})` : effective}`,
-  );
-
-  const choice = await askNormalizeMessages(
-    'Lift stray role:"system" out of /v1/messages into top-level system? Fixes 400 rejections from strict Anthropic-format providers (OpenRouter → GLM et al.). Acts on /v1/messages only.',
-    raw,
-    {
-      removable: true,
-      resetHint: `remove (default: ${base.normalizeMessages ? 'on' : 'off'})`,
-    },
-  );
-  if (typeof choice === 'symbol') return; // cancelled
-
-  const fields: Record<string, unknown> = {};
-  fields.normalizeMessages = choice === 'reset' ? undefined : choice;
-  setGlobalConfigFields(configPath, fields);
-
-  const label =
-    choice === 'reset' ? `(default: ${base.normalizeMessages ? 'on' : 'off'})` : choice;
-  clack.log.success(`normalizeMessages set to ${label}`);
+  return runBooleanFixCommand({
+    configPath: opts?.configPath,
+    field: 'normalizeMessages',
+    message:
+      'Lift stray role:"system" out of /v1/messages into top-level system? Fixes 400 rejections from strict Anthropic-format providers (OpenRouter → GLM et al.). Acts on /v1/messages only.',
+    ask: askNormalizeMessages,
+  });
 }
