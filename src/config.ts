@@ -47,12 +47,12 @@ export type ResolvedModelConfig = {
 /** Effective value of each of the six "caching + fixes" fields, with per-field
  * types preserved so callers need no `as TriState` / `as boolean` casts. */
 export type FixBaseline = {
-  cacheControl: TriState;
-  rewriteBlockTtl: TriState;
-  sessionId: TriState;
-  normalizeResponses: boolean;
-  normalizeMessages: boolean;
-  normalizeVolatileSystem: boolean;
+  readonly cacheControl: TriState;
+  readonly rewriteBlockTtl: TriState;
+  readonly sessionId: TriState;
+  readonly normalizeResponses: boolean;
+  readonly normalizeMessages: boolean;
+  readonly normalizeVolatileSystem: boolean;
 };
 
 /** Effective value of each fix field when unset and `recommended` is false (pure passthrough). */
