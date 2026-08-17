@@ -55,13 +55,13 @@ jobs:
         run: pnpm run build
 
       - name: Version or publish packages
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: pnpm run version-packages
-          publish: pnpm run release
-          createGithubReleases: true
-          commit: "chore: version packages"
-          title: "chore: version packages"
+          version-script: pnpm run version-packages
+          publish-script: pnpm run release
+          create-github-releases: true
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
+          github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
