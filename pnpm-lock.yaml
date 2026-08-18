@@ -63,6 +63,9 @@ importers:
 
   packages/plugin-api:
     devDependencies:
+      tsdown:
+        specifier: ^0.22.1
+        version: 0.22.3(typescript@6.0.3)
       vitest:
         specifier: ^4.1.8
         version: 4.1.9(@types/node@26.2.0)(@vitest/coverage-v8@4.1.9)(vite@8.0.16(@types/node@26.2.0)(yaml@2.9.0))
