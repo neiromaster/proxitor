@@ -21,7 +21,7 @@ providers, wire formats and transport (spec D9).
 
 ## ShortCircuit
 
-`{ shortCircuit: true, status, headers? }` plus **exactly one** of `error`
+`{ shortCircuit: true, status, headers? }` plus **at most one** of `error`
 (CanonicalError, encoded to the client's wire-error format) or `events`
 (CanonicalEvent[], encoded to the client's inbound format — works for both
 streaming and non-streaming clients). Raw-body mocks are not supported.

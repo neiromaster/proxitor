@@ -1,4 +1,4 @@
 packages:
   - 'packages/*'
 allowBuilds:
-  lefthook: set this to true or false
+  lefthook: true
