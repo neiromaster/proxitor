@@ -43,7 +43,7 @@ jobs:
         run: pnpm run typecheck
 
       - name: Lint
-        run: pnpm run check:biome
+        run: pnpm run check:biome && pnpm run lint:arch
 
       - name: Test
         run: pnpm run test
