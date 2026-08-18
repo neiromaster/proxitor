@@ -1,0 +1,28 @@
+{
+  "name": "@proxitor/plugin-api",
+  "version": "0.0.0",
+  "description": "Published proxitor plugin contract: Canonical IR, plugin hooks, ports",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:types": "vitest run --typecheck",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  }
+}
