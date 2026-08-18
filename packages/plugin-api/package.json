@@ -14,11 +14,13 @@
     "dist"
   ],
   "scripts": {
+    "build": "tsdown",
     "test": "vitest run",
     "test:types": "vitest run --typecheck",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "tsdown": "^0.22.1",
     "vitest": "^4.1.8",
     "zod": "^4.4.3"
   },
