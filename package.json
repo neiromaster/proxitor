@@ -27,7 +27,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsdown && pnpm -r run build",
+    "build": "tsdown && pnpm -r --if-present run build",
     "check": "pnpm run typecheck:all && pnpm run check:biome && pnpm run test",
     "check:biome": "biome check ./src ./packages",
     "dev": "tsdown --watch",
@@ -40,13 +40,13 @@
     "release": "changeset publish",
     "start": "node dist/cli.mjs",
     "start:dev": "pnpm run build && pnpm run start",
-    "test": "vitest run && pnpm -r run test",
+    "test": "vitest run && pnpm -r --if-present run test",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:integration": "vitest run --reporter verbose tests/integration/",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit && pnpm -r run typecheck",
-    "typecheck:all": "tsc --noEmit -p tsconfig.tests.json && pnpm -r run typecheck",
+    "typecheck": "tsc --noEmit && pnpm -r --if-present run typecheck",
+    "typecheck:all": "tsc --noEmit -p tsconfig.tests.json && pnpm -r --if-present run typecheck",
     "version-packages": "changeset version"
   },
   "dependencies": {
