@@ -1,40 +1,9 @@
 import type {
   CanonicalEvent,
-  CanonicalMessage,
   CanonicalRequest,
   ClockPort,
-  NodeExtensions,
   RandomPort,
 } from '@proxitor/plugin-api';
-import type { FormatError } from './format-error.js';
-import type { WireMeta } from './wire.js';
-
-/** Bidirectional stateful transform of client ↔ canonical IR (spec §9). */
-export type FormatAdapterGeneric<In, Out> = {
-  readonly name: string;
-  decode(request: In, stream?: ReadableStream<string>): AsyncIterable<CanonicalMessage>;
-  encode(response: Out): AsyncIterable<CanonicalMessage>;
-};
-
-/** Encode-side type: captures a full response shape (request codec provides its own). */
-export type LegacyStreamEncoder = (
-  response: unknown,
-  extensions?: NodeExtensions,
-) => AsyncIterable<CanonicalMessage>;
-
-/** Decode-side: request shape paired with optional SSE decoder. */
-export type StreamDecoder = (
-  request: unknown,
-  stream?: ReadableStream<string>,
-) => AsyncIterable<CanonicalMessage>;
-
-/** Codec wire-protocol provenance extracted from `$wire` extension (spec §4.3). */
-export type LegacyStreamEncodeOptions = {
-  readonly wire?: WireMeta;
-};
-
-/** Thrown on decode/encode capability gaps; pipeline maps to provider format. */
-export type CodecException = FormatError;
 
 /** Format adapter registry contract (Task 9) - non-generic interface for per-format codec objects. */
 export type FormatAdapter = {
@@ -48,9 +17,15 @@ export type FormatAdapter = {
   readonly encodeRequest: (ir: CanonicalRequest) => string;
   readonly encodeResponse: (
     ir: Iterable<CanonicalEvent>,
-    options?: StreamEncodeOptions,
+    options: StreamEncodeOptions,
   ) => string;
   readonly format: 'anthropic-messages' | 'openai-chat';
+};
+
+/** Stream decoder interface - push SSE chunks and get events. */
+export type StreamDecoder = {
+  push(chunk: string): CanonicalEvent[];
+  end(): CanonicalEvent[];
 };
 
 /** Stream encoder interface - push events and get SSE chunks. */

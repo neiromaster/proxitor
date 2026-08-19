@@ -74,7 +74,7 @@ export function createOpenAiStreamDecoder() {
         }
         out.push({
           type: 'content_block_delta',
-          index: open!.index,
+          index: open?.index ?? 0,
           delta: { type: 'thinking', thinking: delta.reasoning_content },
         });
       }
@@ -85,7 +85,7 @@ export function createOpenAiStreamDecoder() {
         }
         out.push({
           type: 'content_block_delta',
-          index: open!.index,
+          index: open?.index ?? 0,
           delta: { type: 'text', text: delta.content },
         });
       }

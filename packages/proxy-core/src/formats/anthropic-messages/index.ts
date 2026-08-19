@@ -15,7 +15,7 @@ export const anthropicMessagesAdapter: FormatAdapter = {
   decodeRequest: decodeAnthropicRequest,
   encodeRequest: encodeAnthropicRequest,
   decodeResponse: decodeAnthropicResponse,
-  encodeResponse: (events, _options?) => encodeAnthropicResponse(events),
+  encodeResponse: (events, _options) => encodeAnthropicResponse(events),
   createStreamDecoder: createAnthropicStreamDecoder,
   createStreamEncoder: (options: StreamEncodeOptions): StreamEncoder =>
     createAnthropicStreamEncoder({ model: options.model, random: options.random }),

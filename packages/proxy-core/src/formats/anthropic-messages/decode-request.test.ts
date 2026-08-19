@@ -58,7 +58,7 @@ describe('decodeAnthropicRequest', () => {
     const ir = decodeAnthropicRequest(body);
     // Assert
     expect(ir.system).toEqual([{ type: 'text', text: 'Be terse.' }]);
-    expect(ir.extensions['anthropic-messages']?.['$wire']).toEqual({
+    expect(ir.extensions['anthropic-messages']?.$wire).toEqual({
       systemString: true,
       streamFalse: true,
     });

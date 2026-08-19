@@ -12,7 +12,7 @@ describe('plugin contract (spec §7)', () => {
     };
     const withEvents: ShortCircuit = { shortCircuit: true, status: 200, events: [] };
     // @ts-expect-error — both set is forbidden (r3 P1)
-    const both: ShortCircuit = {
+    const _both: ShortCircuit = {
       shortCircuit: true,
       status: 200,
       error: withError.error,

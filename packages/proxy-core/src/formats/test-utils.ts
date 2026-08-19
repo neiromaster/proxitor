@@ -1,8 +1,6 @@
 import { deepStrictEqual } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { SseMessage } from './shared/sse-parser.js';
-import { createSseParser } from './shared/sse-parser.js';
 
 const fixturesRoot = new URL('./__fixtures__/', import.meta.url);
 
@@ -26,9 +24,4 @@ export function expectSameJsonModuloStreamOptions(
     return value;
   };
   deepStrictEqual(strip(actual), strip(expected));
-}
-
-export function parseSse(text: string): SseMessage[] {
-  const parser = createSseParser();
-  return [...parser.push(text), ...parser.end()];
 }

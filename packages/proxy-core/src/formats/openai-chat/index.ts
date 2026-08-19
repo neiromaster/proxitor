@@ -9,19 +9,15 @@ import { decodeOpenAiResponse } from './decode-response.js';
 import { createOpenAiStreamDecoder } from './decode-stream.js';
 import { encodeOpenAiRequest } from './encode-request.js';
 import { encodeOpenAiResponse } from './encode-response.js';
-import {
-  createOpenAiStreamEncoder,
-  type StreamEncodeOptions as OpenAiStreamEncodeOptions,
-} from './encode-stream.js';
+import { createOpenAiStreamEncoder } from './encode-stream.js';
 
 export const openAiChatAdapter: FormatAdapter = {
   format: 'openai-chat',
   decodeRequest: decodeOpenAiRequest,
   encodeRequest: (ir: CanonicalRequest) => encodeOpenAiRequest(ir),
   decodeResponse: decodeOpenAiResponse,
-  encodeResponse: (events, options) =>
-    encodeOpenAiResponse(events, options as unknown as OpenAiStreamEncodeOptions),
+  encodeResponse: (events, options) => encodeOpenAiResponse(events, options),
   createStreamDecoder: createOpenAiStreamDecoder,
   createStreamEncoder: (options: StreamEncodeOptions): StreamEncoder =>
-    createOpenAiStreamEncoder(options as unknown as OpenAiStreamEncodeOptions),
+    createOpenAiStreamEncoder(options),
 };
