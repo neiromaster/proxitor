@@ -1,0 +1,32 @@
+{
+  "model": "claude-haiku-5",
+  "max_tokens": 100,
+  "stream": false,
+  "system": "Be terse.",
+  "messages": [
+    { "role": "user", "content": "Hi" },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "tool_use", "id": "toolu_2", "name": "img", "input": {} }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_2",
+          "content": [
+            { "type": "text", "text": "a pic" },
+            {
+              "type": "image",
+              "source": { "type": "url", "url": "https://example.com/i.png" }
+            }
+          ]
+        },
+        { "type": "text", "text": "describe" }
+      ]
+    }
+  ]
+}
