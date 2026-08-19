@@ -1,3 +1,5 @@
+import type { NodeExtensions } from './request.js';
+
 export type StopReason = 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use';
 
 export type Usage = {
@@ -39,6 +41,8 @@ export type CanonicalEvent =
       stopReason?: StopReason;
       stopSequence?: string | null;
       usage?: PartialUsage;
+      /** Raw wire provenance the IR cannot express, e.g. openai `finish_reason` (spec §4.2). */
+      extensions?: NodeExtensions;
     }
   | { type: 'message_stop' }
   | { type: 'ping' }

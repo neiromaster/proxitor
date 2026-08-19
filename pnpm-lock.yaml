@@ -77,6 +77,10 @@ importers:
         version: 4.4.3
 
   packages/proxy-core:
+    dependencies:
+      '@proxitor/plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
     devDependencies:
       vitest:
         specifier: ^4.1.8

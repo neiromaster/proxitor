@@ -39,4 +39,13 @@ describe('CanonicalEvent vocabulary (spec §4.2)', () => {
       >();
     }
   });
+
+  it('message_delta accepts an extensions passthrough bag', () => {
+    expectTypeOf<{
+      type: 'message_delta';
+      stopReason?: StopReason;
+      stopSequence?: string | null;
+      extensions?: { finish_reason: string };
+    }>().toExtend<CanonicalEvent>();
+  });
 });
