@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RESERVED_KEYS, WIRE_FORMATS } from './wire-format.js';
+import { ENDPOINT_PATHS, RESERVED_KEYS, WIRE_FORMATS } from './wire-format.js';
 
 describe('wire formats', () => {
   it('exposes both v1 formats', () => {
@@ -17,5 +17,21 @@ describe('wire formats', () => {
 
   it('reserves nothing on anthropic-messages in v1', () => {
     expect(RESERVED_KEYS['anthropic-messages']).toEqual([]);
+  });
+});
+
+describe('ENDPOINT_PATHS', () => {
+  it('covers exactly the frozen wire format set', () => {
+    // Arrange / Act
+    const keys = Object.keys(ENDPOINT_PATHS).sort();
+
+    // Assert
+    expect(keys).toEqual([...WIRE_FORMATS].sort());
+  });
+
+  it('maps each format to its versioned endpoint', () => {
+    // Arrange / Act / Assert
+    expect(ENDPOINT_PATHS['anthropic-messages']).toBe('/v1/messages');
+    expect(ENDPOINT_PATHS['openai-chat']).toBe('/v1/chat/completions');
   });
 });

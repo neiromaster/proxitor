@@ -15,3 +15,13 @@ export const RESERVED_KEYS: Readonly<Record<WireFormat, readonly string[]>> = {
     '$proxitor.transforms',
   ],
 };
+
+/**
+ * Endpoint path each wire format owns (spec §5.1): the format adapter owns the
+ * version path; a provider `baseUrl` is everything before it. Consumed by
+ * domain routing for baseUrl validation and upstream URL construction.
+ */
+export const ENDPOINT_PATHS: Readonly<Record<WireFormat, string>> = {
+  'anthropic-messages': '/v1/messages',
+  'openai-chat': '/v1/chat/completions',
+};
