@@ -1,0 +1,23 @@
+{
+  "model": "gpt-4o",
+  "max_tokens": 100,
+  "messages": [
+    { "role": "system", "content": [{ "type": "text", "text": "Sys part" }] },
+    { "role": "user", "content": "Hi" },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_2",
+          "type": "function",
+          "function": { "name": "img", "arguments": "{}" }
+        }
+      ]
+    },
+    { "role": "tool", "tool_call_id": "call_2", "content": "pic data" },
+    { "role": "user", "content": "describe" }
+  ],
+  "stop": "END",
+  "tool_choice": { "type": "function", "function": { "name": "img" } }
+}
