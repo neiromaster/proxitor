@@ -26,6 +26,13 @@ export function encodeAnthropicRequest(ir: CanonicalRequest): string {
 }
 
 function validateExpressibleParams(ir: CanonicalRequest): void {
+  if (ir.params.maxTokens === undefined) {
+    throw new FormatError({
+      type: 'invalid_request_error',
+      message: 'max_tokens is required in anthropic-messages requests',
+      status: 400,
+    });
+  }
   if (ir.params.seed !== undefined) {
     throw new FormatError({
       type: 'invalid_request_error',
@@ -128,7 +135,12 @@ function encodeSystem(
       ...extra,
     };
   });
-  if (wasString && blocks.length === 1) return system[0]?.text ?? '';
+  const singleBlock = blocks.length === 1 ? blocks[0] : undefined;
+  const plainSingle =
+    singleBlock !== undefined &&
+    'cache_control' in singleBlock === false &&
+    Object.keys(singleBlock).length === 2; // only 'type' and 'text'
+  if (wasString && plainSingle) return system[0]?.text ?? '';
   return blocks;
 }
 
