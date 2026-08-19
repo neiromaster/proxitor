@@ -19,7 +19,7 @@ The following fields are not preserved when translating between formats:
 |---------------|-------|---------------|--------|
 | anthropic-messages | `cache_control` | openai-chat | Not supported by OpenAI API |
 | anthropic-messages | `is_error` (tool_result) | openai-chat | Not supported by OpenAI API |
-| openai-chat | `thinking` (request) | anthropic-messages | Anthropic only supports thinking in beta API |
+| anthropic-messages | `thinking` | openai-chat | Dropped (not supported by OpenAI API) |
 
 ### Fields That Fail Loudly
 
@@ -32,7 +32,7 @@ The following fields will cause translation failures:
 | openai-chat | `response_format` | anthropic-messages | FormatError |
 | openai-chat | `presence_penalty` | anthropic-messages | FormatError |
 | openai-chat | `frequency_penalty` | anthropic-messages | FormatError |
-| openai-chat | `tool_result` with non-text content | anthropic-messages | FormatError |
+| anthropic-messages | `tool_result` with non-text content | openai-chat | FormatError |
 
 ### Image Source Shapes
 
@@ -40,7 +40,8 @@ The following fields will cause translation failures:
 |--------|--------|----------|
 | anthropic `image.source.base64` | openai-chat | Converted to `image_url.url` with `data:` URL |
 | anthropic `image.source.url` | openai-chat | Converted to `image_url.url` (passed through) |
-| openai-chat `image_url.url` | anthropic-messages | Converted to `image.source.url` if HTTP URL, rejected if `data:` URL |
+| openai-chat `image_url.url` (HTTP) | anthropic-messages | Converted to `image.source.url` |
+| openai-chat `image_url.url` (data:) | anthropic-messages | Converted to `image.source.base64` |
 
 ### Identity Gaps
 
@@ -75,16 +76,26 @@ The following constructions cannot be perfectly represented in the target format
 | `stop_sequence` | `stop` |
 | `tool_use` | `tool_calls` |
 
+### Reserved Key Mapping (`$proxitor.*`)
+
+| `$proxitor.` Key | Target Wire Key | Format |
+|-----------------|-----------------|--------|
+| `$proxitor.provider` | `provider` | openai-chat |
+| `$proxitor.models` | `models` | openai-chat |
+| `$proxitor.route` | `route` | openai-chat |
+| `$proxitor.transforms` | `transforms` | openai-chat |
+
+These keys are reserved for proxy implementation details. Plugins may write to `$proxitor.*` extensions, which the openai-chat encoder maps to top-level wire fields after the passthrough merge (plugin overrides client hints).
+
+### Usage Folding Rules
+
+**openai-chat encoder:** When `message_delta.usage.outputTokens` is provided, it overrides `completion_tokens` while preserving `prompt_tokens_details.cached_tokens` from prior `usage` events.
+
+**anthropic-messages encoder:** No usage folding — usage events pass through unchanged.
+
 ## Registry
 
-The `FORMAT_ADAPTERS` record and `getFormat()` function provide the primary import surface for format translation:
-
-```ts
-import { getFormat } from '@proxitor/proxy-core/formats';
-
-const adapter = getFormat('anthropic-messages');
-const encoded = adapter.encodeRequest(ir);
-```
+The `FORMAT_ADAPTERS` record and `getFormat()` function provide the primary import surface for format translation.
 
 ## Testing
 
