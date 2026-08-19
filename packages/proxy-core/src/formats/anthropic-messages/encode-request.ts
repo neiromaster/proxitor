@@ -128,9 +128,7 @@ function encodeSystem(
       ...extra,
     };
   });
-  if (wasString && blocks.length === 1 && blocks[0] && 'type' in blocks[0]) {
-    return system[0]?.text ?? '';
-  }
+  if (wasString && blocks.length === 1) return system[0]?.text ?? '';
   return blocks;
 }
 
