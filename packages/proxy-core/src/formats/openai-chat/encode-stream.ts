@@ -1,14 +1,7 @@
-import type { CanonicalEvent, RandomPort, Usage } from '@proxitor/plugin-api';
+import type { CanonicalEvent, Usage } from '@proxitor/plugin-api';
 import { createEventSequenceNormalizer } from '../shared/event-normalizer.js';
 import { formatSseEvent } from '../shared/sse-serializer.js';
-
-export type StreamEncodeOptions = {
-  model: string;
-  clock: { now: () => number };
-  random: RandomPort;
-};
-
-export type StreamEncoder = { push(event: CanonicalEvent): string; end(): string };
+import type { StreamEncodeOptions, StreamEncoder } from '../shared/stream-codec.js';
 
 const REVERSE_STOP: Record<string, string> = {
   end_turn: 'stop',
@@ -103,13 +96,14 @@ export function createOpenAiStreamEncoder(options: StreamEncodeOptions): StreamE
       case 'content_block_stop':
         return '';
       case 'message_delta': {
-        const wire = event.extensions?.['$wire'] as Record<string, unknown> | undefined;
+        const wire = event.extensions?.$wire as Record<string, unknown> | undefined;
         const finish =
           (typeof wire?.finish_reason === 'string'
             ? wire.finish_reason
             : REVERSE_STOP[event.stopReason ?? 'end_turn']) ?? 'stop';
         if (event.usage?.outputTokens !== undefined) {
           usage = {
+            ...usage,
             inputTokens: usage?.inputTokens ?? 0,
             outputTokens: event.usage.outputTokens,
           };
@@ -145,7 +139,7 @@ export function createOpenAiStreamEncoder(options: StreamEncodeOptions): StreamE
 
   return {
     push(event: CanonicalEvent): string {
-      if (event.type === 'ping' || event.type === 'error') {
+      if (event.type === 'ping') {
         return serialize(event);
       }
       return normalizer.push([event]).map(serialize).join('');

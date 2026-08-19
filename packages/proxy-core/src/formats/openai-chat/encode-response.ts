@@ -1,7 +1,7 @@
 import type { CanonicalEvent, Usage } from '@proxitor/plugin-api';
 import { createEventSequenceNormalizer } from '../shared/event-normalizer.js';
 import { FormatError } from '../shared/format-error.js';
-import type { StreamEncodeOptions } from './encode-stream.js';
+import type { StreamEncodeOptions } from '../shared/stream-codec.js';
 
 const REVERSE_STOP: Record<string, string> = {
   end_turn: 'stop',
@@ -65,13 +65,14 @@ export function encodeOpenAiResponse(
         open.delete(event.index);
         break;
       case 'message_delta': {
-        const wire = event.extensions?.['$wire'] as Record<string, unknown> | undefined;
+        const wire = event.extensions?.$wire as Record<string, unknown> | undefined;
         finish =
           (typeof wire?.finish_reason === 'string'
             ? wire.finish_reason
             : REVERSE_STOP[event.stopReason ?? 'end_turn']) ?? 'stop';
         if (event.usage?.outputTokens !== undefined) {
           usage = {
+            ...usage,
             inputTokens: usage?.inputTokens ?? 0,
             outputTokens: event.usage.outputTokens,
           };
