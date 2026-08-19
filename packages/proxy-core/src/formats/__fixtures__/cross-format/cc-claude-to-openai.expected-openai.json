@@ -27,7 +27,7 @@
       ]
     },
     { "role": "tool", "tool_call_id": "toolu_fix1", "content": "file body" },
-    { "role": "user", "content": "Now fix it." }
+    { "role": "user", "content": [{ "type": "text", "text": "Now fix it." }] }
   ],
   "tools": [
     {

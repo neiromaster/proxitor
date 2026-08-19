@@ -197,7 +197,6 @@ function encodeToolResultContent(
   for (const inner of block.content) {
     if (inner.type === 'text') {
       parts.push(inner.text);
-    } else if (inner.type === 'image') {
     } else {
       throw new FormatError({
         type: 'invalid_request_error',
@@ -214,11 +213,15 @@ function encodeUserMessage(
   rest: CanonicalContentBlock[],
 ): Json {
   const meta = readWireMeta(message.extensions);
-  const singleText = rest.length === 1 && rest[0]?.type === 'text';
+  const single =
+    rest.length === 1 &&
+    rest[0]?.type === 'text' &&
+    rest[0].cacheControl === undefined &&
+    rest[0].extensions === undefined;
   const out: Json = { role: 'user' };
   if (rest.length === 0) {
     out.content = '';
-  } else if (meta.contentString === true || singleText) {
+  } else if (meta.contentString === true && single) {
     out.content = (rest[0] as Extract<CanonicalContentBlock, { type: 'text' }>).text;
   } else {
     out.content = rest.map(encodeUserPart);

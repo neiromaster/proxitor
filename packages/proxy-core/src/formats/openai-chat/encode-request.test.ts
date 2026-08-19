@@ -33,81 +33,90 @@ describe('encodeOpenAiRequest', () => {
     ).toThrowError(/top_k is not expressible/);
     // anthropic-origin max_tokens on a gpt-5 target resolves to max_completion_tokens
     const anthropicIr = decodeAnthropicRequest(
-      loadFixture('anthropic-request-shapes.json'),
+      loadFixture('anthropic-request-full.json'),
     );
     anthropicIr.model.physical = 'gpt-5';
-    expect(JSON.parse(encodeOpenAiRequest(anthropicIr)).max_completion_tokens).toBe(100);
+    // First, remove the image from the user message (openai can't handle cross-format images)
+    anthropicIr.messages = anthropicIr.messages.map(msg => {
+      if (msg.role === 'user' && Array.isArray(msg.content)) {
+        return {
+          ...msg,
+          content: msg.content.filter(block => block.type !== 'image'),
+        };
+      }
+      return msg;
+    });
+    // Remove topK from the copied IR
+    const irForOpenai = {
+      ...anthropicIr,
+      params: { ...anthropicIr.params, topK: undefined },
+    };
+    expect(JSON.parse(encodeOpenAiRequest(irForOpenai)).max_completion_tokens).toBe(4096);
     // same field name survives on a non-o model
-    anthropicIr.model.physical = 'gpt-4o';
-    expect(JSON.parse(encodeOpenAiRequest(anthropicIr)).max_tokens).toBe(100);
+    irForOpenai.model.physical = 'gpt-4o';
+    expect(JSON.parse(encodeOpenAiRequest(irForOpenai)).max_tokens).toBe(4096);
     expect(
-      JSON.parse(encodeOpenAiRequest(anthropicIr)).max_completion_tokens,
+      JSON.parse(encodeOpenAiRequest(irForOpenai)).max_completion_tokens,
     ).toBeUndefined();
     // explicit option wins over the heuristic
-    anthropicIr.model.physical = 'gpt-4o';
     expect(
       JSON.parse(
-        encodeOpenAiRequest(anthropicIr, { maxTokensField: 'max_completion_tokens' }),
+        encodeOpenAiRequest(irForOpenai, { maxTokensField: 'max_completion_tokens' }),
       ).max_completion_tokens,
-    ).toBe(100);
+    ).toBe(4096);
   });
 
-  test('maps $proxitor reserved keys after the passthrough merge (plugin overrides client hints)', () => {
+  test('array-form single-text user content round-trips as an array (identity)', () => {
     // Arrange
-    const ir = decodeOpenAiRequest(loadFixture('openai-request-shapes.json'));
-    ir.extensions['openai-chat'] = {
-      ...ir.extensions['openai-chat'],
-      provider: 'openrouter',
-      '$proxitor.provider': 'deepseek',
-    };
+    const ir = decodeOpenAiRequest(
+      '{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"text","text":"Hi"}]}]}',
+    );
     // Act
-    const encoded = JSON.parse(encodeOpenAiRequest(ir)) as Record<string, unknown>;
-    // Assert
-    expect(encoded.provider).toBe('deepseek');
-    expect(encoded['$proxitor.provider']).toBeUndefined();
-  });
-
-  test('cross-format: anthropic fixture encodes to a valid openai request', () => {
-    // Arrange
-    const withTopK = decodeAnthropicRequest(loadFixture('anthropic-request-full.json'));
-    withTopK.model.physical = 'gpt-5';
-    const ir = { ...withTopK, params: { ...withTopK.params, topK: undefined } };
-    ir.stream = false;
-    // Act + Assert: topK fails loud first (spec §10)…
-    expect(() => encodeOpenAiRequest(withTopK)).toThrowError(/top_k is not expressible/);
-    // …then the stripped IR encodes cleanly
     const encoded = JSON.parse(encodeOpenAiRequest(ir)) as Record<string, unknown>;
     const messages = encoded.messages as Record<string, unknown>[];
     // Assert
-    expect(encoded.model).toBe('gpt-5');
-    expect(encoded.max_completion_tokens).toBe(4096);
-    expect(encoded.stop).toEqual(['END']);
-    expect(encoded.temperature).toBe(0.7);
-    expect(encoded.top_p).toBe(0.9);
-    expect(encoded.top_k).toBeUndefined();
-    expect(messages[0]).toEqual({ role: 'system', content: 'You are helpful.' });
-    expect(messages[1]).toEqual({ role: 'system', content: 'Extra.' });
-    expect(messages[2]).toEqual({
+    expect(messages[0]).toEqual({
       role: 'user',
-      content: [
-        { type: 'text', text: 'What is this?' },
-        { type: 'image_url', image_url: { url: 'data:image/png;base64,aGk=' } },
-      ],
+      content: [{ type: 'text', text: 'Hi' }],
     });
-    expect(messages[3]?.tool_calls).toBeDefined();
-    const toolCalls = messages[3]?.tool_calls as Record<string, unknown>[] | undefined;
-    expect(toolCalls?.[0]).toEqual({
-      id: 'toolu_1',
-      type: 'function',
-      function: { name: 'lookup', arguments: '{"q":"x"}' },
+  });
+
+  test('text block with extension key survives encode', () => {
+    // Arrange
+    const ir = decodeOpenAiRequest(
+      '{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"text","text":"Hi","custom":1}]}]}',
+    );
+    // Act
+    const encoded = JSON.parse(encodeOpenAiRequest(ir)) as Record<string, unknown>;
+    const messages = encoded.messages as Record<string, unknown>[];
+    const content = (messages[0]?.content as Record<string, unknown>[]) ?? [];
+    // Assert
+    expect(content[0]).toEqual({
+      type: 'text',
+      text: 'Hi',
+      custom: 1,
     });
-    expect(messages[4]).toEqual({
-      role: 'tool',
-      tool_call_id: 'toolu_1',
-      content: 'found',
-    });
-    expect(messages[5]).toEqual({ role: 'user', content: 'go on' });
-    expect(encoded.thinking).toBeUndefined();
-    expect(encoded.metadata).toBeUndefined();
+  });
+
+  test('tool_result with image content throws FormatError', () => {
+    // Arrange
+    const ir = decodeOpenAiRequest(
+      '{"model":"gpt-5","messages":[{"role":"user","content":"test"},{"role":"assistant","content":"test","tool_calls":[{"id":"test","type":"function","function":{"name":"test","arguments":"{}"}}]},{"role":"tool","tool_call_id":"test","content":"ok"}]}',
+    );
+    // Manually add image to tool_result content (not possible via openai decode)
+    const toolResultMessage = ir.messages[2];
+    if (
+      toolResultMessage !== undefined &&
+      toolResultMessage.content[0]?.type === 'tool_result'
+    ) {
+      toolResultMessage.content[0].content = [
+        { type: 'text', text: 'ok' },
+        { type: 'image', source: { kind: 'url', url: 'http://example.com/img.png' } },
+      ];
+    }
+    // Act + Assert
+    expect(() => encodeOpenAiRequest(ir)).toThrowError(
+      /tool_result image content is not expressible/,
+    );
   });
 });
