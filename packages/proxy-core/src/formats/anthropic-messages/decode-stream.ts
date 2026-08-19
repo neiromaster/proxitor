@@ -41,14 +41,9 @@ export function createAnthropicStreamDecoder() {
           id?: string;
           name?: string;
           text?: string;
-        } = {
-          type:
-            block.type === 'tool_use'
-              ? 'tool_use'
-              : block.type === 'thinking'
-                ? 'thinking'
-                : 'text',
-        };
+        } = { type: 'text' };
+        if (block.type === 'tool_use') irBlock.type = 'tool_use';
+        else if (block.type === 'thinking') irBlock.type = 'thinking';
         if (typeof block.id === 'string') irBlock.id = block.id;
         if (typeof block.name === 'string') irBlock.name = block.name;
         if (block.type === 'text') irBlock.text = '';

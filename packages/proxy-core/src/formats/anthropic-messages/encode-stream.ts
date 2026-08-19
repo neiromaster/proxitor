@@ -101,8 +101,8 @@ export function createAnthropicStreamEncoder(options: {
 }
 
 function readRawStopReason(extensions: NodeExtensions | undefined): string | undefined {
-  const wire = extensions?.['$wire'] as Record<string, unknown> | undefined;
-  return wire !== undefined && typeof wire.stopReason === 'string'
-    ? wire.stopReason
+  const wireExt = extensions?.$wire as Record<string, unknown> | undefined;
+  return wireExt !== undefined && typeof wireExt.stopReason === 'string'
+    ? wireExt.stopReason
     : undefined;
 }

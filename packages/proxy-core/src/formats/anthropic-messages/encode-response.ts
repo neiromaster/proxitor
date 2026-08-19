@@ -75,9 +75,9 @@ export function encodeAnthropicResponse(events: Iterable<CanonicalEvent>): strin
         break;
       }
       case 'message_delta': {
-        const raw = event.extensions?.['$wire'] as Record<string, unknown> | undefined;
+        const wireExt = event.extensions?.$wire as Record<string, unknown> | undefined;
         stopReason =
-          typeof raw?.stopReason === 'string' ? raw.stopReason : event.stopReason;
+          typeof wireExt?.stopReason === 'string' ? wireExt.stopReason : event.stopReason;
         if (event.stopSequence !== null && event.stopSequence !== undefined)
           stopSequence = event.stopSequence;
         if (event.usage?.outputTokens !== undefined)

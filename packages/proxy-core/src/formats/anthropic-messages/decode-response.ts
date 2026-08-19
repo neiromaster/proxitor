@@ -23,11 +23,12 @@ export function decodeAnthropicResponse(body: string): CanonicalEvent[] {
   content.forEach((entry, index) => {
     const block = asObject(entry, 'content entry');
     switch (block.type) {
-      case 'text':
+      case 'text': {
+        const irBlock: { type: 'text'; text?: string } = { type: 'text', text: '' };
         events.push({
           type: 'content_block_start',
           index,
-          block: { type: 'text' as const, text: '' },
+          block: irBlock,
         });
         events.push({
           type: 'content_block_delta',
@@ -36,6 +37,7 @@ export function decodeAnthropicResponse(body: string): CanonicalEvent[] {
         });
         events.push({ type: 'content_block_stop', index });
         break;
+      }
       case 'thinking':
         events.push({ type: 'content_block_start', index, block: { type: 'thinking' } });
         events.push({
