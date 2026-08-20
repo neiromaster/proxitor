@@ -81,6 +81,9 @@ importers:
       '@proxitor/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       vitest:
         specifier: ^4.1.8
