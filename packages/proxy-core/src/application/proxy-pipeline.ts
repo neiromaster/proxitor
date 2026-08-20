@@ -444,7 +444,7 @@ async function* decodeUpstreamEvents(
 
 /**
  * D19: the first plugin in the effective list is the OUTERMOST transform —
- * compose forward so each plugin wraps the previous ones.
+ * compose in reverse so each later plugin wraps the earlier ones.
  */
 function applyStreamTransforms(
   source: AsyncIterable<CanonicalEvent>,
@@ -453,7 +453,8 @@ function applyStreamTransforms(
   requestId: string,
 ): AsyncIterable<CanonicalEvent> {
   let stream = source;
-  for (const ap of active) {
+  // Reverse iteration: first plugin becomes outermost wrapper
+  for (const ap of [...active].reverse()) {
     if (ap.plugin.transformStream === undefined) {
       continue;
     }

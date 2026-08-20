@@ -341,20 +341,29 @@ describe('pipeline handle — error paths', () => {
 
 describe('pipeline handle — stream transforms and observers', () => {
   it('composes transformStream in reverse so the first plugin is outermost (D19)', async () => {
-    // Arrange
-    const startLog: string[] = [];
+    // Arrange — two async generators that wrap text with tags
     const first: ProxyPlugin = {
       name: 'first',
-      transformStream: (_ctx, events) => {
-        startLog.push('first-start');
-        return events;
+      transformStream: async function* (_ctx, events) {
+        for await (const event of events) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text') {
+            yield { ...event, delta: { type: 'text', text: `${event.delta.text}(a)` } };
+            continue;
+          }
+          yield event;
+        }
       },
     };
     const second: ProxyPlugin = {
       name: 'second',
-      transformStream: (_ctx, events) => {
-        startLog.push('second-start');
-        return events;
+      transformStream: async function* (_ctx, events) {
+        for await (const event of events) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text') {
+            yield { ...event, delta: { type: 'text', text: `${event.delta.text}(b)` } };
+            continue;
+          }
+          yield event;
+        }
       },
     };
     const upstream = fakeFetch(200, OAI_SSE);
@@ -368,9 +377,11 @@ describe('pipeline handle — stream transforms and observers', () => {
       ),
     );
     // Act
-    await readBody((await pipeline.handle(request())).body);
-    // Assert — the outermost generator's body runs first on the first pull
-    expect(startLog).toEqual(['first-start', 'second-start']);
+    const text = await readBody((await pipeline.handle(request())).body);
+    // Assert — reverse composition means 'first' wraps 'second': outermost (first) appends LAST
+    // Base 'Hi' → second adds '(b)' → first adds '(a)' → 'Hi(b)(a)'
+    // Forward composition would produce 'Hi(a)(b)'
+    expect(text).toContain('Hi(b)(a)');
   });
 
   it('shows onEvent observers the post-transform events (spec §7)', async () => {
