@@ -337,6 +337,68 @@ describe('pipeline handle — error paths', () => {
     expect(text).toContain('plugin_stream_error');
     expect(text).toContain('transform boom');
   });
+
+  it('renders a transform-injected error event as the response in non-stream mode (I1)', async () => {
+    // Arrange - non-stream request + plugin that yields error event
+    const upstream = fakeFetch(200, [OAI_JSON]);
+    const errorInjector: ProxyPlugin = {
+      name: 'errorInjector',
+      transformStream: async function* (_ctx, events) {
+        for await (const event of events) {
+          // Replace first content_block_delta with an error event
+          if (event.type === 'content_block_delta') {
+            yield {
+              type: 'error',
+              error: {
+                type: 'overloaded_error',
+                message: 'no capacity',
+                status: 529,
+              },
+            };
+            return; // stop the stream
+          }
+          yield event;
+        }
+      },
+    };
+    const pipeline = createPipeline(
+      makeDeps(upstream.port, new Map([['errorInjector', errorInjector]])),
+    );
+    // Act
+    const response = await pipeline.handle(request(ANTHROPIC_BODY));
+    const parsed = JSON.parse(await readBody(response.body)) as {
+      error: { type: string; message: string };
+    };
+    // Assert - must resolve (no rejection) with status 529 and error body
+    expect(response.status).toBe(529);
+    expect(parsed.error.type).toBe('overloaded_error');
+    expect(parsed.error.message).toBe('no capacity');
+  });
+
+  it('catches a throwing credentials.resolve and renders 500 internal_error (I2)', async () => {
+    // Arrange - credentials.resolve that throws
+    const upstream = fakeFetch(200, [OAI_JSON]);
+    const throwingDeps = makeDeps(upstream.port);
+    // Create a new deps object with throwing credentials instead of mutating
+    const depsWithThrowingCredentials: PipelineDeps = {
+      ...throwingDeps,
+      credentials: {
+        resolve: () => {
+          throw new Error('env unset');
+        },
+      },
+    };
+    const pipeline = createPipeline(depsWithThrowingCredentials);
+    // Act
+    const response = await pipeline.handle(request(ANTHROPIC_BODY));
+    const parsed = JSON.parse(await readBody(response.body)) as {
+      error: { type: string; message: string };
+    };
+    // Assert - must resolve (no rejection) with status 500 and error body containing 'env unset'
+    expect(response.status).toBe(500);
+    expect(parsed.error.type).toBe('internal_error');
+    expect(parsed.error.message).toContain('env unset');
+  });
 });
 
 describe('pipeline handle — stream transforms and observers', () => {

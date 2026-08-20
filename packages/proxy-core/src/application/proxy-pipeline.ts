@@ -283,15 +283,34 @@ async function shortCircuitResponse(
   for await (const event of events) {
     collected.push(event);
   }
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    ...(sc.headers ?? {}),
-  };
-  return {
-    status: sc.status,
-    headers,
-    body: singleChunk(adapter.encodeResponse(collected, encodeOptions)),
-  };
+  // I1: If any collected event is an error event, render it as the response.
+  const errorEvent = collected.find(e => e.type === 'error');
+  if (errorEvent !== undefined && errorEvent.type === 'error') {
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      ...(sc.headers ?? {}),
+    };
+    return {
+      status: errorEvent.error.status,
+      headers,
+      body: singleChunk(adapter.encodeError(errorEvent.error)),
+    };
+  }
+  try {
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      ...(sc.headers ?? {}),
+    };
+    return {
+      status: sc.status,
+      headers,
+      body: singleChunk(adapter.encodeResponse(collected, encodeOptions)),
+    };
+  } catch (error) {
+    const canonical =
+      error instanceof FormatError ? error.canonical : iterationError(error);
+    return errorResponse(inbound, canonical);
+  }
 }
 
 /**
@@ -407,26 +426,30 @@ export type ProxyPipeline = {
 export function createPipeline(deps: PipelineDeps): ProxyPipeline {
   return {
     handle: async request => {
-      if (request.path === MODELS_PATH) {
-        // D10: synthesized locally from the routing table; GET only.
-        if (request.method !== 'GET') {
-          return errorResponse('openai-chat', {
-            type: 'invalid_request_error',
-            message: `${MODELS_PATH} supports GET only`,
-            status: 405,
-          });
+      try {
+        if (request.path === MODELS_PATH) {
+          // D10: synthesized locally from the routing table; GET only.
+          if (request.method !== 'GET') {
+            return errorResponse('openai-chat', {
+              type: 'invalid_request_error',
+              message: `${MODELS_PATH} supports GET only`,
+              status: 405,
+            });
+          }
+          return modelsResponse(deps.table);
         }
-        return modelsResponse(deps.table);
+        if (isModelLessPath(request)) {
+          return runModelLess(request, deps);
+        }
+        const outcome = await prepareUpstream(request, deps);
+        if (outcome.kind !== 'ready') {
+          return outcome.response;
+        }
+        return await runUpstream(outcome.ready, request, deps);
+      } catch (error) {
+        // I2: Terminal exception boundary - any throw escaping the pipeline maps to an error response.
+        return errorResponse('openai-chat', toCanonicalError(error));
       }
-      if (isModelLessPath(request)) {
-        return runModelLess(request, deps);
-      }
-      const outcome = await prepareUpstream(request, deps);
-      if (outcome.kind !== 'ready') {
-        return outcome.response;
-      }
-      deps.logger.debug(`ready.ir.model = ${JSON.stringify(outcome.ready.ir.model)}`);
-      return runUpstream(outcome.ready, request, deps);
     },
   };
 }
@@ -476,7 +499,11 @@ async function runModelLess(
     outboundHeaders: undefined,
     streaming: false,
   });
-  const url = `${provider.baseUrl.replace(/\/+$/, '')}${request.path}`;
+  // M3: Collapse /v1/v1 to /v1 for baseUrl suffixed with /v1 (consistent with domain/provider.ts endpointUrl).
+  const url = `${provider.baseUrl.replace(/\/+$/, '')}${request.path}`.replace(
+    /\/v1\/v1(?=\/)/g,
+    '/v1',
+  );
   let upstream: UpstreamResponse;
   try {
     upstream = await deps.fetch.fetch({
@@ -678,11 +705,25 @@ async function streamResponse(
     for await (const event of observed) {
       collected.push(event);
     }
-    return {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: singleChunk(inboundAdapter.encodeResponse(collected, encodeOptions)),
-    };
+    // I1: If any collected event is an error event, render it as the response.
+    const errorEvent = collected.find(e => e.type === 'error');
+    if (errorEvent !== undefined && errorEvent.type === 'error') {
+      return errorResponse(inbound, errorEvent.error);
+    }
+    try {
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: singleChunk(inboundAdapter.encodeResponse(collected, encodeOptions)),
+      };
+    } catch (error) {
+      const canonical =
+        error instanceof FormatError ? error.canonical : iterationError(error);
+      return errorResponse(
+        inbound,
+        await runErrorHooks(active, canonical, deps, requestId),
+      );
+    }
   }
 
   const source = decodeUpstreamEvents(outboundAdapter, upstream.body);

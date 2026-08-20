@@ -9,7 +9,6 @@ export type CredentialResolverPort = {
 };
 
 /** Auth header for the upstream request (spec §5.1); undefined = no auth header. */
-/** Auth header for the upstream request (spec §5.1); undefined = no auth header. */
 export function resolveAuthHeader(
   auth: AuthConfig,
   resolver: CredentialResolverPort,
