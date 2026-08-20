@@ -36,5 +36,15 @@ export default {
       from: { path: '^packages/proxy-core/src/domain' },
       to: { path: '^packages/proxy-core/src/(application|formats|plugins|adapters)' },
     },
+    {
+      name: 'domain-runtime-pure',
+      comment: 'domain may import only itself and plugin-api (spec §3.2)',
+      severity: 'error',
+      from: {
+        path: '^packages/proxy-core/src/domain',
+        pathNot: ['^packages/proxy-core/src/domain/.*\\.test\\..*'],
+      },
+      to: { pathNot: ['^packages/proxy-core/src/domain', '^@proxitor/plugin-api'] },
+    },
   ],
 };

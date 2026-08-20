@@ -102,6 +102,24 @@ export function createRoutingTable(config: RoutingConfig): RoutingTable {
     );
   }
 
+  // F1: Validate plugin-list entries at build time by dry-running mergePluginLayers
+  for (const binding of config.models) {
+    const provider = config.providers[binding.provider];
+    if (provider === undefined) {
+      continue; // Already validated above
+    }
+    // Dry-run to catch invalid plugin entries at table build, not request time
+    mergePluginLayers(config.plugins, provider.plugins, binding.plugins);
+  }
+
+  // Dry-run for model-less path (defaultProvider exists validated above)
+  if (config.defaultProvider !== undefined) {
+    const defaultProvider = config.providers[config.defaultProvider];
+    if (defaultProvider !== undefined) {
+      mergePluginLayers(config.plugins, defaultProvider.plugins);
+    }
+  }
+
   const resolve = (logicalModel: string, path: string): RouteResolution => {
     const inbound = classifyPath(path);
     if (inbound === MODELS_PATH) {

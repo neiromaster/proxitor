@@ -22,6 +22,8 @@ and sibling domain modules (enforced by `domain-layers-isolated` in
 - **Inbound classification**: `/v1/messages` → anthropic-messages,
   `/v1/chat/completions` → openai-chat, `/v1/responses` → 501 (deferred, §17),
   `/v1/models` → locally synthesized via `listModels()`, else 404.
+  `classifyPath` expects the router's normalized, query-stripped path (e.g. hono's `c.req.path`);
+  `/v1/messages/` or `/v1/messages?x=1` is a 404 by design — M4 must not "helpfully" normalize differently.
 - **Model-less** (embeddings, count_tokens; §17): routed to `defaultProvider`
   (raw passthrough, no formats) or `RoutingError` 501.
 - **Plugin merge** (spec §5.3): position = first declaration in the effective

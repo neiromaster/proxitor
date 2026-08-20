@@ -135,4 +135,17 @@ describe('mergePluginLayers', () => {
     expect(() => mergePluginLayers(empty)).toThrow(RoutingConfigError);
     expect(() => mergePluginLayers(twoKeys)).toThrow(RoutingConfigError);
   });
+
+  test('rejects array entries (YAML typo) with RoutingConfigError', () => {
+    // Arrange
+    const arrayWithEntry: readonly PluginListEntry[] = [
+      ['cache-control'] as unknown as PluginListEntry,
+    ];
+
+    // Act / Assert
+    expect(() => mergePluginLayers(arrayWithEntry)).toThrow(RoutingConfigError);
+    expect(() => mergePluginLayers(arrayWithEntry)).toThrow(
+      /plugin list entry must be a string or a plain object/,
+    );
+  });
 });

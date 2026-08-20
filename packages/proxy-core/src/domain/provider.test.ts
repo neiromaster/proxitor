@@ -86,6 +86,36 @@ describe('validateProvider', () => {
     expect(() => validateProvider(provider)).toThrow(/ends with \/v1/);
   });
 
+  test('rejects a baseUrl with query parameters', () => {
+    // Arrange
+    const provider = baseProvider({ baseUrl: 'https://api.openai.com?key=1' });
+
+    // Act / Assert
+    expect(() => validateProvider(provider)).toThrow(RoutingConfigError);
+    expect(() => validateProvider(provider)).toThrow(
+      /baseUrl.*must not contain query parameters/,
+    );
+  });
+
+  test('rejects a baseUrl with a fragment', () => {
+    // Arrange
+    const provider = baseProvider({ baseUrl: 'https://api.openai.com#frag' });
+
+    // Act / Assert
+    expect(() => validateProvider(provider)).toThrow(RoutingConfigError);
+    expect(() => validateProvider(provider)).toThrow(
+      /baseUrl.*must not contain a fragment/,
+    );
+  });
+
+  test('rejects a baseUrl ending with uppercase /V1', () => {
+    // Arrange
+    const provider = baseProvider({ baseUrl: 'https://api.openai.com/V1' });
+
+    // Act / Assert
+    expect(() => validateProvider(provider)).toThrow(/ends with \/v1/);
+  });
+
   test('anthropic provider without anthropic-version is rejected', () => {
     // Arrange
     const provider = baseProvider({
@@ -154,6 +184,41 @@ describe('validateProvider', () => {
 
     // Act / Assert
     expect(() => validateProvider(provider)).toThrow(/maxTokensField/);
+  });
+
+  test('rejects non-string header values', () => {
+    // Arrange
+    const providerWithNumber = baseProvider({
+      headers: { 'x-custom': 123 as never },
+    });
+    const providerWithObject = baseProvider({
+      headers: { 'x-custom': { value: 'test' } as never },
+    });
+
+    // Act / Assert
+    expect(() => validateProvider(providerWithNumber)).toThrow(RoutingConfigError);
+    expect(() => validateProvider(providerWithNumber)).toThrow(
+      /provider "openai-prod": headers\["x-custom"\] must be a string/,
+    );
+    expect(() => validateProvider(providerWithObject)).toThrow(
+      /provider "openai-prod": headers\["x-custom"\] must be a string/,
+    );
+  });
+
+  test('rejects numeric anthropic-version value', () => {
+    // Arrange
+    const provider = baseProvider({
+      id: 'anthropic-direct',
+      wireFormat: 'anthropic-messages',
+      auth: { type: 'x-api-key', credential: { env: 'ANTHROPIC_API_KEY' } },
+      headers: { 'anthropic-version': 2023 as never },
+    });
+
+    // Act / Assert
+    expect(() => validateProvider(provider)).toThrow(RoutingConfigError);
+    expect(() => validateProvider(provider)).toThrow(
+      /provider "anthropic-direct": headers\["anthropic-version"\] must be a string/,
+    );
   });
 });
 

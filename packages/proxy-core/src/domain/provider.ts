@@ -46,6 +46,18 @@ export function validateProvider(provider: ProviderConfig): void {
     );
   }
   validateBaseUrl(provider);
+
+  // F5: Validate header value types
+  if (provider.headers !== undefined) {
+    for (const [key, value] of Object.entries(provider.headers)) {
+      if (typeof value !== 'string') {
+        throw new RoutingConfigError(
+          `provider "${provider.id}": headers["${key}"] must be a string, got ${typeof value}`,
+        );
+      }
+    }
+  }
+
   if (
     provider.wireFormat === 'anthropic-messages' &&
     (provider.headers?.['anthropic-version'] ?? '').length === 0
@@ -90,10 +102,10 @@ function validateBaseUrl(provider: ProviderConfig): void {
   let url: URL;
   try {
     url = new URL(provider.baseUrl);
-  } catch {
-    // biome-ignore lint/style/useErrorCause: RoutingConfigError doesn't support cause
+  } catch (error) {
     throw new RoutingConfigError(
       `provider "${provider.id}": baseUrl "${provider.baseUrl}" is not a valid URL`,
+      { cause: error },
     );
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -101,8 +113,18 @@ function validateBaseUrl(provider: ProviderConfig): void {
       `provider "${provider.id}": baseUrl protocol must be http or https, got "${url.protocol}"`,
     );
   }
-  if (/\/v1\/?$/.test(url.pathname)) {
-    const cleanUrl = provider.baseUrl.replace(/\/v1\/?$/, '');
+  if (url.search !== '') {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" must not contain query parameters — baseUrl must be origin + path only`,
+    );
+  }
+  if (url.hash !== '') {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" must not contain a fragment — baseUrl must be origin + path only`,
+    );
+  }
+  if (/\/v1\/?$/i.test(url.pathname)) {
+    const cleanUrl = provider.baseUrl.replace(/\/v1\/?$/i, '');
     throw new RoutingConfigError(
       `provider "${provider.id}": baseUrl "${provider.baseUrl}" ends with /v1 — the format adapter owns the version path (${ENDPOINT_PATHS[provider.wireFormat]}), so this would produce a doubled path. Remove the /v1 suffix: use "${cleanUrl}"`,
     );

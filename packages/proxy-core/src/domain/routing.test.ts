@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { RoutingConfigError, RoutingError } from './error.js';
+import type { PluginListEntry } from './plugin-merge.js';
 import type { ProviderConfig } from './provider.js';
 import {
   classifyPath,
@@ -311,5 +312,48 @@ describe('createRoutingTable validation', () => {
 
     // Act / Assert
     expect(() => createRoutingTable(dangling)).toThrow(/defaultProvider/);
+  });
+
+  test('rejects empty object plugin entry at binding level', () => {
+    // Arrange
+    const invalidBinding = specConfig({
+      models: [
+        {
+          match: 'gpt-5',
+          provider: 'openai-prod',
+          modelId: 'gpt-5',
+          plugins: [{}] as PluginListEntry[],
+        },
+      ],
+    });
+
+    // Act / Assert
+    expect(() => createRoutingTable(invalidBinding)).toThrow(RoutingConfigError);
+    expect(() => createRoutingTable(invalidBinding)).toThrow(
+      /plugin list entry must have exactly one key/,
+    );
+  });
+
+  test('rejects multi-key plugin entry at provider level', () => {
+    // Arrange
+    const multiKeyProvider = specConfig({
+      providers: {
+        'openai-prod': {
+          ...openaiProvider(),
+          plugins: [
+            { 'cache-control': {}, 'other-key': {} },
+          ] as unknown as PluginListEntry[],
+        },
+        'anthropic-direct': anthropicProvider(),
+        openrouter: openrouterProvider(),
+      },
+      models: [{ match: 'gpt-5', provider: 'openai-prod', modelId: 'gpt-5' }],
+    });
+
+    // Act / Assert
+    expect(() => createRoutingTable(multiKeyProvider)).toThrow(RoutingConfigError);
+    expect(() => createRoutingTable(multiKeyProvider)).toThrow(
+      /plugin list entry must have exactly one key/,
+    );
   });
 });

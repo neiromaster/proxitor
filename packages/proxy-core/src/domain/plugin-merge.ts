@@ -39,6 +39,13 @@ function applyEntry(effective: EffectivePlugin[], entry: PluginListEntry): void 
     return;
   }
 
+  // F4: Reject arrays and any non-plain-object entries
+  if (Array.isArray(entry)) {
+    throw new RoutingConfigError(
+      'plugin list entry must be a string or a plain object, got an array',
+    );
+  }
+
   const keys = Object.keys(entry);
   if (keys.length !== 1) {
     throw new RoutingConfigError(
