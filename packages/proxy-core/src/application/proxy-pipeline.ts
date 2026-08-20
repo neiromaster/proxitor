@@ -9,6 +9,7 @@ import type {
   ShortCircuit,
   WireFormat,
 } from '@proxitor/plugin-api';
+import { ENDPOINT_PATHS } from '@proxitor/plugin-api';
 import type { RouteResolution, RoutingTable } from '../domain/index.js';
 import {
   classifyPath,
@@ -406,6 +407,20 @@ export type ProxyPipeline = {
 export function createPipeline(deps: PipelineDeps): ProxyPipeline {
   return {
     handle: async request => {
+      if (request.path === MODELS_PATH) {
+        // D10: synthesized locally from the routing table; GET only.
+        if (request.method !== 'GET') {
+          return errorResponse('openai-chat', {
+            type: 'invalid_request_error',
+            message: `${MODELS_PATH} supports GET only`,
+            status: 405,
+          });
+        }
+        return modelsResponse(deps.table);
+      }
+      if (isModelLessPath(request)) {
+        return runModelLess(request, deps);
+      }
       const outcome = await prepareUpstream(request, deps);
       if (outcome.kind !== 'ready') {
         return outcome.response;
@@ -413,6 +428,75 @@ export function createPipeline(deps: PipelineDeps): ProxyPipeline {
       deps.logger.debug(`ready.ir.model = ${JSON.stringify(outcome.ready.ir.model)}`);
       return runUpstream(outcome.ready, request, deps);
     },
+  };
+}
+
+/** D10: the model listing is a synthesis, not a translation — openai list shape for every client. */
+function modelsResponse(table: RoutingTable): PipelineResponse {
+  const data = table
+    .listModels()
+    .map(id => ({ id, object: 'model', owned_by: 'proxitor' }));
+  return {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body: singleChunk(JSON.stringify({ object: 'list', data })),
+  };
+}
+
+/** D12: /v1/* POST endpoints outside the classified set route raw to defaultProvider. */
+function isModelLessPath(request: PipelineRequest): boolean {
+  if (request.method !== 'POST' || !request.path.startsWith('/v1/')) {
+    return false;
+  }
+  return (
+    request.path !== ENDPOINT_PATHS['anthropic-messages'] &&
+    request.path !== ENDPOINT_PATHS['openai-chat'] &&
+    request.path !== '/v1/responses' // deferred format → 501, never a passthrough
+  );
+}
+
+/** D12: raw byte passthrough — no codecs, no plugin hooks, upstream answer verbatim. */
+async function runModelLess(
+  request: PipelineRequest,
+  deps: PipelineDeps,
+): Promise<PipelineResponse> {
+  let resolution: RouteResolution;
+  try {
+    resolution = deps.table.resolveModelLess(request.path);
+  } catch (error) {
+    // No defaultProvider (or unreachable config break) → openai-shape error (D5).
+    return errorResponse('openai-chat', toCanonicalError(error));
+  }
+  const provider = resolution.provider;
+  const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
+  const headers = buildUpstreamHeaders({
+    clientHeaders: request.headers,
+    provider,
+    authHeader,
+    outboundHeaders: undefined,
+    streaming: false,
+  });
+  const url = `${provider.baseUrl.replace(/\/+$/, '')}${request.path}`;
+  let upstream: UpstreamResponse;
+  try {
+    upstream = await deps.fetch.fetch({
+      url,
+      method: 'POST',
+      headers,
+      body: request.body,
+    });
+  } catch (error) {
+    return errorResponse('openai-chat', {
+      type: 'upstream_unreachable',
+      message: `upstream ${provider.id} unreachable: ${messageOf(error)}`,
+      status: 502,
+    });
+  }
+  const contentType = upstream.headers['content-type'] ?? 'application/json';
+  return {
+    status: upstream.status,
+    headers: { 'content-type': contentType },
+    body: upstream.body, // raw passthrough — never re-decoded
   };
 }
 
