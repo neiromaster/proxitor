@@ -32,3 +32,14 @@ describe('application re-exports', () => {
     expect(typeof buildUpstreamHeaders).toBe('function');
   });
 });
+
+describe('built-in plugin exports', () => {
+  it('exports the built-in plugin factories and registry', async () => {
+    const core = await import('./index.js');
+    expect(typeof core.createBuiltInPluginRegistry).toBe('function');
+    expect(typeof core.createCacheControlPlugin).toBe('function');
+    expect(typeof core.createNormalizeVolatileSystemPlugin).toBe('function');
+    expect(typeof core.createSessionIdPlugin).toBe('function');
+    expect(typeof core.createOpenRouterRoutingPlugin).toBe('function');
+  });
+});

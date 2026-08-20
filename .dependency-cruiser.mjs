@@ -46,5 +46,16 @@ export default {
       },
       to: { pathNot: ['^packages/proxy-core/src/domain', '^@proxitor/plugin-api'] },
     },
+    {
+      name: 'plugins-core-layers-only',
+      comment:
+        'plugins/built-in import plugin-api and domain only, never application/formats/adapters (spec §3.2)',
+      severity: 'error',
+      from: {
+        path: '^packages/proxy-core/src/plugins',
+        pathNot: ['^packages/proxy-core/src/plugins/.*\\.test\\..*'],
+      },
+      to: { path: '^packages/proxy-core/src/(application|formats|adapters)' },
+    },
   ],
 };
