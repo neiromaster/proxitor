@@ -1,6 +1,6 @@
-import type { LoggerPort, ProxyPlugin } from '@proxitor/plugin-api';
+import type { LoggerPort, ProxyPlugin, WireFormat } from '@proxitor/plugin-api';
 import type { EffectivePlugin } from '../domain/index.js';
-import { RoutingConfigError } from '../domain/index.js';
+import { assertPluginFormatCompatible, RoutingConfigError } from '../domain/index.js';
 
 /** A plugin resolved for one route: instance + validated config (spec §7). */
 export type ActivePlugin = {
@@ -10,7 +10,10 @@ export type ActivePlugin = {
 };
 
 export type PluginManager = {
-  activate(effective: readonly EffectivePlugin[]): ActivePlugin[];
+  activate(
+    effective: readonly EffectivePlugin[],
+    outboundFormat: WireFormat,
+  ): ActivePlugin[];
   snapshot(): Readonly<Record<string, unknown>>;
   restore(states: Readonly<Record<string, unknown>>): void;
 };
@@ -24,7 +27,15 @@ export type PluginManagerOptions = {
 export function createPluginManager(options: PluginManagerOptions): PluginManager {
   const { plugins, logger } = options;
 
-  const activate = (effective: readonly EffectivePlugin[]): ActivePlugin[] => {
+  /**
+   * Resolve effective plugins for one route. `outboundFormat` enforces the
+   * reservedKeys↔wireFormat contract (spec §4.3) — a mismatch is a config
+   * error, never a silent no-op.
+   */
+  const activate = (
+    effective: readonly EffectivePlugin[],
+    outboundFormat: WireFormat,
+  ): ActivePlugin[] => {
     const active: ActivePlugin[] = [];
     for (const entry of effective) {
       const plugin = plugins.get(entry.name);
@@ -33,6 +44,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
           `unknown plugin "${entry.name}" (registered: ${[...plugins.keys()].join(', ') || 'none'})`,
         );
       }
+      assertPluginFormatCompatible(plugin, outboundFormat, entry.name);
       let config: unknown = entry.config;
       if (plugin.validateConfig !== undefined) {
         try {

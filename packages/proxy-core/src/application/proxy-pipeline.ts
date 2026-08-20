@@ -377,7 +377,7 @@ export async function prepareUpstream(
 
   let active: readonly ActivePlugin[];
   try {
-    active = deps.manager.activate(resolution.plugins);
+    active = deps.manager.activate(resolution.plugins, resolution.outboundFormat);
   } catch (error) {
     // D7: request-time activation failures are 500s.
     return { kind: 'error', response: errorResponse(inbound, toCanonicalError(error)) };

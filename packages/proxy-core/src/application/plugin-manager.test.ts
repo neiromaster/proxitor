@@ -43,7 +43,10 @@ describe('createPluginManager', () => {
       logger,
     });
     // Act
-    const active = manager.activate([{ name: 'first', config: 3 }, { name: 'second' }]);
+    const active = manager.activate(
+      [{ name: 'first', config: 3 }, { name: 'second' }],
+      'anthropic-messages',
+    );
     // Assert
     expect(active).toEqual([
       { name: 'first', plugin: first, config: { count: 3 } },
@@ -58,8 +61,12 @@ describe('createPluginManager', () => {
       logger,
     });
     // Act / Assert
-    expect(() => manager.activate([{ name: 'ghost' }])).toThrow(RoutingConfigError);
-    expect(() => manager.activate([{ name: 'ghost' }])).toThrow(/ghost/);
+    expect(() => manager.activate([{ name: 'ghost' }], 'anthropic-messages')).toThrow(
+      RoutingConfigError,
+    );
+    expect(() => manager.activate([{ name: 'ghost' }], 'anthropic-messages')).toThrow(
+      /ghost/,
+    );
   });
 
   it('wraps a validateConfig rejection in RoutingConfigError', () => {
@@ -77,12 +84,12 @@ describe('createPluginManager', () => {
       logger,
     });
     // Act / Assert
-    expect(() => manager.activate([{ name: 'strict', config: 41 }])).toThrow(
-      RoutingConfigError,
-    );
-    expect(() => manager.activate([{ name: 'strict', config: 41 }])).toThrow(
-      /strict.*config must be 42/,
-    );
+    expect(() =>
+      manager.activate([{ name: 'strict', config: 41 }], 'anthropic-messages'),
+    ).toThrow(RoutingConfigError);
+    expect(() =>
+      manager.activate([{ name: 'strict', config: 41 }], 'anthropic-messages'),
+    ).toThrow(/strict.*config must be 42/);
   });
 
   it('passes config through untouched when the plugin has no validateConfig', () => {
@@ -90,7 +97,10 @@ describe('createPluginManager', () => {
     const plain = makePlugin('plain');
     const manager = createPluginManager({ plugins: new Map([['plain', plain]]), logger });
     // Act
-    const active = manager.activate([{ name: 'plain', config: { any: 'shape' } }]);
+    const active = manager.activate(
+      [{ name: 'plain', config: { any: 'shape' } }],
+      'anthropic-messages',
+    );
     // Assert
     expect(active[0]?.config).toEqual({ any: 'shape' });
   });
@@ -161,5 +171,43 @@ describe('createPluginManager', () => {
       'plugin state export failed',
       'plugin state restore failed',
     ]);
+  });
+
+  it('rejects a plugin whose reservedKeys target another wire format', () => {
+    // Arrange
+    const manager = createPluginManager({
+      plugins: new Map([
+        [
+          'or-route',
+          { name: 'or-route', reservedKeys: { 'openai-chat': ['$proxitor.provider'] } },
+        ],
+      ]),
+      logger,
+    });
+
+    // Act + Assert
+    expect(() => manager.activate([{ name: 'or-route' }], 'anthropic-messages')).toThrow(
+      RoutingConfigError,
+    );
+  });
+
+  it('accepts a plugin whose reservedKeys match the outbound wire format', () => {
+    // Arrange
+    const manager = createPluginManager({
+      plugins: new Map([
+        [
+          'or-route',
+          { name: 'or-route', reservedKeys: { 'openai-chat': ['$proxitor.provider'] } },
+        ],
+      ]),
+      logger,
+    });
+
+    // Act
+    const active = manager.activate([{ name: 'or-route' }], 'openai-chat');
+
+    // Assert
+    expect(active).toHaveLength(1);
+    expect(active[0]?.name).toBe('or-route');
   });
 });
