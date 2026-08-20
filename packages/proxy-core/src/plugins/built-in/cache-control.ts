@@ -58,9 +58,9 @@ function requestHasBreakpoint(req: CanonicalRequest): boolean {
 
 /** Normalize existing marks toward `ttl` in a flat markable list (system, tools). */
 function rewriteMarkables<T extends Markable>(
-  items: readonly T[],
+  items: T[],
   ttl: '5m' | '1h' | 'omit',
-): readonly T[] {
+): T[] {
   let changed = false;
   const next = items.map(item => {
     if (item.cacheControl === undefined) return item;
@@ -74,16 +74,15 @@ function rewriteMarkables<T extends Markable>(
 
 /** Normalize existing marks in content blocks, descending into tool_result content. */
 function rewriteContentBlocks(
-  blocks: readonly CanonicalContentBlock[],
+  blocks: CanonicalContentBlock[],
   ttl: '5m' | '1h' | 'omit',
-): readonly CanonicalContentBlock[] {
+): CanonicalContentBlock[] {
   let changed = false;
   const next = blocks.map(block => {
     let current: CanonicalContentBlock = block;
     if (block.type === 'tool_result' && Array.isArray(block.content)) {
       const nested = rewriteContentBlocks(block.content, ttl);
-      if (nested !== block.content)
-        current = { ...block, content: nested as typeof block.content };
+      if (nested !== block.content) current = { ...block, content: nested };
     }
     if (current.cacheControl !== undefined) {
       const cc = appliedCacheControl(ttl);
@@ -96,24 +95,21 @@ function rewriteContentBlocks(
 }
 
 function rewriteMessages(
-  messages: readonly CanonicalMessage[],
+  messages: CanonicalMessage[],
   ttl: '5m' | '1h' | 'omit',
-): readonly CanonicalMessage[] {
+): CanonicalMessage[] {
   let changed = false;
   const next = messages.map(message => {
     const content = rewriteContentBlocks(message.content, ttl);
     if (content === message.content) return message;
     changed = true;
-    return { ...message, content: content as CanonicalMessage['content'] };
+    return { ...message, content };
   });
   return changed ? next : messages;
 }
 
 /** Copy `arr` with its last element marked; undefined when empty or already marked. */
-function markLast<T extends Markable>(
-  arr: readonly T[],
-  cc: CacheControl,
-): readonly T[] | undefined {
+function markLast<T extends Markable>(arr: T[], cc: CacheControl): T[] | undefined {
   const index = arr.length - 1;
   const last = arr[index];
   if (last === undefined || last.cacheControl !== undefined) return undefined;
@@ -123,13 +119,13 @@ function markLast<T extends Markable>(
 }
 
 type MessageInject =
-  | { kind: 'marked'; messages: readonly CanonicalMessage[] }
+  | { kind: 'marked'; messages: CanonicalMessage[] }
   | { kind: 'occupied' }
   | { kind: 'empty' };
 
 /** Mark the last block of the last content-bearing message. */
 function injectIntoMessages(
-  messages: readonly CanonicalMessage[],
+  messages: CanonicalMessage[],
   cc: CacheControl,
 ): MessageInject {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -138,27 +134,27 @@ function injectIntoMessages(
     const marked = markLast(message.content, cc);
     if (marked === undefined) return { kind: 'occupied' };
     const next = messages.slice();
-    next[i] = { ...message, content: marked as typeof message.content };
+    next[i] = { ...message, content: marked };
     return { kind: 'marked', messages: next };
   }
   return { kind: 'empty' };
 }
 
 type InjectionResult = {
-  system: readonly CanonicalSystemBlock[];
-  tools: readonly CanonicalTool[] | undefined;
-  messages: readonly CanonicalMessage[];
+  system: CanonicalSystemBlock[];
+  tools: CanonicalTool[] | undefined;
+  messages: CanonicalMessage[];
 };
 
 /** Inject cache control mark into the appropriate target node. */
 function performInjection(
-  system: readonly CanonicalSystemBlock[],
-  tools: readonly CanonicalTool[] | undefined,
-  messages: readonly CanonicalMessage[],
+  system: CanonicalSystemBlock[],
+  tools: CanonicalTool[] | undefined,
+  messages: CanonicalMessage[],
   cc: CacheControl,
 ): InjectionResult {
   if (system.length > 0) {
-    const marked = markLast(system, cc);
+    const marked = markLast<CanonicalSystemBlock>(system, cc);
     if (marked !== undefined) return { system: marked, tools, messages };
     return { system, tools, messages };
   }
@@ -168,7 +164,7 @@ function performInjection(
     return { system, tools, messages: target.messages };
   }
   if (target.kind === 'empty' && tools !== undefined && tools.length > 0) {
-    const markedTools = markLast(tools, cc);
+    const markedTools = markLast<CanonicalTool>(tools, cc);
     if (markedTools !== undefined) return { system, tools: markedTools, messages };
   }
 
@@ -184,10 +180,10 @@ export function createCacheControlPlugin(): ProxyPlugin<CacheControlPluginConfig
       // Phase 1: Rewrite existing marks toward configured TTL
       let { system, tools, messages } = req;
       if (ttl !== undefined && rewriteBlockTtl !== 'skip') {
-        system = rewriteMarkables(req.system, ttl) as typeof req.system;
+        system = rewriteMarkables<CanonicalSystemBlock>(req.system, ttl);
         if (req.tools !== undefined)
-          tools = rewriteMarkables(req.tools, ttl) as typeof req.tools;
-        messages = rewriteMessages(req.messages, ttl) as typeof req.messages;
+          tools = rewriteMarkables<CanonicalTool>(req.tools, ttl);
+        messages = rewriteMessages(req.messages, ttl);
       }
 
       // Phase 2: Inject new mark if needed
@@ -197,9 +193,9 @@ export function createCacheControlPlugin(): ProxyPlugin<CacheControlPluginConfig
       ) {
         const cc = appliedCacheControl(ttl);
         const injected = performInjection(system, tools, messages, cc);
-        system = injected.system as typeof req.system;
-        tools = injected.tools as typeof req.tools;
-        messages = injected.messages as typeof req.messages;
+        system = injected.system;
+        tools = injected.tools;
+        messages = injected.messages;
       }
 
       // Phase 3: Return early if unchanged
