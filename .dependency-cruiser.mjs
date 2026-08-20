@@ -29,5 +29,12 @@ export default {
       from: { path: '^packages/proxy-core/src/adapters' },
       to: { path: '^packages/proxy-core/src/(domain|formats|plugins)' },
     },
+    {
+      name: 'domain-layers-isolated',
+      comment: 'domain is pure: may import only plugin-api and itself (spec §3.2)',
+      severity: 'error',
+      from: { path: '^packages/proxy-core/src/domain' },
+      to: { path: '^packages/proxy-core/src/(application|formats|plugins|adapters)' },
+    },
   ],
 };

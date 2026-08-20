@@ -91,6 +91,7 @@ function validateBaseUrl(provider: ProviderConfig): void {
   try {
     url = new URL(provider.baseUrl);
   } catch {
+    // biome-ignore lint/style/useErrorCause: RoutingConfigError doesn't support cause
     throw new RoutingConfigError(
       `provider "${provider.id}": baseUrl "${provider.baseUrl}" is not a valid URL`,
     );
