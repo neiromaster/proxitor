@@ -14,19 +14,23 @@ export function resolveAuthHeader(
   auth: AuthConfig,
   resolver: CredentialResolverPort,
 ): { readonly name: string; readonly value: string } | undefined {
-  if (auth.type === 'none') {
-    return undefined;
-  }
-  const secret = resolver.resolve(auth.credential);
   switch (auth.type) {
-    case 'bearer':
+    case 'none':
+      return undefined;
+    case 'bearer': {
+      const secret = resolver.resolve(auth.credential);
       return { name: 'authorization', value: `Bearer ${secret}` };
-    case 'x-api-key':
+    }
+    case 'x-api-key': {
+      const secret = resolver.resolve(auth.credential);
       return { name: auth.headerName ?? 'x-api-key', value: secret };
-    case 'header':
+    }
+    case 'header': {
       // headerName is guaranteed by validateProvider; guard keeps the builder total.
+      const secret = resolver.resolve(auth.credential);
       return auth.headerName === undefined
         ? undefined
         : { name: auth.headerName, value: secret };
+    }
   }
 }
