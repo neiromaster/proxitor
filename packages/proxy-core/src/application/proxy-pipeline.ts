@@ -12,6 +12,7 @@ import type {
 import type { RouteResolution, RoutingTable } from '../domain/index.js';
 import {
   classifyPath,
+  endpointUrl,
   MODELS_PATH,
   RoutingConfigError,
   RoutingError,
@@ -19,12 +20,15 @@ import {
 import { getFormat } from '../formats/index.js';
 import { FormatError } from '../formats/shared/format-error.js';
 import type {
+  FormatAdapter,
   StreamEncodeOptions,
   StreamEncoder,
 } from '../formats/shared/stream-codec.js';
 import type { CredentialResolverPort } from './credentials.js';
+import { resolveAuthHeader } from './credentials.js';
 import type { ActivePlugin, PluginManager } from './plugin-manager.js';
-import type { UpstreamFetchPort } from './upstream-fetch.js';
+import type { UpstreamFetchPort, UpstreamResponse } from './upstream-fetch.js';
+import { buildUpstreamHeaders } from './upstream-headers.js';
 
 /** Inbound request as the pipeline sees it; the M5 hono adapter builds this. */
 export type PipelineRequest = {
@@ -392,4 +396,235 @@ export async function prepareUpstream(
   }
 
   return { kind: 'ready', ready: { inbound, resolution, ir, active, requestId } };
+}
+
+export type ProxyPipeline = {
+  handle(request: PipelineRequest): Promise<PipelineResponse>;
+};
+
+/** The §9 12-step flow, entry point for the M5 hono adapter. */
+export function createPipeline(deps: PipelineDeps): ProxyPipeline {
+  return {
+    handle: async request => {
+      const outcome = await prepareUpstream(request, deps);
+      if (outcome.kind !== 'ready') {
+        return outcome.response;
+      }
+      deps.logger.debug(`ready.ir.model = ${JSON.stringify(outcome.ready.ir.model)}`);
+      return runUpstream(outcome.ready, request, deps);
+    },
+  };
+}
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+async function collectBody(chunks: AsyncIterable<string>): Promise<string> {
+  let text = '';
+  for await (const chunk of chunks) {
+    text += chunk;
+  }
+  return text;
+}
+
+async function* decodeUpstreamEvents(
+  adapter: FormatAdapter,
+  body: AsyncIterable<string>,
+): AsyncGenerator<CanonicalEvent> {
+  const decoder = adapter.createStreamDecoder();
+  for await (const chunk of body) {
+    for (const event of decoder.push(chunk)) {
+      yield event;
+    }
+  }
+  for (const event of decoder.end()) {
+    yield event;
+  }
+}
+
+/**
+ * D19: the first plugin in the effective list is the OUTERMOST transform —
+ * compose forward so each plugin wraps the previous ones.
+ */
+function applyStreamTransforms(
+  source: AsyncIterable<CanonicalEvent>,
+  active: readonly ActivePlugin[],
+  deps: PipelineDeps,
+  requestId: string,
+): AsyncIterable<CanonicalEvent> {
+  let stream = source;
+  for (const ap of active) {
+    if (ap.plugin.transformStream === undefined) {
+      continue;
+    }
+    stream = ap.plugin.transformStream(pluginCtx(ap, requestId, deps), stream);
+  }
+  return stream;
+}
+
+/** §9 steps 8–12 for the model-routed path. */
+async function runUpstream(
+  ready: ReadyRequest,
+  request: PipelineRequest,
+  deps: PipelineDeps,
+): Promise<PipelineResponse> {
+  const { inbound, resolution, ir, active, requestId } = ready;
+  const provider = resolution.provider;
+  const physical = resolution.physicalModel;
+  if (physical === undefined) {
+    // Unreachable on the model-routed path (domain contract); total-code guard.
+    return errorResponse(inbound, {
+      type: 'internal_error',
+      message: 'resolved route has no physical model',
+      status: 500,
+    });
+  }
+
+  const outboundAdapter = getFormat(resolution.outboundFormat);
+  const outboundIr: CanonicalRequest = {
+    ...ir,
+    model: { logical: ir.model.logical, physical }, // D9
+  };
+  const body = outboundAdapter.encodeRequest(outboundIr, {
+    maxTokensField: provider.maxTokensField,
+  });
+
+  const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
+  const headers = buildUpstreamHeaders({
+    clientHeaders: request.headers,
+    provider,
+    authHeader,
+    outboundHeaders: ir.outboundHeaders,
+    streaming: ir.stream,
+  });
+
+  let upstream: UpstreamResponse;
+  try {
+    upstream = await deps.fetch.fetch({
+      url: endpointUrl(provider.baseUrl, provider.wireFormat),
+      method: 'POST',
+      headers,
+      body,
+    });
+  } catch (error) {
+    return errorResponse(
+      inbound,
+      await runErrorHooks(
+        active,
+        {
+          type: 'upstream_unreachable',
+          message: `upstream ${provider.id} unreachable: ${messageOf(error)}`,
+          status: 502,
+        },
+        deps,
+        requestId,
+      ),
+    );
+  }
+
+  if (upstream.status < 200 || upstream.status >= 300) {
+    const text = await collectBody(upstream.body);
+    let providerError: unknown = text;
+    try {
+      providerError = JSON.parse(text);
+    } catch {
+      providerError = text; // non-JSON error body — keep raw text
+    }
+    return errorResponse(
+      inbound,
+      await runErrorHooks(
+        active,
+        {
+          type: 'upstream_error',
+          message: `upstream ${provider.id} responded ${upstream.status}`,
+          status: upstream.status,
+          providerError,
+        },
+        deps,
+        requestId,
+      ),
+    );
+  }
+
+  return streamResponse(ready, upstream, outboundAdapter, deps);
+}
+
+async function streamResponse(
+  ready: ReadyRequest,
+  upstream: UpstreamResponse,
+  outboundAdapter: FormatAdapter,
+  deps: PipelineDeps,
+): Promise<PipelineResponse> {
+  const { inbound, ir, active, requestId } = ready;
+  const inboundAdapter = getFormat(inbound);
+  const encodeOptions: StreamEncodeOptions = {
+    model: ir.model.logical, // D9: the client sees its own logical name
+    clock: deps.clock,
+    random: deps.random,
+  };
+
+  if (!ir.stream) {
+    // D11: non-streaming still flows through the event model — buffered both sides.
+    let events: CanonicalEvent[];
+    try {
+      events = outboundAdapter.decodeResponse(await collectBody(upstream.body));
+    } catch (error) {
+      const canonical =
+        error instanceof FormatError ? error.canonical : iterationError(error);
+      return errorResponse(
+        inbound,
+        await runErrorHooks(active, canonical, deps, requestId),
+      );
+    }
+    // D9: transform message_start events to use the logical model name
+    events = events.map(event => {
+      if (event.type === 'message_start') {
+        return { ...event, model: ir.model.logical };
+      }
+      return event;
+    });
+    const observed = observeEvents(
+      applyStreamTransforms(fromArray(events), active, deps, requestId),
+      active,
+      deps,
+      requestId,
+    );
+    const collected: CanonicalEvent[] = [];
+    for await (const event of observed) {
+      collected.push(event);
+    }
+    return {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: singleChunk(inboundAdapter.encodeResponse(collected, encodeOptions)),
+    };
+  }
+
+  const source = decodeUpstreamEvents(outboundAdapter, upstream.body);
+  // Transform message_start events to use the logical model name (D9)
+  const withLogicalModel = async function* (
+    events: AsyncIterable<CanonicalEvent>,
+  ): AsyncGenerator<CanonicalEvent> {
+    for await (const event of events) {
+      if (event.type === 'message_start') {
+        yield { ...event, model: ir.model.logical };
+        continue;
+      }
+      yield event;
+    }
+  };
+  const withLogicalModelApplied = withLogicalModel(source);
+  const transformed = applyStreamTransforms(
+    withLogicalModelApplied,
+    active,
+    deps,
+    requestId,
+  );
+  const observed = observeEvents(transformed, active, deps, requestId);
+  const encoder = inboundAdapter.createStreamEncoder(encodeOptions);
+  return {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+    body: encodeClientStream(observed, encoder, active, deps, requestId),
+  };
 }
