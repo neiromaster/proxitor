@@ -109,6 +109,7 @@ export function createOpenRouterRoutingPlugin(): ProxyPlugin<OpenRouterRoutingCo
       const routing = buildProviderRouting(ctx.config);
       if (routing === undefined) return req;
       const bag = {
+        // biome-ignore lint/suspicious/noUnnecessaryConditions: key can be absent under noUncheckedIndexedAccess
         ...(req.extensions['openai-chat'] ?? {}),
         '$proxitor.provider': routing,
       };

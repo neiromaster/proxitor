@@ -74,6 +74,13 @@ const BODY = JSON.stringify({
   messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
 });
 
+const SIMPLE_BODY = JSON.stringify({
+  model: 'claude-sonnet-5',
+  max_tokens: 64,
+  stream: true,
+  messages: [{ role: 'user', content: 'hi' }],
+});
+
 const UPSTREAM_JSON = JSON.stringify({
   id: 'msg_1',
   type: 'message',
@@ -83,6 +90,13 @@ const UPSTREAM_JSON = JSON.stringify({
   stop_reason: 'end_turn',
   usage: { input_tokens: 1, output_tokens: 1 },
 });
+
+const OAI_SSE = [
+  'data: {"id":"c","model":"gpt-5-real","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n',
+  'data: {"id":"c","model":"gpt-5-real","choices":[{"index":0,"delta":{"content":"Hi"}}]}\n\n',
+  'data: {"id":"c","model":"gpt-5-real","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+  'data: [DONE]\n\n',
+];
 
 describe('built-in plugins through the pipeline', () => {
   it('normalize + rewrite + inject + session-id all land on the upstream request', async () => {
@@ -141,6 +155,58 @@ describe('built-in plugins through the pipeline', () => {
         type: 'plugin_config_error',
         message: expect.stringContaining('openrouter-routing'),
       },
+    });
+  });
+
+  it('openrouter-routing maps provider hints onto openai-chat wire body', async () => {
+    // Arrange — openai-chat provider with openrouter-routing plugin, anthropic inbound → openai outbound
+    const { calls, port } = fakeFetch(200, OAI_SSE);
+    // Override provider to openai-chat wireFormat for this test
+    const table = createRoutingTable({
+      providers: {
+        oai: {
+          id: 'oai',
+          baseUrl: 'https://oai.example.com',
+          wireFormat: 'openai-chat',
+          auth: { type: 'bearer', credential: { env: 'OAI_KEY' } },
+          plugins: [
+            { 'openrouter-routing': { only: ['anthropic'], order: ['anthropic'] } },
+          ],
+        },
+      },
+      models: [{ match: 'claude-*', provider: 'oai', modelId: 'gpt-5-real' }],
+      defaultProvider: 'oai',
+    });
+    const pipelineWithOpenai = createPipeline({
+      table,
+      manager: createPluginManager({ plugins: createBuiltInPluginRegistry(), logger }),
+      fetch: port,
+      credentials: {
+        resolve: (ref: unknown) => (typeof ref === 'string' ? ref : 'resolved'),
+      },
+      logger,
+      clock: { now: () => 0 },
+      random: { uuid: () => 'req-1' },
+    });
+
+    // Act
+    const response = await pipelineWithOpenai.handle({
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {},
+      body: SIMPLE_BODY,
+    });
+    let _clientBody = '';
+    for await (const chunk of response.body) _clientBody += chunk;
+
+    // Assert
+    expect(calls.length).toBe(1);
+    expect(response.status).toBe(200);
+    const sent = JSON.parse(calls[0]?.body ?? '{}');
+    expect(sent.provider).toEqual({
+      only: ['anthropic'],
+      order: ['anthropic'],
+      allow_fallbacks: true,
     });
   });
 });
