@@ -3,6 +3,7 @@ import {
   buildUpstreamHeaders,
   createPipeline,
   createPluginManager,
+  createProxitor,
   createRoutingTable,
   mergePluginLayers,
   PROXY_CORE_PLACEHOLDER,
@@ -12,6 +13,13 @@ import {
 describe('proxy-core package', () => {
   it('loads its placeholder export', () => {
     expect(PROXY_CORE_PLACEHOLDER).toBe(true);
+  });
+});
+
+describe('composition root re-exports', () => {
+  it('exposes the composition root from the package root', () => {
+    // Arrange / Act / Assert
+    expect(typeof createProxitor).toBe('function');
   });
 });
 
