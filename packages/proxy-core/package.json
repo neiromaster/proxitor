@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@proxitor/plugin-api": "workspace:*",
-    "hono": "^4.12.23",
+    "consola": "^3.4.2",
+    "hono": "^4.12.12",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },

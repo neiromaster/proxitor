@@ -81,8 +81,11 @@ importers:
       '@proxitor/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
+      consola:
+        specifier: ^3.4.2
+        version: 3.4.2
       hono:
-        specifier: ^4.12.23
+        specifier: ^4.12.12
         version: 4.13.2
       yaml:
         specifier: ^2.9.0
