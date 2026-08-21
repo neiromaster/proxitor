@@ -79,7 +79,7 @@ importers:
   packages/proxy-core:
     dependencies:
       '@clack/prompts':
-        specifier: ^1.7.0
+        specifier: ^1.5.0
         version: 1.7.0
       '@hono/node-server':
         specifier: ^2.0.4
