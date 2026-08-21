@@ -57,6 +57,8 @@ export type PipelineDeps = {
   readonly logger: LoggerPort;
   readonly clock: ClockPort;
   readonly random: RandomPort;
+  /** Extra client→upstream header allowlist from `server.forwardHeaders` (spec §5.4); M5 wiring. */
+  readonly forwardHeaders?: readonly string[];
 };
 
 /** A request that passed decode, routing, and the onRequest chain, ready for upstream. */
@@ -498,6 +500,7 @@ async function runModelLess(
     authHeader,
     outboundHeaders: undefined,
     streaming: false,
+    extraForwardHeaders: deps.forwardHeaders,
   });
   // M3: Collapse /v1/v1 to /v1 for baseUrl suffixed with /v1 (consistent with domain/provider.ts endpointUrl).
   const url = `${provider.baseUrl.replace(/\/+$/, '')}${request.path}`.replace(
@@ -608,6 +611,7 @@ async function runUpstream(
     authHeader,
     outboundHeaders: ir.outboundHeaders,
     streaming: ir.stream,
+    extraForwardHeaders: deps.forwardHeaders,
   });
 
   let upstream: UpstreamResponse;
