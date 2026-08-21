@@ -35,21 +35,38 @@ export function createCredentialAdapter(deps?: {
     return cached;
   };
 
+  const validateEnvRef = (ref: { env: string }): void => {
+    const value = env[ref.env];
+    if (value === undefined || value.length === 0) {
+      throw new Error(`credential env "${ref.env}" is not set`);
+    }
+  };
+
+  const loadFileRef = async (ref: { file: string }): Promise<void> => {
+    if (fileCache.has(ref.file)) return;
+    const info = await doStat(ref.file);
+    if ((info.mode & 0o777) !== 0o600) {
+      throw new Error(
+        `credential file "${ref.file}" must have mode 600 (got ${(info.mode & 0o777).toString(8)})`,
+      );
+    }
+    const content = (await doRead(ref.file)).trim();
+    if (content.length === 0) {
+      throw new Error(`credential file "${ref.file}" is empty`);
+    }
+    fileCache.set(ref.file, content);
+  };
+
   const preload = async (refs: readonly CredentialRef[]): Promise<void> => {
     for (const ref of refs) {
-      if (typeof ref === 'string' || !('file' in ref) || fileCache.has(ref.file))
+      if (typeof ref === 'string') continue;
+      if ('env' in ref) {
+        validateEnvRef(ref);
         continue;
-      const info = await doStat(ref.file);
-      if ((info.mode & 0o777) !== 0o600) {
-        throw new Error(
-          `credential file "${ref.file}" must have mode 600 (got ${(info.mode & 0o777).toString(8)})`,
-        );
       }
-      const content = (await doRead(ref.file)).trim();
-      if (content.length === 0) {
-        throw new Error(`credential file "${ref.file}" is empty`);
+      if ('file' in ref) {
+        await loadFileRef(ref);
       }
-      fileCache.set(ref.file, content);
     }
   };
 
