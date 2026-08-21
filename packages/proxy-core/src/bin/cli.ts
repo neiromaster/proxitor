@@ -23,7 +23,10 @@ export type StartDeps = {
 /** Wire shutdown: close the server, then exit cleanly. */
 export function registerShutdown(
   server: Pick<ServerType, 'close'>,
-  deps: { on(signal: string, handler: () => void): void; exit(code: number): void },
+  deps: {
+    on(signal: 'SIGINT' | 'SIGTERM', handler: () => void): void;
+    exit(code: number): void;
+  },
 ): void {
   const shutdown = () => server.close(() => deps.exit(0));
   deps.on('SIGINT', shutdown);
@@ -50,7 +53,7 @@ export async function runStart(
     console.log(`proxitor listening on http://${info.address}:${info.port}`);
   });
   registerShutdown(server, {
-    on: (signal, handler) => register(signal as 'SIGINT' | 'SIGTERM', handler),
+    on: register,
     exit: code => process.exit(code),
   });
 }
