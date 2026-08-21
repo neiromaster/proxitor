@@ -8,4 +8,8 @@ export default defineConfig({
       include: ['src/**/*.test-d.ts'],
     },
   },
+  resolveJsonModule: true,
+  ssr: {
+    noExternal: ['@proxitor/proxy-core'],
+  },
 });
