@@ -15,4 +15,13 @@ describe('root cli', () => {
       throw new Error('Expected print-help error');
     }
   });
+
+  it('offers config wizard as a subcommand', async () => {
+    const result = await dryRun(binary(rootCli), ['node', 'proxitor', 'config']);
+    if (result._tag === 'error') {
+      expect(result.error).toContain('wizard');
+    } else {
+      throw new Error('Expected print-help error');
+    }
+  });
 });

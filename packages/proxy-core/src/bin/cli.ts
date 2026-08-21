@@ -1,5 +1,8 @@
 import { type ServerType, serve } from '@hono/node-server';
-import { command, flag, number, option, optional, string } from 'cmd-ts';
+import { command, flag, number, option, optional, string, subcommands } from 'cmd-ts';
+import { defaultWritePath } from '../adapters/config-file.js';
+import { createWizardIo, runWizard } from '../adapters/config-wizard.js';
+import { createClackPrompt } from '../adapters/prompt-clack.js';
 import {
   type CreateProxitorOptions,
   createProxitor,
@@ -89,5 +92,34 @@ export const startCommand = command({
       );
       process.exit(1);
     }
+  },
+});
+
+export const configWizardCommand = command({
+  name: 'wizard',
+  description: 'Interactive config generator (writes a spec §6 YAML)',
+  args: {
+    out: option({
+      long: 'out',
+      type: optional(string),
+      description: 'Target path (default: XDG config.yaml)',
+    }),
+    force: flag({
+      long: 'force',
+      description: 'Overwrite an existing config without asking',
+    }),
+  },
+  handler: async args => {
+    const io = createWizardIo(createClackPrompt(), args.out ?? defaultWritePath());
+    const code = await runWizard({ force: args.force }, io);
+    if (code !== 0) process.exit(code);
+  },
+});
+
+export const configCli = subcommands({
+  name: 'config',
+  description: 'Manage proxy configuration',
+  cmds: {
+    wizard: configWizardCommand,
   },
 });

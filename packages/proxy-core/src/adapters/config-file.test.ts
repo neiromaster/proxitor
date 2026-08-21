@@ -1,5 +1,7 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { createConfigFile } from './config-file.js';
+import { createConfigFile, defaultWritePath } from './config-file.js';
 
 const FILE = (path: string): string => `# config at ${path}\nversion: 1\n`;
 
@@ -49,5 +51,19 @@ describe('createConfigFile', () => {
       providers: {},
     });
     expect(() => files.parse('{ broken', 'a.json')).toThrow(/a\.json/);
+  });
+
+  describe('defaultWritePath', () => {
+    test('prefers XDG_CONFIG_HOME', () => {
+      expect(defaultWritePath({ XDG_CONFIG_HOME: '/xdg' })).toBe(
+        '/xdg/proxitor/config.yaml',
+      );
+    });
+
+    test('falls back to ~/.config/proxitor without XDG', () => {
+      expect(defaultWritePath({})).toBe(
+        join(homedir(), '.config', 'proxitor', 'config.yaml'),
+      );
+    });
   });
 });

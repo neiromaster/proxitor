@@ -19,18 +19,26 @@ const HOME_CANDIDATES = [
 ] as const;
 const XDG_CANDIDATES = ['config.yaml', 'config.yml', 'config.json'] as const;
 
+function configDir(env: Record<string, string | undefined>): string {
+  const xdg = env.XDG_CONFIG_HOME;
+  return xdg !== undefined && xdg.length > 0
+    ? resolve(xdg, 'proxitor')
+    : join(homedir(), '.config', 'proxitor');
+}
+
+/** Default wizard write target: the first XDG candidate (spec §6 XDG search). */
+export function defaultWritePath(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return join(configDir(env), 'config.yaml');
+}
+
 export function createConfigFile(options?: {
   env?: Record<string, string | undefined>;
   readFile?: (path: string) => Promise<string>;
 }): ConfigFilePort {
   const env = options?.env ?? process.env;
   const doRead = options?.readFile ?? (path => readFile(path, 'utf8'));
-  const configDir = () => {
-    const xdg = env.XDG_CONFIG_HOME;
-    return xdg !== undefined && xdg.length > 0
-      ? resolve(xdg, 'proxitor')
-      : join(homedir(), '.config', 'proxitor');
-  };
 
   return {
     async findAndRead(explicitPath) {
@@ -45,7 +53,7 @@ export function createConfigFile(options?: {
       }
       const candidates = [
         ...HOME_CANDIDATES.map(name => join(homedir(), name)),
-        ...XDG_CANDIDATES.map(name => join(configDir(), name)),
+        ...XDG_CANDIDATES.map(name => join(configDir(env), name)),
       ];
       for (const path of candidates) {
         try {
