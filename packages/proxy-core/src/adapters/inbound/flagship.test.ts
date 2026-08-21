@@ -184,9 +184,12 @@ describe('gateway surfaces', () => {
       // Act
       const address = server.address();
       const port = typeof address === 'object' && address !== null ? address.port : 0;
-      const res = await fetch(`http://127.0.0.1:${port}/v1/models`);
-      expect(res.status).toBe(200);
-      server.close();
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/v1/models`);
+        expect(res.status).toBe(200);
+      } finally {
+        server.close();
+      }
     });
     await new Promise(resolve => setTimeout(resolve, 500));
   });
