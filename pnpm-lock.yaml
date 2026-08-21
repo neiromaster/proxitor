@@ -78,9 +78,15 @@ importers:
 
   packages/proxy-core:
     dependencies:
+      '@hono/node-server':
+        specifier: ^2.0.4
+        version: 2.0.8(hono@4.13.2)
       '@proxitor/plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
+      cmd-ts:
+        specifier: ^0.15.0
+        version: 0.15.0
       consola:
         specifier: ^3.4.2
         version: 3.4.2
@@ -94,6 +100,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      tsdown:
+        specifier: ^0.22.1
+        version: 0.22.3(typescript@6.0.3)
       vitest:
         specifier: ^4.1.8
         version: 4.1.9(@types/node@26.2.0)(@vitest/coverage-v8@4.1.9)(vite@8.0.16(@types/node@26.2.0)(yaml@2.9.0))

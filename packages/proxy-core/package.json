@@ -3,18 +3,26 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "proxitor": "./dist/main.mjs"
+  },
   "scripts": {
+    "build": "tsdown",
+    "start": "node dist/cli.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.4",
     "@proxitor/plugin-api": "workspace:*",
+    "cmd-ts": "^0.15.0",
     "consola": "^3.4.2",
     "hono": "^4.12.12",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "tsdown": "^0.22.1",
     "vitest": "^4.1.8"
   }
 }
