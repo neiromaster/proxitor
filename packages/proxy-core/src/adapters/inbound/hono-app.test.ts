@@ -4,7 +4,7 @@ import type {
   PipelineResponse,
   ProxyPipeline,
 } from '../../application/proxy-pipeline.js';
-import { createProxyApp } from './hono-app.js';
+import { createProxyApp, toStreamingResponse } from './hono-app.js';
 
 const stubPipeline = (
   response: PipelineResponse,
@@ -113,5 +113,87 @@ describe('createProxyApp — inbound routing', () => {
         type: 'invalid_request_error',
       },
     });
+  });
+});
+
+describe('createProxyApp — streaming responses', () => {
+  test('pipeline body chunks stream through in order with status and content-type preserved', async () => {
+    // Arrange
+    const stream: PipelineResponse = {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      body: (async function* () {
+        yield 'a';
+        yield 'b';
+        yield 'c';
+      })(),
+    };
+    const { pipeline } = stubPipeline(stream);
+    const app = createProxyApp({ pipeline, bodyLimitBytes: 1024 });
+    // Act
+    const res = await app.request('/v1/messages', { method: 'POST', body: '{}' });
+    // Assert
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    expect(await res.text()).toBe('abc');
+  });
+
+  test('client cancel mid-stream returns the pipeline iterator (finally runs — upstream abort chain)', async () => {
+    // Arrange
+    let finallyRan = false;
+    let produced = 0;
+    const slow: PipelineResponse = {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      body: (async function* () {
+        try {
+          while (produced < 5) {
+            produced += 1;
+            yield `chunk-${produced}\n\n`;
+          }
+        } finally {
+          finallyRan = true;
+        }
+      })(),
+    };
+    const { pipeline } = stubPipeline(slow);
+    const app = createProxyApp({ pipeline, bodyLimitBytes: 1024 });
+    // Act
+    const res = await app.request('/v1/messages', { method: 'POST', body: '{}' });
+    const reader = res.body?.getReader();
+    expect(reader).toBeDefined();
+    await reader?.read();
+    await reader?.cancel();
+    await new Promise(resolve => setTimeout(resolve, 10)); // let the finally run
+    // Assert
+    expect(finallyRan).toBe(true);
+    expect(produced).toBeLessThan(5);
+  });
+
+  test('toStreamingResponse: abort signal mid-pull closes the stream and returns the iterator', async () => {
+    // Arrange
+    const controller = new AbortController();
+    let finallyRan = false;
+    const pr: PipelineResponse = {
+      status: 200,
+      headers: {},
+      body: (async function* () {
+        try {
+          yield 'x';
+          yield 'y';
+        } finally {
+          finallyRan = true;
+        }
+      })(),
+    };
+    const res = toStreamingResponse(pr, controller.signal);
+    const reader = res.body!.getReader();
+    // Act — first chunk fine, then the client vanishes
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe('x');
+    controller.abort();
+    const after = await reader.read();
+    // Assert
+    expect(after.done).toBe(true);
+    expect(finallyRan).toBe(true);
   });
 });

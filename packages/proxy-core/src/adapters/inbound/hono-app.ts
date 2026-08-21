@@ -71,18 +71,53 @@ export function createProxyApp(deps: {
       body: method === 'GET' ? '' : await c.req.text(),
     };
     const response = await deps.pipeline.handle(request);
-    return toResponse(response);
+    return toStreamingResponse(response, c.req.raw.signal);
   });
 
   app.notFound(c => openaiError(404, `unknown path '${c.req.path}'`));
   return app;
 }
 
-/** Task 5: buffered mapping (streaming arrives in Task 6). */
-async function toResponse(pr: PipelineResponse): Promise<Response> {
-  let text = '';
-  for await (const chunk of pr.body) {
-    text += chunk;
-  }
-  return new Response(text, { status: pr.status, headers: { ...pr.headers } });
+const ENCODER = new TextEncoder();
+
+/**
+ * D-M5a-2/D-M5a-10: every pipeline body streams through a web ReadableStream.
+ * Client disconnect (stream cancel, or raw.signal during a pull) returns the
+ * iterator — its finally aborts the upstream fetch.
+ */
+export function toStreamingResponse(pr: PipelineResponse, signal: AbortSignal): Response {
+  const iterator = pr.body[Symbol.asyncIterator]();
+  const disconnected = new Promise<'disconnected'>(resolve => {
+    if (signal.aborted) {
+      resolve('disconnected');
+      return;
+    }
+    signal.addEventListener('abort', () => resolve('disconnected'), { once: true });
+  });
+  let closed = false;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (closed || signal.aborted) {
+        if (!closed) {
+          closed = true;
+          await iterator.return?.();
+        }
+        controller.close();
+        return;
+      }
+      const next = await Promise.race([iterator.next(), disconnected]);
+      if (next === 'disconnected' || next.done) {
+        closed = true;
+        controller.close();
+        await iterator.return?.();
+        return;
+      }
+      controller.enqueue(ENCODER.encode(next.value));
+    },
+    async cancel() {
+      closed = true;
+      await iterator.return?.();
+    },
+  });
+  return new Response(body, { status: pr.status, headers: { ...pr.headers } });
 }
