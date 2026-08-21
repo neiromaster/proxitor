@@ -1,0 +1,57 @@
+import { readFile, stat } from 'node:fs/promises';
+import type { CredentialResolverPort } from '../application/credentials.js';
+import type { CredentialRef } from '../domain/index.js';
+
+export type CredentialAdapter = CredentialResolverPort & {
+  /** D16: load-time check — file perms (600) + content; fills the sync cache. */
+  preload(refs: readonly CredentialRef[]): Promise<void>;
+};
+
+export function createCredentialAdapter(deps?: {
+  env?: Record<string, string | undefined>;
+  readFile?: (path: string) => Promise<string>;
+  stat?: (path: string) => Promise<{ mode: number }>;
+}): CredentialAdapter {
+  const env = deps?.env ?? process.env;
+  const doRead = deps?.readFile ?? (path => readFile(path, 'utf8'));
+  const doStat = deps?.stat ?? (path => stat(path));
+  const fileCache = new Map<string, string>();
+
+  const resolve = (ref: CredentialRef): string => {
+    if (typeof ref === 'string') return ref;
+    if ('env' in ref) {
+      const value = env[ref.env];
+      if (value === undefined || value.length === 0) {
+        throw new Error(`credential env "${ref.env}" is not set`);
+      }
+      return value;
+    }
+    const cached = fileCache.get(ref.file);
+    if (cached === undefined) {
+      throw new Error(
+        `credential file "${ref.file}" not preloaded (call preload at startup)`,
+      );
+    }
+    return cached;
+  };
+
+  const preload = async (refs: readonly CredentialRef[]): Promise<void> => {
+    for (const ref of refs) {
+      if (typeof ref === 'string' || !('file' in ref) || fileCache.has(ref.file))
+        continue;
+      const info = await doStat(ref.file);
+      if ((info.mode & 0o777) !== 0o600) {
+        throw new Error(
+          `credential file "${ref.file}" must have mode 600 (got ${(info.mode & 0o777).toString(8)})`,
+        );
+      }
+      const content = (await doRead(ref.file)).trim();
+      if (content.length === 0) {
+        throw new Error(`credential file "${ref.file}" is empty`);
+      }
+      fileCache.set(ref.file, content);
+    }
+  };
+
+  return { resolve, preload };
+}
