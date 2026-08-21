@@ -101,15 +101,15 @@ export function toStreamingResponse(pr: PipelineResponse, signal: AbortSignal): 
         if (!closed) {
           closed = true;
           await iterator.return?.();
+          controller.close();
         }
-        controller.close();
         return;
       }
       const next = await Promise.race([iterator.next(), disconnected]);
       if (next === 'disconnected' || next.done) {
         closed = true;
-        controller.close();
         await iterator.return?.();
+        controller.close();
         return;
       }
       controller.enqueue(ENCODER.encode(next.value));
