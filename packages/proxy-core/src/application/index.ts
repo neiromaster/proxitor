@@ -1,3 +1,4 @@
+export * from './config-schema.js';
 export * from './credentials.js';
 export * from './plugin-manager.js';
 export * from './proxy-pipeline.js';
