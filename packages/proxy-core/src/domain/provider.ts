@@ -129,6 +129,15 @@ function validateBaseUrl(provider: ProviderConfig): void {
       `provider "${provider.id}": baseUrl "${provider.baseUrl}" ends with /v1 — the format adapter owns the version path (${ENDPOINT_PATHS[provider.wireFormat]}), so this would produce a doubled path. Remove the /v1 suffix: use "${cleanUrl}"`,
     );
   }
+
+  // Check if baseUrl already contains the full endpoint path
+  const endpointPath = ENDPOINT_PATHS[provider.wireFormat];
+  if (url.pathname === endpointPath || url.pathname.endsWith(endpointPath)) {
+    const cleanUrl = provider.baseUrl.slice(0, -endpointPath.length).replace(/\/+$/, '');
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" already ends with the endpoint path "${endpointPath}" — the format adapter owns this path, so this would produce a doubled path. Remove the endpoint path: use "${cleanUrl}"`,
+    );
+  }
 }
 
 function validateAuth(provider: ProviderConfig): void {
