@@ -104,8 +104,8 @@ models:
     // Arrange
     const records: ObservationRecord[] = [];
     const recordingSink: ObservationSink = {
-      emit(record: ObservationRecord): void {
-        records.push(record);
+      emit(emittedRecord: ObservationRecord): void {
+        records.push(emittedRecord);
       },
     };
 
@@ -166,11 +166,11 @@ defaultProvider: openai
 
     // Consume the stream to ensure events are processed
     const reader = response.body?.getReader();
-    if (reader) {
-      while (true) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
+    if (!reader) throw new Error('Response body has no reader');
+    let done = false;
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
     }
 
     // Debug: if we got an error, log it

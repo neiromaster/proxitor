@@ -358,7 +358,7 @@ describe('DumpSink', () => {
 
     // Clean up
     for (const r of resolveWrite) {
-      r?.();
+      r();
     }
   });
 
