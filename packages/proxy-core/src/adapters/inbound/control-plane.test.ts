@@ -269,6 +269,44 @@ describe('control-plane', () => {
 
       expect(res.status).toBe(401);
     });
+
+    it('should return 401 (not 405) for unauthorized GET /reload — auth runs before method guards', async () => {
+      const app = createControlPlaneApp({
+        token: validToken,
+        reload: mockReload,
+        routingView: mockRoutingView,
+      });
+
+      const res = await app.request('/reload', {
+        method: 'GET',
+        // No Authorization header
+      });
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body).toEqual({
+        error: { message: 'unauthorized', type: 'invalid_request_error' },
+      });
+    });
+
+    it('should return 401 (not 405) for unauthorized POST /routing — auth runs before method guards', async () => {
+      const app = createControlPlaneApp({
+        token: validToken,
+        reload: mockReload,
+        routingView: mockRoutingView,
+      });
+
+      const res = await app.request('/routing', {
+        method: 'POST',
+        // No Authorization header
+      });
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body).toEqual({
+        error: { message: 'unauthorized', type: 'invalid_request_error' },
+      });
+    });
   });
 });
 

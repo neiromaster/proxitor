@@ -98,11 +98,12 @@ export function routingViewOf(config: ProxyConfig): {
   }> = [];
 
   for (const provider of Object.values(config.providers)) {
-    const entry = {
-      id: provider.id,
-      baseUrl: provider.baseUrl,
-      wireFormat: provider.wireFormat,
-    } as { id: string; baseUrl: string; wireFormat: string; plugins?: unknown };
+    const entry: { id: string; baseUrl: string; wireFormat: string; plugins?: unknown } =
+      {
+        id: provider.id,
+        baseUrl: provider.baseUrl,
+        wireFormat: provider.wireFormat,
+      };
 
     if (provider.plugins !== undefined) {
       entry.plugins = provider.plugins;
@@ -119,11 +120,12 @@ export function routingViewOf(config: ProxyConfig): {
   }> = [];
 
   for (const model of config.models) {
-    const entry = {
-      match: model.match,
-      provider: model.provider,
-      modelId: model.modelId,
-    } as { match: string; provider: string; modelId: string; plugins?: unknown };
+    const entry: { match: string; provider: string; modelId: string; plugins?: unknown } =
+      {
+        match: model.match,
+        provider: model.provider,
+        modelId: model.modelId,
+      };
 
     if (model.plugins !== undefined) {
       entry.plugins = model.plugins;
