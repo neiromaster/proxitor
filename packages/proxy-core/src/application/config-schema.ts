@@ -90,7 +90,11 @@ function parseBodyLimit(value: string | number): number {
   }
   const num = Number(match[1]); // match[1] is required by the regex
   const unit = match[2] === undefined ? 'b' : (match[2].toLowerCase() as BodyLimitUnit);
-  return Math.round(num * UNIT_BYTES[unit]);
+  const bytes = Math.round(num * UNIT_BYTES[unit]);
+  if (!Number.isInteger(bytes) || bytes <= 0) {
+    throw new ConfigError(`server.bodyLimit: invalid byte count ${value}`);
+  }
+  return bytes;
 }
 
 const ServerSchema = z.preprocess(

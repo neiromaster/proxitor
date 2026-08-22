@@ -149,13 +149,10 @@ describe('credential ref edges', () => {
 });
 
 describe('bodyLimit edges', () => {
-  it('rejects numeric 0 but accepts string 0mb (schema gap: should reject both)', () => {
-    // Schema gap: '0mb' string is accepted despite evaluating to 0
+  it('rejects 0 (both string "0mb" and numeric 0)', () => {
     const withString = { ...FULL_CONFIG, server: { bodyLimit: '0mb' } };
-    const withStringResult = parseConfig(withString);
-    expect(withStringResult.server.bodyLimitBytes).toBe(0);
+    expect(() => parseConfig(withString)).toThrow(ConfigError);
 
-    // Integer 0 is correctly rejected on the number path
     const withNumber = { ...FULL_CONFIG, server: { bodyLimit: 0 } };
     expect(() => parseConfig(withNumber)).toThrow(ConfigError);
   });
@@ -165,8 +162,8 @@ describe('bodyLimit edges', () => {
     expect(() => parseConfig(input)).toThrow(ConfigError);
   });
 
-  it('accepts fractional sizes with rounding (schema gap: should reject)', () => {
-    // Schema gap: fractional sizes are allowed and rounded
+  it('accepts fractional sizes by rounding to whole bytes', () => {
+    // Fractional units yielding exact byte counts is correct behavior
     const input = { ...FULL_CONFIG, server: { bodyLimit: '1.5mb' } };
     const result = parseConfig(input);
     expect(result.server.bodyLimitBytes).toBe(Math.round(1.5 * 1024 ** 2));
