@@ -1,10 +1,11 @@
 import { binary, dryRun } from 'cmd-ts';
+import pkg from '../../package.json' with { type: 'json' };
 import { rootCli } from './root-cli.js';
 import { version } from './version.js';
 
 describe('root cli', () => {
   it('exposes the package version', () => {
-    expect(version).toBe('0.0.0');
+    expect(version).toBe(pkg.version);
   });
 
   it('offers start as a subcommand', async () => {

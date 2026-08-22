@@ -9,7 +9,4 @@ export default defineConfig({
     },
   },
   resolveJsonModule: true,
-  ssr: {
-    noExternal: ['@proxitor/proxy-core'],
-  },
 });

@@ -119,7 +119,6 @@ async function checkConfig(
       detail: formatError(error),
     });
     checks.push({ name: 'config-valid', status: 'skip' });
-    skipDependentChecks(checks);
     return { checks, config: undefined };
   }
 

@@ -74,6 +74,14 @@ describe('runDoctor', () => {
     expect(byName(report, 'config-valid')?.status).toBe('skip');
     expect(byName(report, 'routing-table')?.status).toBe('skip');
     expect(byName(report, 'activation')?.status).toBe('skip');
+    expect(byName(report, 'port-bind')?.status).toBe('skip');
+    expect(report.checks.map(c => c.name)).toEqual([
+      'config-found',
+      'config-valid',
+      'routing-table',
+      'activation',
+      'port-bind',
+    ]);
     expect(report.exitCode).toBe(1);
   });
 
@@ -86,6 +94,14 @@ describe('runDoctor', () => {
     expect(byName(report, 'config-valid')?.status).toBe('fail');
     expect(byName(report, 'routing-table')?.status).toBe('skip');
     expect(byName(report, 'activation')?.status).toBe('skip');
+    expect(byName(report, 'port-bind')?.status).toBe('skip');
+    expect(report.checks.map(c => c.name)).toEqual([
+      'config-found',
+      'config-valid',
+      'routing-table',
+      'activation',
+      'port-bind',
+    ]);
     expect(report.exitCode).toBe(1);
   });
 

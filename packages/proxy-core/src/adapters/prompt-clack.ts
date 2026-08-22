@@ -22,7 +22,6 @@ export function createClackPrompt(): PromptPort {
       const answer = await clack.select({
         message,
         options: options.map(
-          // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- clack type import
           (option): clack.Option<string> => ({
             value: option.value,
             label: option.label,

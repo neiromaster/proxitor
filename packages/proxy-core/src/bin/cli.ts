@@ -130,9 +130,16 @@ export const configWizardCommand = command({
     }),
   },
   handler: async args => {
-    const io = createWizardIo(createClackPrompt(), args.out ?? defaultWritePath());
-    const code = await runWizard({ force: args.force }, io);
-    if (code !== 0) process.exit(code);
+    try {
+      const io = createWizardIo(createClackPrompt(), args.out ?? defaultWritePath());
+      const code = await runWizard({ force: args.force }, io);
+      if (code !== 0) process.exit(code);
+    } catch (error) {
+      console.error(
+        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      process.exit(1);
+    }
   },
 });
 
@@ -156,17 +163,24 @@ export const doctorCommand = command({
     json: flag({ long: 'json', description: 'Machine-readable JSON output' }),
   },
   handler: async args => {
-    const report = await runDoctor(
-      { configPath: args.config },
-      {
-        env: process.env,
-        readFile: path => readFile(path, 'utf8'),
-        stat,
-        bindProbe: createNetBindProbe(),
-      },
-    );
-    const output = args.json ? renderJson(report) : renderText(report);
-    console.log(output);
-    if (report.exitCode !== 0) process.exit(report.exitCode);
+    try {
+      const report = await runDoctor(
+        { configPath: args.config },
+        {
+          env: process.env,
+          readFile: path => readFile(path, 'utf8'),
+          stat,
+          bindProbe: createNetBindProbe(),
+        },
+      );
+      const output = args.json ? renderJson(report) : renderText(report);
+      console.log(output);
+      if (report.exitCode !== 0) process.exit(report.exitCode);
+    } catch (error) {
+      console.error(
+        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      process.exit(1);
+    }
   },
 });
