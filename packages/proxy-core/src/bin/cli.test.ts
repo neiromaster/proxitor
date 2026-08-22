@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import type { Proxitor } from '../composition-root.js';
-import { registerShutdown, runStart, type StartOptions } from './cli.js';
+import { registerShutdown, runStart, type StartOptions, wireListenError } from './cli.js';
 
 const fakeProxitor = (serverConfig: { host: string; port: number }): Proxitor =>
   // Test-side shaped stand-in; app is never fetched by runStart's deps.
@@ -24,6 +24,7 @@ describe('runStart', () => {
           close: (cb?: () => void) => {
             cb?.();
           },
+          on: () => undefined,
         } as unknown;
       }) as unknown as NonNullable<Parameters<typeof runStart>[1]>['serveImpl'],
       registerSignal: () => {},
@@ -44,6 +45,7 @@ describe('runStart', () => {
             close: (cb?: () => void) => {
               cb?.();
             },
+            on: () => undefined,
           } as unknown;
         }) as never,
         registerSignal: () => {},
@@ -75,5 +77,58 @@ describe('registerShutdown', () => {
     // Assert
     expect(closed).toHaveLength(2);
     expect(exits).toEqual([0, 0]);
+  });
+});
+
+describe('wireListenError', () => {
+  test('fails with a one-line message carrying host:port and the OS error', () => {
+    // Arrange
+    const listeners: Record<string, (error: Error) => void> = {};
+    const server = {
+      on: (event: 'error', listener: (error: Error) => void) => {
+        listeners[event] = listener;
+        return undefined;
+      },
+    };
+    const failures: string[] = [];
+    // Act
+    wireListenError(server, '127.0.0.1', 8828, {
+      fail: message => failures.push(message),
+    });
+    const listener = listeners.error;
+    if (!listener) throw new Error('Listener not registered');
+    listener(new Error('listen EADDRINUSE: address already in use'));
+    // Assert
+    expect(failures).toEqual([
+      'cannot listen on 127.0.0.1:8828 — listen EADDRINUSE: address already in use',
+    ]);
+  });
+
+  test('runStart wires the listen-error handler onto the served server', async () => {
+    // Arrange
+    const registered: string[] = [];
+    const fakeServer = {
+      on: (event: string) => {
+        registered.push(event);
+        return undefined;
+      },
+      close: (cb?: () => void) => {
+        cb?.();
+        return fakeServer;
+      },
+    };
+    // Act
+    await runStart(
+      { verbose: false },
+      {
+        createApp: async () => fakeProxitor({ host: '127.0.0.1', port: 8828 }),
+        serveImpl: (() => fakeServer) as unknown as NonNullable<
+          Parameters<typeof runStart>[1]
+        >['serveImpl'],
+        registerSignal: () => {},
+      },
+    );
+    // Assert
+    expect(registered).toContain('error');
   });
 });

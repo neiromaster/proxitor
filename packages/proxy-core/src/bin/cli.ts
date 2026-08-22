@@ -38,6 +38,18 @@ export function registerShutdown(
   deps.on('SIGTERM', shutdown);
 }
 
+/** Wire listen errors to a clean one-line failure (instead of a raw stack). */
+export function wireListenError(
+  server: { on(event: 'error', listener: (error: Error) => void): unknown },
+  host: string,
+  port: number,
+  handlers: { fail(message: string): void },
+): void {
+  server.on('error', error => {
+    handlers.fail(`cannot listen on ${host}:${port} — ${error.message}`);
+  });
+}
+
 export async function runStart(
   options: StartOptions,
   deps: StartDeps = {},
@@ -56,6 +68,12 @@ export async function runStart(
   const server = doServe({ fetch: proxitor.app.fetch, hostname, port }, info => {
     // eslint-disable-next-line no-console -- CLI startup line is the product surface
     console.log(`proxitor listening on http://${info.address}:${info.port}`);
+  });
+  wireListenError(server, hostname, port, {
+    fail: message => {
+      console.error(`proxitor: ${message}`);
+      process.exit(1);
+    },
   });
   registerShutdown(server, {
     on: register,
