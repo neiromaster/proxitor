@@ -2,7 +2,13 @@ import type { ServerType } from '@hono/node-server';
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import type { Proxitor } from '../composition-root.js';
-import { registerShutdown, runStart, type StartOptions, wireListenError } from './cli.js';
+import {
+  registerShutdown,
+  runGuarded,
+  runStart,
+  type StartOptions,
+  wireListenError,
+} from './cli.js';
 
 /** Server type with closeIdleConnections for graceful shutdown. */
 type ServerWithShutdown = Pick<ServerType, 'close' | 'on'> & {
@@ -256,15 +262,8 @@ describe('runGuarded', () => {
       throw new Error('test failure');
     };
 
-    // We'll export runGuarded, so for now we'll test the pattern directly
-    try {
-      await guarded();
-    } catch (error) {
-      console.error(
-        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      process.exit(1);
-    }
+    const wrapped = runGuarded(guarded);
+    await wrapped(undefined);
 
     // Assert
     expect(errorLogs).toEqual(['proxitor: test failure']);
@@ -280,15 +279,10 @@ describe('runGuarded', () => {
     let completed = false;
 
     // Act
-    try {
-      await Promise.resolve();
+    const wrapped = runGuarded(async () => {
       completed = true;
-    } catch (error) {
-      console.error(
-        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      process.exit(1);
-    }
+    });
+    await wrapped(undefined);
 
     // Assert
     expect(completed).toBe(true);

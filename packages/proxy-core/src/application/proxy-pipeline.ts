@@ -699,6 +699,7 @@ async function runUpstream(
   const physical = resolution.physicalModel;
   if (physical === undefined) {
     // Unreachable on the model-routed path (domain contract); total-code guard.
+    observation?.end(500);
     return errorResponse(inbound, {
       type: 'internal_error',
       message: 'resolved route has no physical model',

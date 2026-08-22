@@ -44,16 +44,10 @@ describe('formatObservationLine', () => {
     // Act
     const line = formatObservationLine(record, false);
 
-    // Assert - order: label [pct] read N write N in N provider model [requestType]
-    expect(line).toContain('[req-123]');
-    expect(line).toContain('HIT');
-    expect(line).toContain('85%');
-    expect(line).toContain('read 200');
-    expect(line).toContain('write 50');
-    expect(line).toContain('in 100');
-    expect(line).toContain('provider=openai');
-    expect(line).toContain('gpt-4');
-    expect(line).toContain('[main]');
+    // Assert - pin exact legacy field order for log-parsing compatibility
+    expect(line).toEqual(
+      '[req-123] HIT  85%  read 200  write 50  in 100  provider=openai  gpt-4  [main]',
+    );
   });
 
   test('omits empty model for log-parsing hygiene', () => {

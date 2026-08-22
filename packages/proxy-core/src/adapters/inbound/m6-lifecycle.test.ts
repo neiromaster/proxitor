@@ -120,17 +120,25 @@ observability:
       expect(records).toHaveLength(1);
 
       const record = records[0]!;
-      expect(record.status).toBe(200);
-      expect(record.model).toBe('gpt-4');
-      expect(record.provider).toBe('openai');
-      expect(record.physicalModel).toBe('gpt-4');
-      expect(record.requestType).toBe('main');
-      expect(record.usage.present).toBe(true);
-      expect(record.usage.inputTokens).toBe(10);
-      expect(record.usage.outputTokens).toBe(6);
-      expect(record.usage.cacheRead).toBe(8);
-      expect(record.usage.cacheCreate).toBe(0);
-      expect(record.outcome.label).toBeDefined(); // HIT/PARTIAL/MISS/COLD/NOUSAGE classification
+      expect(record).toEqual({
+        requestId: expect.any(String),
+        status: 200,
+        model: 'gpt-4',
+        provider: 'openai',
+        physicalModel: 'gpt-4',
+        sessionId: undefined,
+        requestType: 'main',
+        toolsCount: 0,
+        usage: {
+          present: true,
+          inputTokens: 10,
+          outputTokens: 6,
+          cacheRead: 8,
+          cacheCreate: 0,
+        },
+        outcome: { label: 'HIT', hitPct: 80, type: 'main' },
+        requestBody: undefined,
+      });
     });
   });
 
@@ -517,46 +525,6 @@ defaultProvider: oai
 
       // Cleanup
       watcher.stop();
-    });
-
-    test('configText-sourced proxitor → watcher.start() logs exactly once (no-op for null path)', async () => {
-      // Arrange - create proxitor from configText (no file path)
-      const proxitor = await createProxitor({
-        configText: `
-version: 1
-providers:
-  oai:
-    baseUrl: https://api.openai.com
-    wireFormat: openai-chat
-    auth: { type: bearer, credential: sk-test }
-models:
-  - match: gpt-4
-    provider: oai
-    modelId: gpt-4
-defaultProvider: oai
-`,
-        env: {},
-        fetchImpl: async () => new Response('{}', { status: 200 }),
-        logger: SILENT,
-      });
-
-      const logger = { ...SILENT, info: vi.fn() };
-
-      // Spy on the internal watcher's logger
-      const originalInfo = logger.info;
-      logger.info = vi.fn(originalInfo);
-
-      // Act - start watcher (should log exactly once for null path)
-      proxitor.watcher.start();
-      proxitor.watcher.start(); // Second call should be idempotent
-
-      // Assert - logger.info was NOT called (because we use SILENT logger in tests)
-      // In production, it would log "live config reload disabled (no config file)"
-      // The important part is that calling start() twice doesn't throw and is idempotent
-      expect(proxitor.watcher).toBeDefined();
-
-      // Cleanup
-      proxitor.watcher.stop();
     });
   });
 });

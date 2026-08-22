@@ -1,10 +1,13 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { LoggerPort } from '@proxitor/plugin-api';
 import type { Hono } from 'hono';
 import { createConfigFile } from './adapters/config-file.js';
 import { type ConfigWatcher, createConfigWatcher } from './adapters/config-watch.js';
 import { createCredentialAdapter } from './adapters/credentials.js';
-import { routingViewOf } from './adapters/inbound/control-plane.js';
+import {
+  createControlPlaneApp,
+  routingViewOf,
+} from './adapters/inbound/control-plane.js';
 import { createProxyApp } from './adapters/inbound/hono-app.js';
 import { consolaLogger } from './adapters/logger.js';
 import { DumpSink, LiveLineSink } from './adapters/observability-sinks.js';
@@ -132,10 +135,7 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
   const initial: RuntimeState = { config, table: initialTable };
 
   const readResolved = async (filePath: string): Promise<ProxyConfig> => {
-    const readFileImpl =
-      options.readFile ??
-      (async (path: string) =>
-        (await import('node:fs/promises')).readFile(path, 'utf-8'));
+    const readFileImpl = options.readFile ?? ((path: string) => readFile(path, 'utf-8'));
     const text = await readFileImpl(filePath);
     return parseConfig(files.parse(text, filePath));
   };
@@ -179,7 +179,6 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
       ? undefined
       : credentials.resolve(config.controlPlane.token);
   if (controlToken !== undefined) {
-    const { createControlPlaneApp } = await import('./adapters/inbound/control-plane.js');
     app.route(
       '/control',
       createControlPlaneApp({
@@ -199,9 +198,6 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     reload: () => hotReload.reload(),
     logger,
   });
-
-  // Start the watcher (idempotent - no-op if already watching or path is null)
-  watcher.start();
 
   // Return proxitor with delegating config and table, plus reload and watcher
   return {

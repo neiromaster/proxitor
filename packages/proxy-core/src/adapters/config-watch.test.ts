@@ -12,7 +12,7 @@ const silent = {
 };
 
 describe('createConfigWatcher', () => {
-  test('mtime change → reload called', () => {
+  test('mtime change → reload called', async () => {
     // Arrange
     const reloadSpy = vi.fn<() => Promise<ReloadResult>>(() =>
       Promise.resolve({ ok: true, changes: 'test' }),
@@ -90,10 +90,11 @@ describe('createConfigWatcher', () => {
     onChangeCallback(currStats, prevStats);
 
     // Wait for async reload
-    // NOTE: In tests, we need to wait a tick for the promise to be scheduled
+    await new Promise(resolve => setImmediate(resolve));
 
     // Assert
     expect(watch).toHaveBeenCalledWith('/test/config.yaml', 100, expect.any(Function));
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
   });
 
   test('same mtime → reload not called', () => {

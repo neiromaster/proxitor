@@ -75,16 +75,15 @@ function canonicalJsonEqual(a: unknown, b: unknown): boolean {
     if (Array.isArray(value)) {
       return value.map(canonicalize);
     }
-    const sorted = Object.keys(value)
-      .sort()
-      .reduce(
-        (acc, key) => {
-          acc[key] = canonicalize((value as Record<string, unknown>)[key]);
-          return acc;
-        },
-        {} as Record<string, unknown>,
-      );
-    return sorted;
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([keyA], [keyB]) => {
+          if (keyA < keyB) return -1;
+          if (keyA > keyB) return 1;
+          return 0;
+        })
+        .map(([key, val]) => [key, canonicalize(val)]),
+    );
   };
   return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }

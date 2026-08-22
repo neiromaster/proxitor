@@ -1,6 +1,7 @@
 import type { LoggerPort } from '@proxitor/plugin-api';
 import { describe, expect, test, vi } from 'vitest';
-import type { RoutingTable } from '../domain/index.js';
+import type { RouteResolution, RoutingTable } from '../domain/index.js';
+import type { ProviderConfig } from '../domain/provider.js';
 import type { ProxyConfig } from './config-schema.js';
 import {
   createHotReload,
@@ -77,24 +78,64 @@ describe('createRuntimeSwap', () => {
 
   test('inflight requests are unaffected - they hold captured RouteResolution values', () => {
     // Arrange
-    const table1 = createFakeRoutingTable('1');
-    const table2 = createFakeRoutingTable('2');
+    const baseProvider = createFakeConfig().providers.openai;
+    if (!baseProvider) {
+      throw new Error('Test setup failed: openai provider missing');
+    }
+
+    const provider1 = baseProvider;
+    const provider2: ProviderConfig = {
+      id: 'provider-2',
+      baseUrl: baseProvider.baseUrl,
+      wireFormat: baseProvider.wireFormat,
+      auth: baseProvider.auth,
+    };
+
+    const resolution1: RouteResolution = {
+      provider: provider1,
+      physicalModel: 'model-1',
+      inboundFormat: undefined,
+      outboundFormat: 'openai-chat',
+      plugins: [],
+    };
+
+    const resolution2: RouteResolution = {
+      provider: provider2,
+      physicalModel: 'model-2',
+      inboundFormat: undefined,
+      outboundFormat: 'openai-chat',
+      plugins: [],
+    };
+
+    const table1: RoutingTable = {
+      resolve: vi.fn().mockReturnValue(resolution1),
+      resolveModelLess: vi.fn(),
+      listModels: vi.fn(() => ['model-1']),
+    };
+
+    const table2: RoutingTable = {
+      resolve: vi.fn().mockReturnValue(resolution2),
+      resolveModelLess: vi.fn(),
+      listModels: vi.fn(() => ['model-2']),
+    };
+
     const state1: RuntimeState = { config: createFakeConfig(), table: table1 };
     const state2: RuntimeState = { config: createFakeConfig(), table: table2 };
     const swap = createRuntimeSwap(state1);
 
-    // Act - facade is identity-stable, but delegates to current.table
-    const facade1 = swap.table;
+    // Act - capture a resolution BEFORE swap, then swap
+    const capturedResolution = swap.table.resolve('gpt-4', '/v1/chat/completions');
     swap.swap(state2);
-    const facade2 = swap.table;
 
-    // Assert - same object reference across swaps (facade is stable)
-    expect(facade1).toBe(facade2);
+    // Assert - captured resolution still points to old provider/model (inflight snapshot)
+    expect(capturedResolution).toEqual(resolution1);
 
-    // But calling methods through the facade hits the new current table
-    // (inflight requests hold RouteResolution values, not the table itself)
-    const listResult = swap.table.listModels();
-    expect(listResult).toEqual(['model-2']);
+    // But fresh resolve through facade hits the new table
+    const freshResolution = swap.table.resolve('gpt-4', '/v1/chat/completions');
+    expect(freshResolution).toEqual(resolution2);
+
+    // Facade is still identity-stable
+    expect(swap.table).toBe(swap.table);
   });
 });
 
