@@ -66,7 +66,9 @@ describe('parseConfig', () => {
     expect(config.observability).toEqual({
       routerMetadata: true,
       hitThreshold: 80,
+      sideMaxTokens: 4096,
       sessionMaxEntries: 4096,
+      sessionTtlMs: 600000,
     });
   });
 

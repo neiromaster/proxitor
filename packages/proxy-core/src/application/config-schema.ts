@@ -120,12 +120,16 @@ const ObservabilitySchema = z.preprocess(
     .object({
       routerMetadata: z.boolean().optional(),
       hitThreshold: z.number().int().min(0).max(100).optional(),
+      sideMaxTokens: z.number().int().positive().optional(),
       sessionMaxEntries: z.number().int().positive().optional(),
+      sessionTtlMs: z.number().int().positive().optional(),
     })
     .transform(v => ({
       routerMetadata: v.routerMetadata ?? true,
       hitThreshold: v.hitThreshold ?? 80,
+      sideMaxTokens: v.sideMaxTokens ?? 4096,
       sessionMaxEntries: v.sessionMaxEntries ?? 4096,
+      sessionTtlMs: v.sessionTtlMs ?? 600000,
     })),
 );
 
