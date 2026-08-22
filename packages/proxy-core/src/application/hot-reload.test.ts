@@ -207,6 +207,23 @@ describe('summarizeConfigDiff', () => {
     const diff = summarizeConfigDiff(config1, config2);
     expect(diff).toBe('');
   });
+
+  test('same provider content with reordered keys returns empty diff (canonical comparison)', () => {
+    const config1 = createFakeConfig();
+    const config2 = createFakeConfig({
+      providers: {
+        ...config1.providers,
+        openai: {
+          wireFormat: 'openai-chat',
+          auth: { type: 'bearer', credential: 'sk-test' },
+          baseUrl: 'https://api.openai.com',
+          id: 'openai',
+        },
+      },
+    });
+    const diff = summarizeConfigDiff(config1, config2);
+    expect(diff).toBe('');
+  });
 });
 
 describe('createHotReload', () => {
@@ -602,5 +619,49 @@ describe('createHotReload', () => {
     if (result.ok) {
       expect(logger.info).toHaveBeenCalledWith(`config reloaded — ${result.changes}`);
     }
+  });
+
+  test('reconfigure throws -> result ok true, swap happened, warn logged', async () => {
+    // Arrange
+    const initialTable = createFakeRoutingTable('initial');
+    const initialConfig = createFakeConfig();
+    const initial: RuntimeState = { config: initialConfig, table: initialTable };
+
+    const nextConfig = createFakeConfig({
+      providers: {
+        ...initialConfig.providers,
+        anthropic: {
+          id: 'anthropic',
+          baseUrl: 'https://api.anthropic.com',
+          wireFormat: 'anthropic-messages',
+          auth: { type: 'bearer', credential: 'sk-test' },
+        },
+      },
+    });
+
+    const logger: LoggerPort = { ...silent, warn: vi.fn() };
+    const deps: HotReloadDeps = {
+      readNext: async () => nextConfig,
+      buildTable: () => createFakeRoutingTable('next'),
+      validate: vi.fn(),
+      preloadCredentials: vi.fn(),
+      reconfigure: () => {
+        throw new Error('reconfigure failed');
+      },
+      logger,
+    };
+
+    const hotReload = createHotReload({ initial, deps });
+
+    // Act
+    const result = await hotReload.reload();
+
+    // Assert
+    expect(result.ok).toBe(true);
+    expect(hotReload.swap.current.config).toBe(nextConfig);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'config reloaded but reconfigure failed: reconfigure failed',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
   });
 });

@@ -64,6 +64,32 @@ export function createRuntimeSwap(initial: RuntimeState): RuntimeSwap {
 }
 
 /**
+ * Canonical JSON comparison — recursively sorts object keys before stringify.
+ * Key-order-agnostic comparison for provider/plugin/observability config diffs.
+ */
+function canonicalJsonEqual(a: unknown, b: unknown): boolean {
+  const canonicalize = (value: unknown): unknown => {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map(canonicalize);
+    }
+    const sorted = Object.keys(value)
+      .sort()
+      .reduce(
+        (acc, key) => {
+          acc[key] = canonicalize((value as Record<string, unknown>)[key]);
+          return acc;
+        },
+        {} as Record<string, unknown>,
+      );
+    return sorted;
+  };
+  return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+}
+
+/**
  * Check if server restart keys changed — these require restart to apply.
  * Compares host, port, bodyLimitBytes, and forwardHeaders (JSON equality).
  */
@@ -103,7 +129,7 @@ function diffProviders(prev: ProxyConfig, next: ProxyConfig, parts: string[]): v
       parts.push(`+${id}`);
     } else if (nextProvider === undefined) {
       parts.push(`-${id}`);
-    } else if (JSON.stringify(prevProvider) !== JSON.stringify(nextProvider)) {
+    } else if (!canonicalJsonEqual(prevProvider, nextProvider)) {
       parts.push(`${id} (changed)`);
     }
   }
@@ -132,13 +158,13 @@ function diffModels(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void
 }
 
 function diffMisc(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
-  if (JSON.stringify(prev.plugins) !== JSON.stringify(next.plugins)) {
+  if (!canonicalJsonEqual(prev.plugins, next.plugins)) {
     parts.push('plugins');
   }
   if (prev.defaultProvider !== next.defaultProvider) {
     parts.push('defaultProvider');
   }
-  if (JSON.stringify(prev.observability) !== JSON.stringify(next.observability)) {
+  if (!canonicalJsonEqual(prev.observability, next.observability)) {
     parts.push('observability');
   }
 }
@@ -167,6 +193,51 @@ export function summarizeConfigDiff(prev: ProxyConfig, next: ProxyConfig): strin
  * 4. swap() → reconfigure() → log success
  * 5. Any error → log failure, return {ok:false}, keep previous config
  */
+async function applyReload(
+  deps: HotReloadDeps,
+  swap: RuntimeSwap,
+): Promise<ReloadResult> {
+  const logger = deps.logger;
+
+  try {
+    // Apply reload steps
+    const nextConfig = await deps.readNext();
+    const nextTable = deps.buildTable(nextConfig);
+    await deps.preloadCredentials(nextConfig);
+    deps.validate(nextConfig);
+
+    // Restart-check
+    if (restartKeysChanged(swap.current.config, nextConfig)) {
+      logger.warn(
+        'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
+      );
+    }
+
+    // Swap and reconfigure
+    const changes = summarizeConfigDiff(swap.current.config, nextConfig);
+    swap.swap({ config: nextConfig, table: nextTable });
+
+    // Reconfigure failure is degraded-observation, not a reload failure
+    try {
+      deps.reconfigure(nextConfig);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`config reloaded but reconfigure failed: ${message}`, {
+        error,
+      });
+    }
+
+    logger.info(`config reloaded — ${changes}`);
+    return { ok: true, changes };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(`config reload failed — keeping previous config: ${message}`, {
+      error,
+    });
+    return { ok: false, error: message };
+  }
+}
+
 export function createHotReload(options: {
   initial: RuntimeState;
   deps: HotReloadDeps;
@@ -176,6 +247,7 @@ export function createHotReload(options: {
   let pending = false;
 
   const swap = createRuntimeSwap(initial);
+  const logger = deps.logger;
 
   const reload = async (): Promise<ReloadResult> => {
     // Coalescing guard
@@ -185,35 +257,9 @@ export function createHotReload(options: {
     }
 
     loading = true;
-    const logger = deps.logger;
 
     try {
-      // Apply reload steps
-      const nextConfig = await deps.readNext();
-      const nextTable = deps.buildTable(nextConfig);
-      await deps.preloadCredentials(nextConfig);
-      deps.validate(nextConfig);
-
-      // Restart-check
-      if (restartKeysChanged(swap.current.config, nextConfig)) {
-        logger.warn(
-          'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
-        );
-      }
-
-      // Swap and reconfigure
-      const changes = summarizeConfigDiff(swap.current.config, nextConfig);
-      swap.swap({ config: nextConfig, table: nextTable });
-      deps.reconfigure(nextConfig);
-
-      logger.info(`config reloaded — ${changes}`);
-      return { ok: true, changes };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error(`config reload failed — keeping previous config: ${message}`, {
-        error,
-      });
-      return { ok: false, error: message };
+      return await applyReload(deps, swap);
     } finally {
       loading = false;
       // Re-run if a concurrent request came in
@@ -222,7 +268,10 @@ export function createHotReload(options: {
         // Schedule next tick to avoid recursion
         setImmediate(() => {
           reload().catch(err => {
-            logger.debug('coalesced reload retry failed', { error: err });
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error(`coalesced reload retry failed: ${message}`, {
+              error: err,
+            });
           });
         });
       }
