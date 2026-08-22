@@ -205,6 +205,43 @@ describe('runWizard', () => {
     const entries = await readdir(join(dir, 'nested'));
     expect(entries).toEqual(['config.yaml']); // no tmp left behind
   });
+
+  it('shows shadow note when output is default XDG path and home config exists', async () => {
+    const { prompt, notes } = scriptedPrompt([...HAPPY]);
+    const homeDir = process.env.HOME ?? '/';
+    // Use a path that matches HOME_CANDIDATES
+    const homeConfigPath = join(homeDir, '.proxitor.yaml');
+    // Use default XDG path as output
+    const xdgPath = join(homeDir, '.config', 'proxitor', 'config.yaml');
+    const io = fakeIo(prompt, xdgPath);
+    // Simulate home config exists by putting it in writes
+    io.writes.set(homeConfigPath, 'version: 1');
+    expect(await runWizard({}, io)).toBe(0);
+    // Should have shadow note
+    expect(notes.some(note => note.includes('shadowed config'))).toBe(true);
+    expect(notes.some(note => note.includes('read BEFORE the XDG config'))).toBe(true);
+  });
+
+  it('does NOT show shadow note when output is not default XDG path', async () => {
+    const { prompt, notes } = scriptedPrompt([...HAPPY]);
+    const homeDir = process.env.HOME ?? '/';
+    const homeConfigPath = join(homeDir, '.proxitor.yaml');
+    const io = fakeIo(prompt, '/custom/path/config.yaml');
+    // Even with home config present, custom path should not trigger shadow note
+    io.writes.set(homeConfigPath, 'version: 1');
+    expect(await runWizard({}, io)).toBe(0);
+    // Should NOT have shadow note
+    expect(notes.some(note => note.includes('shadowed config'))).toBe(false);
+  });
+
+  it('does NOT show shadow note when no home config exists', async () => {
+    const { prompt, notes } = scriptedPrompt([...HAPPY]);
+    const io = fakeIo(prompt, '/xdg/config.yaml');
+    // No home config
+    expect(await runWizard({}, io)).toBe(0);
+    // Should NOT have shadow note
+    expect(notes.some(note => note.includes('shadowed config'))).toBe(false);
+  });
 });
 
 describe('serializeConfigYaml', () => {

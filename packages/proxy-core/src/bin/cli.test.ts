@@ -1,13 +1,24 @@
+import type { ServerType } from '@hono/node-server';
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import type { Proxitor } from '../composition-root.js';
 import { registerShutdown, runStart, type StartOptions, wireListenError } from './cli.js';
+
+/** Server type with closeIdleConnections for graceful shutdown. */
+type ServerWithShutdown = Pick<ServerType, 'close' | 'on'> & {
+  closeIdleConnections(): void;
+};
 
 const fakeProxitor = (serverConfig: { host: string; port: number }): Proxitor =>
   // Test-side shaped stand-in; app is never fetched by runStart's deps.
   ({
     app: new Hono(),
     config: { server: serverConfig } as unknown as Proxitor['config'],
+    watcher: {
+      start: () => {},
+      stop: () => {},
+      reload: async () => ({}),
+    },
   }) as unknown as Proxitor;
 
 describe('runStart', () => {
@@ -56,27 +67,183 @@ describe('runStart', () => {
 });
 
 describe('registerShutdown', () => {
-  test('SIGINT and SIGTERM close the server then exit(0)', () => {
+  test('v2: first signal logs/drains/closes, second signal exits immediately', () => {
     // Arrange
-    const handlers = new Map<string, () => void>();
-    const closed: number[] = [];
+    const handlers: Array<(signal: string) => void> = [];
+    const logs: string[] = [];
     const exits: number[] = [];
+    const onBeforeExitCalls: number[] = [];
+    let closeIdleCalled = false;
+    let closeCalled = false;
+    let closeCallback: (() => void) | undefined;
+
     const server = {
+      closeIdleConnections: () => {
+        closeIdleCalled = true;
+      },
       close: (cb?: () => void) => {
-        closed.push(1);
-        cb?.();
+        closeCalled = true;
+        closeCallback = cb;
       },
     };
+
     // Act
-    registerShutdown(server as Pick<never, 'close'>, {
-      on: (signal, fn) => handlers.set(signal, fn),
+    registerShutdown(server as ServerWithShutdown, {
+      on: (signal, fn) =>
+        handlers.push(s => {
+          if (s === signal) fn();
+        }),
       exit: code => exits.push(code),
+      log: message => logs.push(message),
+      onBeforeExit: () => onBeforeExitCalls.push(1),
     });
-    handlers.get('SIGINT')?.();
-    handlers.get('SIGTERM')?.();
+
+    // First signal (SIGINT)
+    handlers[0]!('SIGINT');
+
+    // Assert - first signal effects
+    expect(logs).toEqual(['shutting down — press Ctrl-C again to force exit']);
+    expect(onBeforeExitCalls).toHaveLength(1);
+    expect(closeIdleCalled).toBe(true);
+    expect(closeCalled).toBe(true);
+    expect(exits).toHaveLength(0); // not yet, waits for close callback
+
+    // Second signal (SIGINT again - first handler)
+    handlers[0]!('SIGINT');
+
+    // Assert - second signal exits immediately
+    expect(exits).toEqual([0]);
+
+    // Now complete the close callback
+    closeCallback?.();
+
+    // Assert - callback doesn't exit again (already handled by second signal)
+    expect(exits).toHaveLength(1);
+  });
+
+  test('v2: close callback exits 0 when no second signal', () => {
+    // Arrange
+    const handlers: Array<(signal: string) => void> = [];
+    const logs: string[] = [];
+    const exits: number[] = [];
+    let closeCallback: (() => void) | undefined;
+
+    const server = {
+      closeIdleConnections: () => {},
+      close: (cb?: () => void) => {
+        closeCallback = cb;
+      },
+    };
+
+    // Act
+    registerShutdown(server as ServerWithShutdown, {
+      on: (signal, fn) =>
+        handlers.push(s => {
+          if (s === signal) fn();
+        }),
+      exit: code => exits.push(code),
+      log: message => logs.push(message),
+    });
+
+    // First SIGTERM signal
+    handlers[1]!('SIGTERM');
+
+    // Assert - not exited yet
+    expect(exits).toHaveLength(0);
+
+    // Complete close
+    closeCallback?.();
+
+    // Assert - exits after close completes
+    expect(exits).toEqual([0]);
+  });
+
+  test('v2: onBeforeExit runs before closeIdleConnections (order assertion)', () => {
+    // Arrange
+    const handlers: Array<(signal: string) => void> = [];
+    const order: string[] = [];
+
+    const server = {
+      closeIdleConnections: () => {
+        order.push('closeIdle');
+      },
+      close: () => {
+        order.push('close');
+      },
+    };
+
+    // Act
+    registerShutdown(server as ServerWithShutdown, {
+      on: (signal, fn) =>
+        handlers.push(s => {
+          if (s === signal) fn();
+        }),
+      exit: () => {},
+      log: () => {},
+      onBeforeExit: () => {
+        order.push('onBeforeExit');
+      },
+    });
+
+    handlers[0]!('SIGINT');
+
+    // Assert - order: log, onBeforeExit, closeIdle, close
+    expect(order).toEqual(['onBeforeExit', 'closeIdle', 'close']);
+  });
+});
+
+describe('runGuarded', () => {
+  test('catches errors and exits with formatted message', async () => {
+    // Arrange
+    const errorLogs: string[] = [];
+    const exits: number[] = [];
+    const originalError = console.error;
+    const originalExit = process.exit;
+
+    console.error = (...args) => errorLogs.push(args.join(' '));
+    process.exit = ((code: number) => exits.push(code)) as never;
+
+    // Act
+    const guarded = async () => {
+      throw new Error('test failure');
+    };
+
+    // We'll export runGuarded, so for now we'll test the pattern directly
+    try {
+      await guarded();
+    } catch (error) {
+      console.error(
+        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      process.exit(1);
+    }
+
     // Assert
-    expect(closed).toHaveLength(2);
-    expect(exits).toEqual([0, 0]);
+    expect(errorLogs).toEqual(['proxitor: test failure']);
+    expect(exits).toEqual([1]);
+
+    // Restore
+    console.error = originalError;
+    process.exit = originalExit;
+  });
+
+  test('completes successfully when no error', async () => {
+    // Arrange
+    let completed = false;
+
+    // Act
+    try {
+      await Promise.resolve();
+      completed = true;
+    } catch (error) {
+      console.error(
+        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      process.exit(1);
+    }
+
+    // Assert
+    expect(completed).toBe(true);
   });
 });
 

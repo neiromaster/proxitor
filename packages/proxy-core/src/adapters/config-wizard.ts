@@ -1,6 +1,7 @@
 // src/adapters/config-wizard.ts
 import { mkdir, rename, stat, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { stringify } from 'yaml';
 import {
   buildWizardConfig,
@@ -9,6 +10,7 @@ import {
   type WizardProvider,
   wizardConfigObject,
 } from '../application/wizard-model.js';
+import { defaultWritePath, HOME_CANDIDATES } from './config-file.js';
 
 export type PromptOption<T extends string> = {
   readonly value: T;
@@ -223,5 +225,21 @@ export async function runWizard(
   await io.writeFile(tmp, yaml);
   await io.rename(tmp, out);
   io.prompt.note(`config written to ${out}`, 'done');
+
+  // Check if the new config is shadowed by a home config
+  if (out === defaultWritePath()) {
+    // Use the provided io.exists to check for shadowing configs
+    for (const name of HOME_CANDIDATES) {
+      const homePath = join(homedir(), name);
+      if (await io.exists(homePath)) {
+        io.prompt.note(
+          `${homePath} is read BEFORE the XDG config — edit or remove it, or your new file will be ignored`,
+          'shadowed config',
+        );
+        break;
+      }
+    }
+  }
+
   return 0;
 }

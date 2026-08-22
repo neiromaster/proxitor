@@ -80,6 +80,11 @@ function parseBodyLimit(value: string | number): number {
     if (!Number.isInteger(value) || value <= 0) {
       throw new ConfigError(`server.bodyLimit: invalid byte count ${value}`);
     }
+    if (value > Number.MAX_SAFE_INTEGER) {
+      throw new ConfigError(
+        `server.bodyLimit: byte count exceeds MAX_SAFE_INTEGER (${value})`,
+      );
+    }
     return value;
   }
   const match = BYTES_RE.exec(value);
@@ -93,6 +98,11 @@ function parseBodyLimit(value: string | number): number {
   const bytes = Math.round(num * UNIT_BYTES[unit]);
   if (!Number.isInteger(bytes) || bytes <= 0) {
     throw new ConfigError(`server.bodyLimit: invalid byte count ${value}`);
+  }
+  if (bytes > Number.MAX_SAFE_INTEGER) {
+    throw new ConfigError(
+      `server.bodyLimit: byte count exceeds MAX_SAFE_INTEGER (${value})`,
+    );
   }
   return bytes;
 }

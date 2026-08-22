@@ -170,4 +170,27 @@ describe('bodyLimit edges', () => {
     const result = parseConfig(input);
     expect(result.server.bodyLimitBytes).toBe(Math.round(1.5 * 1024 ** 2));
   });
+
+  it('rejects values exceeding MAX_SAFE_INTEGER (both string and number)', () => {
+    // '9999999999gb' ≈ 1.07e19 > MAX_SAFE_INTEGER
+    const withString = { ...FULL_CONFIG, server: { bodyLimit: '9999999999gb' } };
+    expect(() => parseConfig(withString)).toThrow(ConfigError);
+    expect(() => parseConfig(withString)).toThrow(
+      /server\.bodyLimit: byte count exceeds MAX_SAFE_INTEGER/,
+    );
+
+    // 2**60 > MAX_SAFE_INTEGER
+    const withNumber = { ...FULL_CONFIG, server: { bodyLimit: 2 ** 60 } };
+    expect(() => parseConfig(withNumber)).toThrow(ConfigError);
+    expect(() => parseConfig(withNumber)).toThrow(
+      /server\.bodyLimit: byte count exceeds MAX_SAFE_INTEGER/,
+    );
+  });
+
+  it('accepts MAX_SAFE_INTEGER exactly (9007199254740991b)', () => {
+    // 9007199254740991b = Number.MAX_SAFE_INTEGER exactly
+    const input = { ...FULL_CONFIG, server: { bodyLimit: '9007199254740991b' } };
+    const result = parseConfig(input);
+    expect(result.server.bodyLimitBytes).toBe(Number.MAX_SAFE_INTEGER);
+  });
 });

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -9,7 +9,7 @@ export type ConfigFilePort = {
   parse(text: string, path: string): unknown;
 };
 
-const HOME_CANDIDATES = [
+export const HOME_CANDIDATES = [
   'proxitor.config.yaml',
   'proxitor.config.yml',
   'proxitor.config.json',
@@ -31,6 +31,30 @@ export function defaultWritePath(
   env: Record<string, string | undefined> = process.env,
 ): string {
   return join(configDir(env), 'config.yaml');
+}
+
+/** Find the first existing home config that would shadow an XDG config. */
+export async function findShadowingHomeConfig(
+  existsImpl?: (path: string) => Promise<boolean>,
+): Promise<string | undefined> {
+  const doExists =
+    existsImpl ??
+    (async (path: string) => {
+      try {
+        await stat(path);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+  for (const name of HOME_CANDIDATES) {
+    const path = join(homedir(), name);
+    if (await doExists(path)) {
+      return path;
+    }
+  }
+  return undefined;
 }
 
 export function createConfigFile(options?: {

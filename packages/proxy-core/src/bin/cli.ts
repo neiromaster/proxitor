@@ -11,6 +11,27 @@ import {
 } from '../composition-root.js';
 import { createNetBindProbe, renderJson, renderText, runDoctor } from './doctor.js';
 
+/** Server type with closeIdleConnections for graceful shutdown. */
+type ServerWithShutdown = Pick<ServerType, 'close' | 'on'> & {
+  closeIdleConnections(): void;
+};
+
+/** Shared command-handler guard: catches errors, logs them, and exits. */
+export function runGuarded<T>(
+  run: (args: T) => Promise<void>,
+): (args: T) => Promise<void> {
+  return async args => {
+    try {
+      await run(args);
+    } catch (error) {
+      console.error(
+        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      process.exit(1);
+    }
+  };
+}
+
 export type StartOptions = {
   readonly config?: string;
   readonly host?: string;
@@ -21,19 +42,45 @@ export type StartOptions = {
 export type StartDeps = {
   readonly createApp?: (options: CreateProxitorOptions) => Promise<Proxitor>;
   readonly serveImpl?: typeof serve;
-  /** Signal registration seam (tests); defaults to process.once. */
+  /** Signal registration seam (tests); defaults to process.on (not once). */
   readonly registerSignal?: (signal: 'SIGINT' | 'SIGTERM', handler: () => void) => void;
 };
 
-/** Wire shutdown: close the server, then exit cleanly. */
+/** Wire shutdown: drain, close the server, then exit cleanly. */
 export function registerShutdown(
-  server: Pick<ServerType, 'close'>,
+  server: ServerWithShutdown,
   deps: {
     on(signal: 'SIGINT' | 'SIGTERM', handler: () => void): void;
     exit(code: number): void;
+    log(message: string): void;
+    onBeforeExit?(): void;
   },
 ): void {
-  const shutdown = () => server.close(() => deps.exit(0));
+  let secondSignal = false;
+  let exited = false;
+
+  const doExit = (code: number) => {
+    if (!exited) {
+      exited = true;
+      deps.exit(code);
+    }
+  };
+
+  const shutdown = () => {
+    if (secondSignal) {
+      // Second signal before close finished: immediate exit
+      doExit(0);
+      return;
+    }
+
+    // First signal: drain and close
+    secondSignal = true;
+    deps.log('shutting down — press Ctrl-C again to force exit');
+    deps.onBeforeExit?.();
+    server.closeIdleConnections();
+    server.close(() => doExit(0));
+  };
+
   deps.on('SIGINT', shutdown);
   deps.on('SIGTERM', shutdown);
 }
@@ -57,7 +104,7 @@ export async function runStart(
   const createApp = deps.createApp ?? createProxitor;
   const doServe = deps.serveImpl ?? serve;
   const register =
-    deps.registerSignal ?? ((signal, handler) => process.once(signal, handler));
+    deps.registerSignal ?? ((signal, handler) => process.on(signal, handler));
 
   const proxitor = await createApp({
     configPath: options.config,
@@ -75,10 +122,15 @@ export async function runStart(
       process.exit(1);
     },
   });
-  registerShutdown(server, {
+  registerShutdown(server as ServerWithShutdown, {
     on: register,
     exit: code => process.exit(code),
+    log: line => console.log(line),
+    onBeforeExit: () => proxitor.watcher.stop(),
   });
+
+  // Start the config watcher after serve succeeds
+  proxitor.watcher.start();
 }
 
 /** Single top-level command (D-M5a-8): subcommands arrive with the M5b wizard. */
@@ -103,16 +155,9 @@ export const startCommand = command({
     }),
     verbose: flag({ long: 'verbose', description: 'Verbose logging' }),
   },
-  handler: async options => {
-    try {
-      await runStart(options);
-    } catch (error) {
-      console.error(
-        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      process.exit(1);
-    }
-  },
+  handler: runGuarded(async (options: StartOptions) => {
+    await runStart(options);
+  }),
 });
 
 export const configWizardCommand = command({
@@ -129,18 +174,11 @@ export const configWizardCommand = command({
       description: 'Overwrite an existing config without asking',
     }),
   },
-  handler: async args => {
-    try {
-      const io = createWizardIo(createClackPrompt(), args.out ?? defaultWritePath());
-      const code = await runWizard({ force: args.force }, io);
-      if (code !== 0) process.exit(code);
-    } catch (error) {
-      console.error(
-        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      process.exit(1);
-    }
-  },
+  handler: runGuarded(async (args: { out?: string; force?: boolean }) => {
+    const io = createWizardIo(createClackPrompt(), args.out ?? defaultWritePath());
+    const code = await runWizard({ force: args.force }, io);
+    if (code !== 0) process.exit(code);
+  }),
 });
 
 export const configCli = subcommands({
@@ -162,25 +200,18 @@ export const doctorCommand = command({
     }),
     json: flag({ long: 'json', description: 'Machine-readable JSON output' }),
   },
-  handler: async args => {
-    try {
-      const report = await runDoctor(
-        { configPath: args.config },
-        {
-          env: process.env,
-          readFile: path => readFile(path, 'utf8'),
-          stat,
-          bindProbe: createNetBindProbe(),
-        },
-      );
-      const output = args.json ? renderJson(report) : renderText(report);
-      console.log(output);
-      if (report.exitCode !== 0) process.exit(report.exitCode);
-    } catch (error) {
-      console.error(
-        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      process.exit(1);
-    }
-  },
+  handler: runGuarded(async (args: { config?: string; json?: boolean }) => {
+    const report = await runDoctor(
+      { configPath: args.config },
+      {
+        env: process.env,
+        readFile: path => readFile(path, 'utf8'),
+        stat,
+        bindProbe: createNetBindProbe(),
+      },
+    );
+    const output = args.json ? renderJson(report) : renderText(report);
+    console.log(output);
+    if (report.exitCode !== 0) process.exit(report.exitCode);
+  }),
 });
