@@ -27,6 +27,7 @@ import type {
 } from '../formats/shared/stream-codec.js';
 import type { CredentialResolverPort } from './credentials.js';
 import { resolveAuthHeader } from './credentials.js';
+import type { ObservabilityPort, RequestObservation } from './observability.js';
 import type { ActivePlugin, PluginManager } from './plugin-manager.js';
 import type { UpstreamFetchPort, UpstreamResponse } from './upstream-fetch.js';
 import { buildUpstreamHeaders } from './upstream-headers.js';
@@ -59,6 +60,8 @@ export type PipelineDeps = {
   readonly random: RandomPort;
   /** Extra client→upstream header allowlist from `server.forwardHeaders` (spec §5.4); M5 wiring. */
   readonly forwardHeaders?: readonly string[];
+  /** Observability tap for request tracking (M6). */
+  readonly observability?: ObservabilityPort;
 };
 
 /** A request that passed decode, routing, and the onRequest chain, ready for upstream. */
@@ -68,6 +71,8 @@ export type ReadyRequest = {
   readonly ir: CanonicalRequest;
   readonly active: readonly ActivePlugin[];
   readonly requestId: string;
+  /** Active observation for this request (M6). */
+  readonly observation?: RequestObservation;
 };
 
 export type PrepareOutcome =
@@ -129,6 +134,23 @@ function errorResponse(inbound: WireFormat, error: CanonicalError): PipelineResp
   };
 }
 
+/** M6 tap point: observe early failures before routing/activation. */
+function observeFailure(
+  deps: PipelineDeps,
+  requestId: string,
+  ir: CanonicalRequest | undefined,
+  status: number,
+): void {
+  deps.observability
+    ?.begin({
+      requestId,
+      model: ir?.model.logical ?? '',
+      toolsCount: ir?.tools?.length ?? 0,
+      maxTokens: ir?.params.maxTokens?.value,
+    })
+    .end(status);
+}
+
 /** Spec §7: an onError exception is logged; the current (original) error survives. */
 async function runErrorHooks(
   active: readonly ActivePlugin[],
@@ -160,6 +182,7 @@ async function* observeEvents(
   active: readonly ActivePlugin[],
   deps: PipelineDeps,
   requestId: string,
+  observation?: RequestObservation,
 ): AsyncGenerator<CanonicalEvent> {
   for await (const event of events) {
     // Mid-stream error events run the onError chain before encoding (§7, §10).
@@ -170,6 +193,8 @@ async function* observeEvents(
             error: await runErrorHooks(active, event.error, deps, requestId),
           }
         : event;
+    // M6 tap: observability sees exactly what the client receives
+    observation?.onEvent(delivered);
     for (const ap of active) {
       if (ap.plugin.onEvent === undefined) {
         continue;
@@ -208,6 +233,7 @@ async function* encodeClientStream(
   active: readonly ActivePlugin[],
   deps: PipelineDeps,
   requestId: string,
+  observation?: RequestObservation,
 ): AsyncGenerator<string> {
   try {
     for await (const event of events) {
@@ -230,6 +256,9 @@ async function* encodeClientStream(
     if (done.length > 0) {
       yield done;
     }
+  } finally {
+    // M6 tap point 5: end observation after stream completes or client disconnects
+    observation?.end(200);
   }
 }
 
@@ -249,6 +278,7 @@ async function shortCircuitResponse(
   active: readonly ActivePlugin[],
   deps: PipelineDeps,
   requestId: string,
+  observation?: RequestObservation,
 ): Promise<PipelineResponse> {
   const adapter = getFormat(inbound);
   const encodeOptions: StreamEncodeOptions = {
@@ -262,23 +292,47 @@ async function shortCircuitResponse(
       'content-type': 'application/json',
       ...(sc.headers ?? {}),
     };
+    // M6 tap point 6: short-circuit non-stream with error
+    observation?.end(sc.status);
     return {
       status: sc.status,
       headers,
       body: singleChunk(adapter.encodeError(sc.error)),
     };
   }
-  const events = observeEvents(fromArray(sc.events ?? []), active, deps, requestId);
+  const events = observeEvents(
+    fromArray(sc.events ?? []),
+    active,
+    deps,
+    requestId,
+    observation,
+  );
   if (ir.stream) {
     const encoder = adapter.createStreamEncoder(encodeOptions);
     const headers: Record<string, string> = {
       'content-type': 'text/event-stream',
       ...(sc.headers ?? {}),
     };
+    // M6 tap point 5: short-circuit stream — end() called in encodeClientStream finally
+    // But we need to override status for short-circuits
+    const wrappedObservation = observation
+      ? {
+          onEvent: observation.onEvent.bind(observation),
+          captureOutbound: observation.captureOutbound.bind(observation),
+          end: (_status: number) => observation.end(sc.status),
+        }
+      : undefined;
     return {
       status: sc.status,
       headers,
-      body: encodeClientStream(events, encoder, active, deps, requestId),
+      body: encodeClientStream(
+        events,
+        encoder,
+        active,
+        deps,
+        requestId,
+        wrappedObservation,
+      ),
     };
   }
   const collected: CanonicalEvent[] = [];
@@ -292,6 +346,8 @@ async function shortCircuitResponse(
       'content-type': 'application/json',
       ...(sc.headers ?? {}),
     };
+    // M6 tap point 6: short-circuit non-stream with error event
+    observation?.end(errorEvent.error.status);
     return {
       status: errorEvent.error.status,
       headers,
@@ -303,6 +359,8 @@ async function shortCircuitResponse(
       'content-type': 'application/json',
       ...(sc.headers ?? {}),
     };
+    // M6 tap point 6: short-circuit non-stream success
+    observation?.end(sc.status);
     return {
       status: sc.status,
       headers,
@@ -330,6 +388,8 @@ export async function prepareUpstream(
     const classified = classifyPath(request.path);
     if (classified === MODELS_PATH) {
       // handle() (Task 6) intercepts GET /v1/models earlier; a POST here is rejected (D5 shape).
+      // M6 tap point 1: models-POST → 405
+      observeFailure(deps, requestId, undefined, 405);
       return {
         kind: 'error',
         response: errorResponse('openai-chat', {
@@ -342,6 +402,8 @@ export async function prepareUpstream(
     inbound = classified;
   } catch (error) {
     // D5: before classification the client's format is unknowable — openai shape.
+    // M6 tap point 1: classify failure
+    observeFailure(deps, requestId, undefined, toCanonicalError(error).status);
     return {
       kind: 'error',
       response: errorResponse('openai-chat', toCanonicalError(error)),
@@ -354,11 +416,15 @@ export async function prepareUpstream(
   } catch (error) {
     // D6: decode precedes routing, so no plugins are active — the onError
     // trigger point exists but observes nothing.
+    // M6 tap point 1: decode failure
+    observeFailure(deps, requestId, undefined, toCanonicalError(error).status);
     return { kind: 'error', response: errorResponse(inbound, toCanonicalError(error)) };
   }
 
   if ((ir.params.n ?? 1) > 1) {
     // D13: each logical request maps to exactly one upstream call.
+    // M6 tap point 1: n>1 → 400
+    observeFailure(deps, requestId, ir, 400);
     return {
       kind: 'error',
       response: errorResponse(inbound, {
@@ -374,6 +440,8 @@ export async function prepareUpstream(
   try {
     resolution = deps.table.resolve(ir.model.logical, request.path);
   } catch (error) {
+    // M6 tap point 1: routing failure
+    observeFailure(deps, requestId, ir, toCanonicalError(error).status);
     return { kind: 'error', response: errorResponse(inbound, toCanonicalError(error)) };
   }
 
@@ -382,6 +450,8 @@ export async function prepareUpstream(
     active = deps.manager.activate(resolution.plugins, resolution.outboundFormat);
   } catch (error) {
     // D7: request-time activation failures are 500s.
+    // M6 tap point 1: activation failure → 500
+    observeFailure(deps, requestId, ir, 500);
     return { kind: 'error', response: errorResponse(inbound, toCanonicalError(error)) };
   }
 
@@ -402,6 +472,13 @@ export async function prepareUpstream(
       continue;
     }
     if (isShortCircuit(result)) {
+      // M6 tap point 6: short-circuit observation begin (no provider)
+      const observation = deps.observability?.begin({
+        requestId,
+        model: ir.model.logical,
+        toolsCount: ir.tools?.length ?? 0,
+        maxTokens: ir.params.maxTokens?.value,
+      });
       return {
         kind: 'shortCircuit',
         response: await shortCircuitResponse(
@@ -411,13 +488,28 @@ export async function prepareUpstream(
           active,
           deps,
           requestId,
+          observation,
         ),
       };
     }
     ir = result;
   }
 
-  return { kind: 'ready', ready: { inbound, resolution, ir, active, requestId } };
+  // M6 tap point 2: ready path — begin observation after onRequest chain
+  const observation = deps.observability?.begin({
+    requestId,
+    model: ir.model.logical,
+    provider: resolution.provider.id,
+    physicalModel: resolution.physicalModel,
+    sessionId: ir.outboundHeaders?.['x-session-id'],
+    toolsCount: ir.tools?.length ?? 0,
+    maxTokens: ir.params.maxTokens?.value,
+  });
+
+  return {
+    kind: 'ready',
+    ready: { inbound, resolution, ir, active, requestId, observation },
+  };
 }
 
 export type ProxyPipeline = {
@@ -493,6 +585,16 @@ async function runModelLess(
     return errorResponse('openai-chat', toCanonicalError(error));
   }
   const provider = resolution.provider;
+
+  // M6 tap point 7: model-less observation begin
+  const requestId = deps.random.uuid();
+  const observation = deps.observability?.begin({
+    requestId,
+    model: '',
+    provider: provider.id,
+    toolsCount: 0,
+  });
+
   const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
   const headers = buildUpstreamHeaders({
     clientHeaders: request.headers,
@@ -507,6 +609,10 @@ async function runModelLess(
     /\/v1\/v1(?=\/)/g,
     '/v1',
   );
+
+  // M6 tap point 7: capture outbound body
+  observation?.captureOutbound(request.body);
+
   let upstream: UpstreamResponse;
   try {
     upstream = await deps.fetch.fetch({
@@ -516,12 +622,17 @@ async function runModelLess(
       body: request.body,
     });
   } catch (error) {
+    // M6 tap point 7: upstream unreachable → 502
+    observation?.end(502);
     return errorResponse('openai-chat', {
       type: 'upstream_unreachable',
       message: `upstream ${provider.id} unreachable: ${messageOf(error)}`,
       status: 502,
     });
   }
+
+  // M6 tap point 7: end with upstream status
+  observation?.end(upstream.status);
   const contentType = upstream.headers['content-type'] ?? 'application/json';
   return {
     status: upstream.status,
@@ -583,7 +694,7 @@ async function runUpstream(
   request: PipelineRequest,
   deps: PipelineDeps,
 ): Promise<PipelineResponse> {
-  const { inbound, resolution, ir, active, requestId } = ready;
+  const { inbound, resolution, ir, active, requestId, observation } = ready;
   const provider = resolution.provider;
   const physical = resolution.physicalModel;
   if (physical === undefined) {
@@ -604,6 +715,9 @@ async function runUpstream(
     maxTokensField: provider.maxTokensField,
   });
 
+  // M6 tap point 3: capture outbound body
+  observation?.captureOutbound(body);
+
   const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
   const headers = buildUpstreamHeaders({
     clientHeaders: request.headers,
@@ -623,6 +737,8 @@ async function runUpstream(
       body,
     });
   } catch (error) {
+    // M6 tap point 3: upstream unreachable → 502
+    observation?.end(502);
     return errorResponse(
       inbound,
       await runErrorHooks(
@@ -646,6 +762,8 @@ async function runUpstream(
     } catch {
       providerError = text; // non-JSON error body — keep raw text
     }
+    // M6 tap point 3: upstream non-2xx → upstream status
+    observation?.end(upstream.status);
     return errorResponse(
       inbound,
       await runErrorHooks(
@@ -671,7 +789,7 @@ async function streamResponse(
   outboundAdapter: FormatAdapter,
   deps: PipelineDeps,
 ): Promise<PipelineResponse> {
-  const { inbound, ir, active, requestId } = ready;
+  const { inbound, ir, active, requestId, observation } = ready;
   const inboundAdapter = getFormat(inbound);
   const encodeOptions: StreamEncodeOptions = {
     model: ir.model.logical, // D9: the client sees its own logical name
@@ -687,6 +805,8 @@ async function streamResponse(
     } catch (error) {
       const canonical =
         error instanceof FormatError ? error.canonical : iterationError(error);
+      // M6 tap point 4: decode error → end with error status
+      observation?.end(canonical.status);
       return errorResponse(
         inbound,
         await runErrorHooks(active, canonical, deps, requestId),
@@ -704,6 +824,7 @@ async function streamResponse(
       active,
       deps,
       requestId,
+      observation,
     );
     const collected: CanonicalEvent[] = [];
     for await (const event of observed) {
@@ -712,9 +833,13 @@ async function streamResponse(
     // I1: If any collected event is an error event, render it as the response.
     const errorEvent = collected.find(e => e.type === 'error');
     if (errorEvent !== undefined && errorEvent.type === 'error') {
+      // M6 tap point 4: collected error event → end with error status
+      observation?.end(errorEvent.error.status);
       return errorResponse(inbound, errorEvent.error);
     }
     try {
+      // M6 tap point 4: non-stream success → end with 200
+      observation?.end(200);
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -723,6 +848,7 @@ async function streamResponse(
     } catch (error) {
       const canonical =
         error instanceof FormatError ? error.canonical : iterationError(error);
+      observation?.end(canonical.status);
       return errorResponse(
         inbound,
         await runErrorHooks(active, canonical, deps, requestId),
@@ -750,11 +876,12 @@ async function streamResponse(
     deps,
     requestId,
   );
-  const observed = observeEvents(transformed, active, deps, requestId);
+  const observed = observeEvents(transformed, active, deps, requestId, observation);
   const encoder = inboundAdapter.createStreamEncoder(encodeOptions);
   return {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
-    body: encodeClientStream(observed, encoder, active, deps, requestId),
+    // M6 tap point 5: stream success — end() called in encodeClientStream finally
+    body: encodeClientStream(observed, encoder, active, deps, requestId, observation),
   };
 }
