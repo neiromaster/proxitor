@@ -190,6 +190,54 @@ describe('registerShutdown', () => {
     // Assert - order: log, onBeforeExit, closeIdle, close
     expect(order).toEqual(['onBeforeExit', 'closeIdle', 'close']);
   });
+
+  test('v2: onBeforeExit throw is logged and shutdown continues', () => {
+    // Arrange
+    const handlers: Array<(signal: string) => void> = [];
+    const logs: string[] = [];
+    const exits: number[] = [];
+    let closeIdleCalled = false;
+    let closeCalled = false;
+    let closeCallback: (() => void) | undefined;
+
+    const server = {
+      closeIdleConnections: () => {
+        closeIdleCalled = true;
+      },
+      close: (cb?: () => void) => {
+        closeCalled = true;
+        closeCallback = cb;
+      },
+    };
+
+    // Act
+    registerShutdown(server as ServerWithShutdown, {
+      on: (signal, fn) =>
+        handlers.push(s => {
+          if (s === signal) fn();
+        }),
+      exit: code => exits.push(code),
+      log: message => logs.push(message),
+      onBeforeExit: () => {
+        throw new Error('watcher stop failed');
+      },
+    });
+
+    handlers[0]!('SIGINT');
+
+    // Assert - error logged but shutdown continued
+    expect(logs).toContain('shutting down — press Ctrl-C again to force exit');
+    expect(logs).toContain('shutdown: onBeforeExit failed: watcher stop failed');
+    expect(closeIdleCalled).toBe(true);
+    expect(closeCalled).toBe(true);
+    expect(exits).toHaveLength(0); // not yet, waits for close callback
+
+    // Complete close
+    closeCallback?.();
+
+    // Assert - exits after close completes
+    expect(exits).toEqual([0]);
+  });
 });
 
 describe('runGuarded', () => {

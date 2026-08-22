@@ -76,7 +76,16 @@ export function registerShutdown(
     // First signal: drain and close
     secondSignal = true;
     deps.log('shutting down — press Ctrl-C again to force exit');
-    deps.onBeforeExit?.();
+
+    // Wrap onBeforeExit in try/catch to prevent shutdown hang
+    try {
+      deps.onBeforeExit?.();
+    } catch (error) {
+      deps.log(
+        `shutdown: onBeforeExit failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     server.closeIdleConnections();
     server.close(() => doExit(0));
   };
