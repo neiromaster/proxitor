@@ -85,8 +85,8 @@ describe('wireListenError', () => {
     // Arrange
     const listeners: Record<string, (error: Error) => void> = {};
     const server = {
-      on: (event: 'error', listener: (error: Error) => void) => {
-        listeners[event] = listener;
+      on: (event: 'error', handler: (error: Error) => void) => {
+        listeners[event] = handler;
         return undefined;
       },
     };
@@ -95,9 +95,7 @@ describe('wireListenError', () => {
     wireListenError(server, '127.0.0.1', 8828, {
       fail: message => failures.push(message),
     });
-    const listener = listeners.error;
-    if (!listener) throw new Error('Listener not registered');
-    listener(new Error('listen EADDRINUSE: address already in use'));
+    listeners.error!(new Error('listen EADDRINUSE: address already in use'));
     // Assert
     expect(failures).toEqual([
       'cannot listen on 127.0.0.1:8828 — listen EADDRINUSE: address already in use',
