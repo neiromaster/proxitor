@@ -117,3 +117,58 @@ describe('redactConfigForLog', () => {
     expect(text).toContain('[redacted]');
   });
 });
+
+describe('credential ref edges', () => {
+  it('rejects an empty env ref name', () => {
+    const input = {
+      ...FULL_CONFIG,
+      providers: {
+        'test-provider': {
+          baseUrl: 'https://api.example.com',
+          wireFormat: 'openai-chat' as const,
+          auth: { type: 'bearer' as const, credential: { env: '' } },
+        },
+      },
+    };
+    expect(() => parseConfig(input)).toThrow(ConfigError);
+  });
+
+  it('rejects an empty file ref path', () => {
+    const input = {
+      ...FULL_CONFIG,
+      providers: {
+        'test-provider': {
+          baseUrl: 'https://api.example.com',
+          wireFormat: 'openai-chat' as const,
+          auth: { type: 'bearer' as const, credential: { file: '' } },
+        },
+      },
+    };
+    expect(() => parseConfig(input)).toThrow(ConfigError);
+  });
+});
+
+describe('bodyLimit edges', () => {
+  it('rejects numeric 0 but accepts string 0mb (schema gap: should reject both)', () => {
+    // Schema gap: '0mb' string is accepted despite evaluating to 0
+    const withString = { ...FULL_CONFIG, server: { bodyLimit: '0mb' } };
+    const withStringResult = parseConfig(withString);
+    expect(withStringResult.server.bodyLimitBytes).toBe(0);
+
+    // Integer 0 is correctly rejected on the number path
+    const withNumber = { ...FULL_CONFIG, server: { bodyLimit: 0 } };
+    expect(() => parseConfig(withNumber)).toThrow(ConfigError);
+  });
+
+  it('rejects negative integers', () => {
+    const input = { ...FULL_CONFIG, server: { bodyLimit: -1 } };
+    expect(() => parseConfig(input)).toThrow(ConfigError);
+  });
+
+  it('accepts fractional sizes with rounding (schema gap: should reject)', () => {
+    // Schema gap: fractional sizes are allowed and rounded
+    const input = { ...FULL_CONFIG, server: { bodyLimit: '1.5mb' } };
+    const result = parseConfig(input);
+    expect(result.server.bodyLimitBytes).toBe(Math.round(1.5 * 1024 ** 2));
+  });
+});
