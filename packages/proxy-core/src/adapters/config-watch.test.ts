@@ -397,4 +397,87 @@ describe('createConfigWatcher', () => {
       expect.any(Object),
     );
   });
+
+  test('start → stop → start re-watches correctly', () => {
+    // Arrange
+    const reloadSpy = vi.fn<() => Promise<ReloadResult>>(() =>
+      Promise.resolve({ ok: true, changes: 'test' }),
+    );
+    const logger = silent;
+    const watchCalls: Array<{
+      filename: string;
+      pollIntervalMs: number;
+      onChange: (curr: Stats, prev: Stats) => void;
+    }> = [];
+    const stopSpy1 = vi.fn<() => void>();
+    const stopSpy2 = vi.fn<() => void>();
+    let callCount = 0;
+    const watch = vi.fn(
+      (
+        filename: string,
+        pollIntervalMs: number,
+        onChange: (curr: Stats, prev: Stats) => void,
+      ) => {
+        watchCalls.push({ filename, pollIntervalMs, onChange });
+        // Return different stop spies for different calls
+        callCount++;
+        return callCount === 1 ? stopSpy1 : stopSpy2;
+      },
+    );
+
+    const watcher = createConfigWatcher({
+      path: '/test/config.yaml',
+      reload: reloadSpy,
+      logger,
+      pollIntervalMs: 100,
+      watch,
+    });
+
+    // Act - start → stop → start
+    watcher.start();
+    expect(watchCalls).toHaveLength(1);
+    expect(watch).toHaveBeenCalledWith('/test/config.yaml', 100, expect.any(Function));
+
+    watcher.stop();
+    expect(stopSpy1).toHaveBeenCalled();
+
+    watcher.start();
+    expect(watchCalls).toHaveLength(2);
+    expect(watch).toHaveBeenCalledTimes(2);
+
+    watcher.stop();
+    expect(stopSpy2).toHaveBeenCalled();
+
+    // Assert - first stop spy called once, second stop spy called once
+    expect(stopSpy1).toHaveBeenCalledTimes(1);
+    expect(stopSpy2).toHaveBeenCalledTimes(1);
+  });
+
+  test('start() called twice with path null → exactly one log line recorded', () => {
+    // Arrange
+    const reloadSpy = vi.fn<() => Promise<ReloadResult>>(() =>
+      Promise.resolve({ ok: true, changes: 'test' }),
+    );
+    const logger = { ...silent, info: vi.fn() };
+    const watch = vi.fn();
+
+    const watcher = createConfigWatcher({
+      path: null,
+      reload: reloadSpy,
+      logger,
+      pollIntervalMs: 100,
+      watch,
+    });
+
+    // Act - start twice with null path
+    watcher.start();
+    watcher.start();
+
+    // Assert - exactly one log line recorded
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(
+      'live config reload disabled (no config file)',
+    );
+    expect(watch).not.toHaveBeenCalled();
+  });
 });

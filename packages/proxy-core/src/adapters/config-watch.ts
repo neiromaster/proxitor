@@ -23,10 +23,14 @@ export function createConfigWatcher(options: {
 
   let watching = false;
   let stopWatch: (() => void) | null = null;
+  let nullPathAnnounced = false;
 
   const start = (): void => {
     if (path === null) {
-      logger.info('live config reload disabled (no config file)');
+      if (!nullPathAnnounced) {
+        logger.info('live config reload disabled (no config file)');
+        nullPathAnnounced = true;
+      }
       return;
     }
 
