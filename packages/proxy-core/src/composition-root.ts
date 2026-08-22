@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import type { LoggerPort } from '@proxitor/plugin-api';
 import type { Hono } from 'hono';
 import { createConfigFile } from './adapters/config-file.js';
+import { type ConfigWatcher, createConfigWatcher } from './adapters/config-watch.js';
 import { createCredentialAdapter } from './adapters/credentials.js';
 import { createProxyApp } from './adapters/inbound/hono-app.js';
 import { consolaLogger } from './adapters/logger.js';
@@ -13,6 +14,11 @@ import {
   parseConfig,
   redactConfigForLog,
 } from './application/config-schema.js';
+import {
+  createHotReload,
+  type ReloadResult,
+  type RuntimeState,
+} from './application/hot-reload.js';
 import type { ObservabilityPort, ObservationSink } from './application/observability.js';
 import { createObservability } from './application/observability.js';
 import { createPluginManager, type PluginManager } from './application/plugin-manager.js';
@@ -20,13 +26,27 @@ import { createPipeline, type ProxyPipeline } from './application/proxy-pipeline
 import { createRoutingTable, type RoutingTable } from './domain/index.js';
 import { createBuiltInPluginRegistry } from './plugins/built-in/index.js';
 
+/**
+ * Extract credential refs from config for preloading.
+ * Returns non-string credential references (env refs, file refs, etc.).
+ */
+function credentialRefsOf(
+  config: ProxyConfig,
+): Array<{ env: string } | { file: string }> {
+  return Object.values(config.providers)
+    .map(provider => provider.auth.credential)
+    .filter(ref => typeof ref !== 'string') as Array<{ env: string } | { file: string }>;
+}
+
 export type Proxitor = {
   readonly app: Hono;
   readonly config: ProxyConfig;
   readonly table: RoutingTable;
   readonly manager: PluginManager;
   readonly pipeline: ProxyPipeline;
-  readonly observability: ObservabilityPort | undefined;
+  readonly observability: ObservabilityPort;
+  readonly reload: () => Promise<ReloadResult>;
+  readonly watcher: ConfigWatcher;
 };
 
 export type CreateProxitorOptions = {
@@ -59,18 +79,8 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     readFile: options.readFile,
     stat: options.stat,
   });
-  await credentials.preload(
-    Object.values(config.providers)
-      .map(provider => provider.auth.credential)
-      .filter(ref => typeof ref !== 'string'),
-  );
+  await credentials.preload(credentialRefsOf(config));
 
-  const table = createRoutingTable({
-    providers: config.providers,
-    models: config.models,
-    plugins: config.plugins,
-    defaultProvider: config.defaultProvider,
-  });
   const manager = createPluginManager({ plugins: createBuiltInPluginRegistry(), logger });
   validateActivation(config, manager);
 
@@ -87,7 +97,7 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     }),
   ];
 
-  // Create observability (Task 5 will capture this for reconfigure)
+  // Create observability (always created now)
   const observability = createObservability({
     config: config.observability,
     sinks,
@@ -95,8 +105,45 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     wantsOutboundBody: () => env.PROXITOR_DUMP_BODY === '1',
   });
 
+  // Create hot-reload with initial state
+  const initialTable = createRoutingTable({
+    providers: config.providers,
+    models: config.models,
+    plugins: config.plugins,
+    defaultProvider: config.defaultProvider,
+  });
+  const initial: RuntimeState = { config, table: initialTable };
+
+  const readResolved = async (filePath: string): Promise<ProxyConfig> => {
+    const readFileImpl =
+      options.readFile ??
+      (async (path: string) =>
+        (await import('node:fs/promises')).readFile(path, 'utf-8'));
+    const text = await readFileImpl(filePath);
+    return parseConfig(files.parse(text, filePath));
+  };
+
+  const hotReload = createHotReload({
+    initial,
+    deps: {
+      readNext: async () => readResolved(source.path),
+      buildTable: cfg =>
+        createRoutingTable({
+          providers: cfg.providers,
+          models: cfg.models,
+          plugins: cfg.plugins,
+          defaultProvider: cfg.defaultProvider,
+        }),
+      validate: cfg => validateActivation(cfg, manager),
+      preloadCredentials: cfg => credentials.preload(credentialRefsOf(cfg)),
+      reconfigure: cfg => observability.reconfigure(cfg.observability),
+      logger,
+    },
+  });
+
+  // Create pipeline with hot-reload facade table
   const pipeline = createPipeline({
-    table,
+    table: hotReload.swap.table,
     manager,
     fetch: createFetchUpstream({ fetchImpl: options.fetchImpl }),
     credentials,
@@ -109,5 +156,31 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
 
   const app = createProxyApp({ pipeline, bodyLimitBytes: config.server.bodyLimitBytes });
   logger.info('config loaded', { path: source.path, config: redactConfigForLog(config) });
-  return { app, config, table, manager, pipeline, observability };
+
+  // Create config file watcher (null path for configText means no watching)
+  const watchablePath = source.path === '<memory>' ? null : source.path;
+  const watcher = createConfigWatcher({
+    path: watchablePath,
+    reload: () => hotReload.reload(),
+    logger,
+  });
+
+  // Start the watcher (idempotent - no-op if already watching or path is null)
+  watcher.start();
+
+  // Return proxitor with delegating config and table, plus reload and watcher
+  return {
+    app,
+    get config(): ProxyConfig {
+      return hotReload.swap.current.config;
+    },
+    get table(): RoutingTable {
+      return hotReload.swap.table;
+    },
+    manager,
+    pipeline,
+    observability,
+    reload: () => hotReload.reload(),
+    watcher,
+  };
 }

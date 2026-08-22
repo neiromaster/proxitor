@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { ConfigError } from './application/config-schema.js';
 import type { ObservationRecord, ObservationSink } from './application/observability.js';
 import { createProxitor } from './composition-root.js';
@@ -191,5 +194,273 @@ defaultProvider: openai
     expect(record.requestType).toBe('main');
     expect(record.usage.present).toBe(true);
     expect(record.usage.outputTokens).toBe(6);
+  });
+});
+
+describe('createProxitor hot-reload wiring', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(async () => {
+    // Create a temporary directory for test config files
+    tmpDir = await mkdtemp(join(tmpdir(), 'proxitor-test-'));
+    configPath = join(tmpDir, 'config.yaml');
+  });
+
+  test('proxitor.reload() on tmp config file rewritten with second model → ok:true and /v1/models reflects new model', async () => {
+    // Arrange - initial config with one model
+    const initialConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, initialConfig);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Verify initial model list
+    const initialRes = await proxitor.app.request('/v1/models');
+    const initialModels = (await initialRes.json()) as { data: Array<{ id: string }> };
+    expect(initialModels.data).toHaveLength(1);
+    expect(initialModels.data[0]!.id).toBe('gpt-4');
+
+    // Act - rewrite config with a second model
+    const updatedConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+  - match: claude-3
+    provider: oai
+    modelId: claude-3-opus
+defaultProvider: oai
+`;
+    await writeFile(configPath, updatedConfig);
+
+    // Trigger reload (will be called by watcher, but we call it directly for test)
+    const reloadResult = await proxitor.reload();
+
+    // Assert
+    expect(reloadResult.ok).toBe(true);
+    if (reloadResult.ok) {
+      expect(reloadResult.changes).toContain('+claude-3');
+    }
+
+    // Verify /v1/models reflects new model list
+    const updatedRes = await proxitor.app.request('/v1/models');
+    const updatedModels = (await updatedRes.json()) as { data: Array<{ id: string }> };
+    expect(updatedModels.data).toHaveLength(2);
+    const modelIds = updatedModels.data.map(m => m.id);
+    expect(modelIds).toContain('gpt-4');
+    expect(modelIds).toContain('claude-3');
+  });
+
+  test('rewritten with invalid YAML → {ok:false} and /v1/models still lists old set (keep-last-valid)', async () => {
+    // Arrange - initial config
+    const initialConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, initialConfig);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Verify initial model list
+    const initialRes = await proxitor.app.request('/v1/models');
+    const initialModels = (await initialRes.json()) as { data: Array<{ id: string }> };
+    expect(initialModels.data).toHaveLength(1);
+
+    // Act - rewrite config with invalid YAML
+    const invalidConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+  this is: invalid: yaml
+`;
+    await writeFile(configPath, invalidConfig);
+
+    // Trigger reload
+    const reloadResult = await proxitor.reload();
+
+    // Assert
+    expect(reloadResult.ok).toBe(false);
+    if (!reloadResult.ok) {
+      expect(reloadResult.error).toBeDefined();
+    }
+
+    // Verify /v1/models still lists old set (keep-last-valid)
+    const afterRes = await proxitor.app.request('/v1/models');
+    const afterModels = (await afterRes.json()) as { data: Array<{ id: string }> };
+    expect(afterModels.data).toHaveLength(1);
+    expect(afterModels.data[0]!.id).toBe('gpt-4');
+  });
+
+  test('configText-sourced proxitor → reload() returns {ok:false}', async () => {
+    // Arrange - create proxitor from config text (no file path)
+    const proxitor = await createProxitor({
+      configText: `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act - attempt reload (no file to watch)
+    const reloadResult = await proxitor.reload();
+
+    // Assert
+    expect(reloadResult.ok).toBe(false);
+    if (!reloadResult.ok) {
+      expect(reloadResult.error).toContain('<memory>');
+    }
+  });
+
+  test('swap preserves proxitor.watcher lifecycle (start/stop callable)', async () => {
+    // Arrange
+    const initialConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, initialConfig);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act - start watcher (idempotent)
+    proxitor.watcher.start();
+    proxitor.watcher.start(); // Second start should be no-op
+
+    // Act - stop watcher (idempotent)
+    proxitor.watcher.stop();
+    proxitor.watcher.stop(); // Second stop should be no-op
+
+    // Assert - no errors thrown, watcher lifecycle is preserved
+    expect(proxitor.watcher).toBeDefined();
+  });
+
+  test('proxitor.config delegates to hot-reload current config', async () => {
+    // Arrange
+    const initialConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, initialConfig);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act & Assert - config should be accessible and reflect current config
+    expect(proxitor.config).toBeDefined();
+    expect(proxitor.config.providers).toBeDefined();
+    expect(proxitor.config.models).toHaveLength(1);
+    expect(proxitor.config.models[0]!.match).toBe('gpt-4');
+  });
+
+  test('proxitor.table delegates to hot-reload facade', async () => {
+    // Arrange
+    const initialConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, initialConfig);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act & Assert - table should be accessible and delegate to facade
+    expect(proxitor.table).toBeDefined();
+    const resolution = proxitor.table.resolve('gpt-4', '/v1/chat/completions');
+    expect(resolution).toBeDefined();
+    expect(resolution.provider.id).toBe('oai');
   });
 });
