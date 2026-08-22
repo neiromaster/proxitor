@@ -464,3 +464,317 @@ defaultProvider: oai
     expect(resolution.provider.id).toBe('oai');
   });
 });
+
+describe('createProxitor control-plane wiring', () => {
+  let tmpDir: string;
+  let configPath: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'proxitor-test-'));
+    configPath = join(tmpDir, 'config.yaml');
+  });
+
+  test('config with controlPlane token → POST /control/reload with correct token → 200', async () => {
+    // Arrange - config with control-plane token
+    const configWithControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { env: TEST_TOKEN }
+`;
+    await writeFile(configPath, configWithControlPlane);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: { TEST_TOKEN: 'my-secret-token' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act - POST /control/reload with correct token
+    const res = await proxitor.app.request('/control/reload', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer my-secret-token',
+      },
+    });
+
+    // Assert - 200 OK
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty('ok', true);
+  });
+
+  test('config with controlPlane token → POST /control/reload with wrong token → 401', async () => {
+    // Arrange
+    const configWithControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { env: TEST_TOKEN }
+`;
+    await writeFile(configPath, configWithControlPlane);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: { TEST_TOKEN: 'my-secret-token' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act - POST /control/reload with wrong token
+    const res = await proxitor.app.request('/control/reload', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer wrong-token',
+      },
+    });
+
+    // Assert - 401 Unauthorized
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { message: string; type: string } };
+    expect(body).toEqual({
+      error: { message: 'unauthorized', type: 'invalid_request_error' },
+    });
+  });
+
+  test('config without controlPlane → /control/reload → 404 (falls through to proxy 404)', async () => {
+    // Arrange - config WITHOUT control-plane
+    const configWithoutControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, configWithoutControlPlane);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act - POST /control/reload (no control-plane mounted)
+    const res = await proxitor.app.request('/control/reload', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer any-token',
+      },
+    });
+
+    // Assert - 404 (falls through to proxy 404)
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { message: string; type: string } };
+    expect(body).toEqual({
+      error: { message: "unknown path '/control/reload'", type: 'invalid_request_error' },
+    });
+  });
+
+  test('missing env var for controlPlane.token at startup → createProxitor rejects (D16 fail-fast)', async () => {
+    // Arrange - config with control-plane token referencing missing env var
+    const configWithMissingEnv = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { env: NONEXISTENT_TOKEN }
+`;
+    await writeFile(configPath, configWithMissingEnv);
+
+    // Act & Assert - createProxitor should reject
+    await expect(
+      createProxitor({
+        configPath,
+        env: {}, // NONEXISTENT_TOKEN not set
+        fetchImpl: async () => new Response('{}', { status: 200 }),
+        logger: silent,
+      }),
+    ).rejects.toThrow(/NONEXISTENT_TOKEN/);
+  });
+
+  test('GET /control/routing returns routing view without credentials', async () => {
+    // Arrange
+    const configWithControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { env: TEST_TOKEN }
+`;
+    await writeFile(configPath, configWithControlPlane);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: { TEST_TOKEN: 'my-secret-token' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Act - GET /control/routing
+    const res = await proxitor.app.request('/control/routing', {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer my-secret-token',
+      },
+    });
+
+    // Assert - 200 with routing view
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      providers: unknown[];
+      models: unknown[];
+      defaultProvider?: string;
+    };
+    expect(body).toHaveProperty('providers');
+    expect(body).toHaveProperty('models');
+    expect(body).toHaveProperty('defaultProvider', 'oai');
+
+    // Verify no credentials in output
+    const json = JSON.stringify(body);
+    expect(json).not.toContain('auth');
+    expect(json).not.toContain('credential');
+    expect(json).not.toContain('sk-test');
+
+    // Verify structure
+    expect(body.providers).toHaveLength(1);
+    expect(body.providers[0]).toEqual({
+      id: 'oai',
+      baseUrl: 'https://oai.example.com',
+      wireFormat: 'openai-chat',
+    });
+    expect(body.models).toHaveLength(1);
+    expect(body.models[0]).toEqual({
+      match: 'gpt-4',
+      provider: 'oai',
+      modelId: 'gpt-4',
+    });
+  });
+
+  test('reload through control plane reloads the real stack', async () => {
+    // Arrange - initial config with one model
+    const initialConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { env: TEST_TOKEN }
+`;
+    await writeFile(configPath, initialConfig);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: { TEST_TOKEN: 'my-secret-token' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Verify initial state via /control/routing
+    const initialRouting = await proxitor.app.request('/control/routing', {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer my-secret-token',
+      },
+    });
+    const initialBody = (await initialRouting.json()) as { models: unknown[] };
+    expect(initialBody.models).toHaveLength(1);
+
+    // Act - rewrite config with a second model
+    const updatedConfig = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+  - match: claude-3
+    provider: oai
+    modelId: claude-3-opus
+defaultProvider: oai
+controlPlane:
+  token: { env: TEST_TOKEN }
+`;
+    await writeFile(configPath, updatedConfig);
+
+    // Trigger reload via /control/reload
+    const reloadRes = await proxitor.app.request('/control/reload', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer my-secret-token',
+      },
+    });
+
+    // Assert - reload successful
+    expect(reloadRes.status).toBe(200);
+    const reloadBody = (await reloadRes.json()) as { ok: boolean };
+    expect(reloadBody.ok).toBe(true);
+
+    // Verify /control/routing reflects updated models
+    const updatedRouting = await proxitor.app.request('/control/routing', {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer my-secret-token',
+      },
+    });
+    const updatedBody = (await updatedRouting.json()) as {
+      models: Array<{ match: string }>;
+    };
+    expect(updatedBody.models).toHaveLength(2);
+    const modelMatches = updatedBody.models.map((m: { match: string }) => m.match);
+    expect(modelMatches).toContain('gpt-4');
+    expect(modelMatches).toContain('claude-3');
+  });
+});

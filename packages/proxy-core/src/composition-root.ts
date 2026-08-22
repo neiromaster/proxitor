@@ -4,6 +4,7 @@ import type { Hono } from 'hono';
 import { createConfigFile } from './adapters/config-file.js';
 import { type ConfigWatcher, createConfigWatcher } from './adapters/config-watch.js';
 import { createCredentialAdapter } from './adapters/credentials.js';
+import { routingViewOf } from './adapters/inbound/control-plane.js';
 import { createProxyApp } from './adapters/inbound/hono-app.js';
 import { consolaLogger } from './adapters/logger.js';
 import { DumpSink, LiveLineSink } from './adapters/observability-sinks.js';
@@ -33,9 +34,25 @@ import { createBuiltInPluginRegistry } from './plugins/built-in/index.js';
 function credentialRefsOf(
   config: ProxyConfig,
 ): Array<{ env: string } | { file: string }> {
-  return Object.values(config.providers)
-    .map(provider => provider.auth.credential)
-    .filter(ref => typeof ref !== 'string') as Array<{ env: string } | { file: string }>;
+  const refs: Array<{ env: string } | { file: string }> = [];
+
+  // Provider credentials
+  for (const provider of Object.values(config.providers)) {
+    const ref = provider.auth.credential;
+    if (typeof ref !== 'string') {
+      refs.push(ref);
+    }
+  }
+
+  // Control-plane token (if present and not a plain string)
+  if (config.controlPlane !== undefined) {
+    const tokenRef = config.controlPlane.token;
+    if (typeof tokenRef !== 'string') {
+      refs.push(tokenRef);
+    }
+  }
+
+  return refs;
 }
 
 export type Proxitor = {
@@ -155,6 +172,24 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
   });
 
   const app = createProxyApp({ pipeline, bodyLimitBytes: config.server.bodyLimitBytes });
+
+  // D16: resolve and mount control-plane if token configured
+  const controlToken =
+    config.controlPlane === undefined
+      ? undefined
+      : credentials.resolve(config.controlPlane.token);
+  if (controlToken !== undefined) {
+    const { createControlPlaneApp } = await import('./adapters/inbound/control-plane.js');
+    app.route(
+      '/control',
+      createControlPlaneApp({
+        token: controlToken,
+        reload: () => hotReload.reload(),
+        routingView: () => routingViewOf(hotReload.swap.current.config),
+      }),
+    );
+  }
+
   logger.info('config loaded', { path: source.path, config: redactConfigForLog(config) });
 
   // Create config file watcher (null path for configText means no watching)
