@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { ConfigError } from './application/config-schema.js';
+import type { ObservationRecord, ObservationSink } from './application/observability.js';
 import { createProxitor } from './composition-root.js';
 import { RoutingConfigError } from './domain/index.js';
 
@@ -97,5 +98,98 @@ models:
         logger: silent,
       }),
     ).rejects.toThrow(ConfigError);
+  });
+
+  test('passed-in recording sink receives record after pipeline round-trip', async () => {
+    // Arrange
+    const records: ObservationRecord[] = [];
+    const recordingSink: ObservationSink = {
+      emit(record: ObservationRecord): void {
+        records.push(record);
+      },
+    };
+
+    let callCount = 0;
+    const fetchImpl = async (_input: string | URL | Request, _init?: RequestInit) => {
+      callCount++;
+      // Return a minimal OpenAI-style streaming response
+      return new Response(
+        `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello!"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":6,"total_tokens":16}}
+
+data: [DONE]
+
+`,
+        {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        },
+      );
+    };
+
+    const configText = `
+version: 1
+providers:
+  openai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: { env: OAI_KEY } }
+models:
+  - match: gpt-*
+    provider: openai
+    modelId: gpt-4
+defaultProvider: openai
+`;
+
+    // Act
+    const proxitor = await createProxitor({
+      configText,
+      env: { OAI_KEY: 'test-key' },
+      fetchImpl,
+      logger: silent,
+      sinks: [recordingSink],
+    });
+
+    // Make a request through the pipeline using OpenAI format
+    const response = await proxitor.app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      }),
+    });
+
+    // Consume the stream to ensure events are processed
+    const reader = response.body?.getReader();
+    if (reader) {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
+
+    // Debug: if we got an error, log it
+    if (response.status !== 200) {
+      const errorBody = await response.text();
+      console.error('Unexpected response:', response.status, errorBody);
+    }
+
+    // Assert
+    expect(response.status).toBe(200);
+    expect(callCount).toBe(1);
+    expect(records).toHaveLength(1);
+    const record = records[0];
+    if (!record) throw new Error('No observation record was emitted');
+    expect(record.status).toBe(200);
+    expect(record.model).toBe('gpt-4');
+    expect(record.provider).toBe('openai');
+    expect(record.requestType).toBe('main');
+    expect(record.usage.present).toBe(true);
+    expect(record.usage.outputTokens).toBe(6);
   });
 });
