@@ -1,5 +1,12 @@
 // src/bin/doctor.test.ts
-import { type DoctorIo, renderJson, renderText, runDoctor } from './doctor.js';
+import { createServer } from 'node:net';
+import {
+  createNetBindProbe,
+  type DoctorIo,
+  renderJson,
+  renderText,
+  runDoctor,
+} from './doctor.js';
 
 const CONFIG = `
 version: 1
@@ -153,5 +160,29 @@ describe('renderers', () => {
     };
     expect(parsed.checks).toHaveLength(report.checks.length);
     expect(parsed.exitCode).toBe(0);
+  });
+});
+
+describe('createNetBindProbe', () => {
+  it('reports a free ephemeral port as ok', async () => {
+    const probe = createNetBindProbe();
+    const result = await probe('127.0.0.1', 0);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('reports a taken port as not ok', async () => {
+    const blocker = createServer();
+    await new Promise<void>(resolve => blocker.listen(0, '127.0.0.1', resolve));
+    const address = blocker.address();
+    const port = typeof address === 'object' && address !== null ? address.port : 0;
+    try {
+      const result = await createNetBindProbe()('127.0.0.1', port);
+      expect(result).toEqual({
+        ok: false,
+        detail: expect.stringContaining('EADDRINUSE'),
+      });
+    } finally {
+      await new Promise<void>(resolve => blocker.close(() => resolve()));
+    }
   });
 });

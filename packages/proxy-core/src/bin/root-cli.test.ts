@@ -24,4 +24,18 @@ describe('root cli', () => {
       throw new Error('Expected print-help error');
     }
   });
+
+  it('offers doctor as a subcommand', async () => {
+    const result = await dryRun(binary(rootCli), [
+      'node',
+      'proxitor',
+      'doctor',
+      '--help',
+    ]);
+    if (result._tag === 'error') {
+      expect(result.error).toContain('doctor');
+    } else {
+      throw new Error('Expected print-help error');
+    }
+  });
 });

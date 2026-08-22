@@ -1,4 +1,6 @@
 // src/bin/doctor.ts
+
+import { createServer } from 'node:net';
 import type { LoggerPort } from '@proxitor/plugin-api';
 import { createConfigFile } from '../adapters/config-file.js';
 import { validateActivation } from '../application/activation-check.js';
@@ -29,6 +31,20 @@ export type DoctorIo = {
 };
 
 const SILENT_LOGGER: LoggerPort = { info() {}, warn() {}, error() {}, debug() {} };
+
+/** Real port probe: bind+close on the exact host:port; 'skip' never returned. */
+export function createNetBindProbe(): DoctorIo['bindProbe'] {
+  return (host, port) =>
+    new Promise(resolve => {
+      const server = createServer();
+      server.once('error', error => {
+        server.close(() => resolve({ ok: false, detail: error.message }));
+      });
+      server.listen(port, host, () => {
+        server.close(() => resolve({ ok: true }));
+      });
+    });
+}
 
 type CredentialRef = ProxyConfig['providers'][string]['auth']['credential'];
 

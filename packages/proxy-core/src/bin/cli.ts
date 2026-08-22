@@ -1,3 +1,4 @@
+import { readFile, stat } from 'node:fs/promises';
 import { type ServerType, serve } from '@hono/node-server';
 import { command, flag, number, option, optional, string, subcommands } from 'cmd-ts';
 import { defaultWritePath } from '../adapters/config-file.js';
@@ -8,6 +9,7 @@ import {
   createProxitor,
   type Proxitor,
 } from '../composition-root.js';
+import { createNetBindProbe, renderJson, renderText, runDoctor } from './doctor.js';
 
 export type StartOptions = {
   readonly config?: string;
@@ -121,5 +123,32 @@ export const configCli = subcommands({
   description: 'Manage proxy configuration',
   cmds: {
     wizard: configWizardCommand,
+  },
+});
+
+export const doctorCommand = command({
+  name: 'doctor',
+  description: 'Diagnose environment and configuration',
+  args: {
+    config: option({
+      long: 'config',
+      type: optional(string),
+      description: 'Config file path (default: XDG search)',
+    }),
+    json: flag({ long: 'json', description: 'Machine-readable JSON output' }),
+  },
+  handler: async args => {
+    const report = await runDoctor(
+      { configPath: args.config },
+      {
+        env: process.env,
+        readFile: path => readFile(path, 'utf8'),
+        stat,
+        bindProbe: createNetBindProbe(),
+      },
+    );
+    const output = args.json ? renderJson(report) : renderText(report);
+    console.log(output);
+    if (report.exitCode !== 0) process.exit(report.exitCode);
   },
 });
