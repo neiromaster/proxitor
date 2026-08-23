@@ -1,150 +1,97 @@
-# Proxitor — lightweight proxy for routing CLI requests to OpenRouter
+# proxitor v1 configuration example
 #
-# Copy this file to proxitor.config.yaml and edit as needed.
-# CLI flags override config file values.
-
-# Server settings
-host: '0.0.0.0'
-port: 8828
-
-# OpenRouter settings
-openrouterKey: '' # Or set OPENROUTER_API_KEY env var
-openrouterBaseUrl: 'https://openrouter.ai/api'
-# Authentication type: "bearer" (default) or "oauth" for custom proxy providers
-# authType: bearer
-# Custom URL for fetching provider/model data (defaults to openrouterBaseUrl).
-# Set this if your custom API doesn't support OpenRouter data endpoints.
-# Fallback to https://openrouter.ai/api is automatic.
-# openrouterDataUrl: 'https://openrouter.ai/api'
-
-# Provider routing — controls which upstream provider handles requests
-# provider:
-#   # Allow only specific providers (string or array)
-#   only: "deepinfra"
-#   # only:
-#   #   - "openai"
-#   #   - "azure"
+# Copy this file to:
+#   ~/.config/proxitor/config.yaml   (default XDG location)
+#   ~/proxitor.config.yaml           (HOME shadows XDG; wizard warns)
+#   ~/.proxitor.yaml
 #
-#   # OR: try providers in this order, optionally allow fallbacks
-#   order: "anthropic"
-#   allowFallbacks: true
+# Or pass --config <path> to proxitor start.
 #
-#   # Ignore specific providers
-#   ignore: "deepinfra"
-#
-#   # Sort providers by price, throughput, or latency
-#   sort: "throughput"
-#   # sort:
-#   #   by: "price"
-#   #   partition: "none"
-#
-#   # Filter by quantization level
-#   quantizations:
-#     - "fp8"
-#
-#   # Maximum pricing to accept
-#   maxPrice:
-#     prompt: 1       # $/M tokens
-#     completion: 2   # $/M tokens
-#
-#   # Only use providers supporting all request parameters
-#   requireParameters: true
-#
-#   # Data collection policy: "allow" or "deny"
-#   dataCollection: "deny"
-#
-#   # Zero Data Retention enforcement
-#   zdr: true
-#
-#   # Performance preferences (soft thresholds, not hard limits)
-#   preferredMinThroughput:
-#     p90: 50  # tokens/sec
-#   preferredMaxLatency:
-#     p90: 3   # seconds
+# Environment variables referenced in {env: NAME} must be set at startup.
 
-# Custom headers to add to all proxied requests
-# headers:
-#   X-Custom-Header: "my-value"
+version: 1
 
-# Per-model config overrides. Keys are exact model names or prefix patterns.
-# Overrides layer on top of global settings (provider replaces, headers merge).
-# modelOverrides:
-#   "claude-sonnet-4-6":
-#     provider:
-#       only: "anthropic"
-#   "claude-*":
-#     provider:
-#       order:
-#         - "anthropic"
-#         - "deepinfra"
-#   "gpt-*":
-#     provider:
-#       only:
-#         - "openai"
-#         - "azure"
-#     headers:
-#       X-Model-Family: "gpt"
-#   # Any field can also override its global counterpart per-model — e.g.
-#   # normalizeVolatileSystem, cacheControl, cacheControlTtl, sessionId.
-#   "qwen-*":
-#     normalizeVolatileSystem: true
+# Global plugins — run on every request
+plugins:
+  - normalize-volatile-system
+  - cache-control:
+      cacheControl: auto
+      ttl: 1h
+      rewriteBlockTtl: auto
+  - session-id
 
-# Request body size limit
-# bodyLimit: "50mb"
+# Provider configurations — the YAML key becomes the provider id
+providers:
+  # OpenAI-compatible provider
+  openai:
+    baseUrl: https://api.openai.com
+    wireFormat: openai-chat
+    auth:
+      type: bearer
+      credential: { env: OPENAI_API_KEY }
 
-# OpenRouter attribution
-# attributionReferer: "https://github.com/neiromaster/proxitor"
-# attributionTitle: "proxitor"
+  # Anthropic Messages API
+  anthropic:
+    baseUrl: https://api.anthropic.com
+    wireFormat: anthropic-messages
+    auth:
+      type: x-api-key
+      credential: { env: ANTHROPIC_API_KEY }
+    headers: { anthropic-version: '2023-06-01' }
 
-# Prompt caching: inject cache_control for automatic caching.
-# "auto" = Anthropic models only (safe default), "always" = all models,
-# "skip" = passthrough (leave the client's cache_control untouched, inject nothing)
-# cacheControl: auto
+  # Generic OpenAI-compatible provider (e.g. GLM, Qwen, etc.)
+  glm:
+    baseUrl: https://api.example.com
+    wireFormat: openai-chat
+    auth:
+      type: bearer
+      credential: { env: GLM_API_KEY }
+    # Optional: extra headers for this provider
+    # headers:
+    #   x-custom: value
+    # Optional: provider-level plugins
+    # plugins:
+    #   - disable: [cache-control]
 
-# Cache TTL: control how long cached prompts persist (Anthropic endpoints only).
-# "5m" = 5 minutes (Anthropic default), "1h" = 1 hour (higher write cost),
-# "omit" = strip the ttl field (guarantee no TTL, even client-sent),
-# "skip" = passthrough (preserve client ttl, ignore inherited). Default: absent = passthrough.
-# Only has effect when caching is active (cacheControl is "auto"/"always").
-# cacheControlTtl: '1h'
-# rewriteBlockTtl: skip   # auto | always | skip — normalize block cache_control ttl to cacheControlTtl
+# Model routing table — first match wins
+models:
+  # Route all claude-* models to GLM
+  - match: 'claude-*'
+    provider: glm
+    modelId: '$MODEL'        # pass the logical name through unchanged
+    # Optional: model-level plugins
+    # plugins:
+    #   - disable: [session-id]
 
-# Session sticky routing: inject session_id for provider stickiness from the first request.
-# "auto" = passthrough client session ID, generate only if missing
-# "always" = always generate proxy session ID (ignores client-provided)
-# "skip" = passthrough (leave client session headers untouched)
-# sessionId: auto
+  # Catch-all — everything else to OpenAI
+  - match: '*'
+    provider: openai
+    modelId: '$MODEL'
 
-# Normalize Claude Code's volatile hashes in the system prompt to constants:
-# the per-turn `cch=…` hash and the per-build `cc_version=<semver>.<hash>` hash
-# (the readable semver is kept). Both drift every turn and invalidate the prefix
-# cache for non-Anthropic providers (qwen/glm/etc.); normalizing them keeps the
-# cached prefix stable.
-# true = rewrite the hashes (default false), also settable per-model in modelOverrides.
-# normalizeVolatileSystem: false
+# Default provider — serves model-less requests (embeddings, /v1/models)
+defaultProvider: openai
 
-# Normalize Responses-api (/v1/responses) bodies so they satisfy OpenRouter's
-# strict input schema: tag message items with type:"message", lift role:"system"
-# into the top-level instructions field, and add id/status on assistant history.
-# Some clients omit these and OpenRouter rejects the request with
-# "400 invalid_prompt | Invalid Responses API request".
-# "auto" = on for /v1/responses (default), "always" = all endpoints, "skip" = off.
-# normalizeResponses: auto
+# Server configuration
+server:
+  host: 127.0.0.1
+  port: 8828
+  bodyLimit: 50mb
+  # Optional: forward these inbound headers to providers
+  # forwardHeaders:
+  #   - x-custom-api-key
 
-# Enable verbose logging
-verbose: false
+# Control plane — required for /control/* endpoints
+controlPlane:
+  token: { env: PROXITOR_CONTROL_TOKEN }
 
-# Cache observability: per-request cache-outcome logging and optional body dumps.
-# Every proxied request logs an outcome line (HIT/PARTIAL/MISS/COLD/NOUSAGE with
-# hit %) at info level. Set PROXITOR_DUMP_BODY=1 to additionally write paired
-# request+response dumps (with provider routing metadata) to the dump directory.
-# observability:
-#   # Send the x-openrouter-metadata header to capture provider routing. Default true.
-#   routerMetadata: true
-#   # hitPct >= this counts as a full HIT (otherwise PARTIAL). Default 80.
-#   hitThreshold: 80
-#   # A request with no tools and max_tokens <= this is classified as a [side] call.
-#   sideMaxTokens: 4096
-#   # Bounded LRU of remembered sessions for warm/cold detection. Defaults: 4096 / 10m.
-#   sessionMaxEntries: 4096
-#   sessionTtlMs: 600000
+# Observability — cache tracking and request classification
+observability:
+  routerMetadata: true        # capture provider routing metadata
+  hitThreshold: 80           # cache read ≥ 80% → HIT (otherwise PARTIAL)
+  sideMaxTokens: 4096        # small requests → [side] classification
+  sessionMaxEntries: 4096     # session tracker capacity
+  sessionTtlMs: 600000        # session tracker TTL (10 minutes)
+
+# Logging
+logging:
+  verbose: false

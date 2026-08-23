@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-# Requires Node.js 18+ and pnpm
+# Requires Node.js 22+ and pnpm
 pnpm install
 ```
 
@@ -12,20 +12,28 @@ Git hooks are installed automatically via [lefthook](https://github.com/evilmart
 ## Development
 
 ```bash
-pnpm run dev        # watch mode
-pnpm run build      # build dist/
-pnpm run test       # unit tests
-pnpm run test:e2e   # e2e tests (requires OPENROUTER_API_KEY)
-pnpm run check      # typecheck + biome + unit tests (run this before opening a PR)
+pnpm run check        # typecheck + biome + unit tests (run this before opening a PR)
+pnpm run lint:arch    # architecture linting
+pnpm run build        # build dist/
+pnpm run bench        # run micro-benchmarks
 ```
+
+**No OpenRouter e2e tests in v1** — the test suite validates the Canonical IR and plugin pipeline without live provider calls.
 
 ## Config for local testing
 
-Copy the example config and fill in your OpenRouter key:
+Copy the example config and fill in your credentials:
 
 ```bash
 cp proxitor.config.example.yaml proxitor.config.yaml
-# edit proxitor.config.yaml — it's gitignored
+# Edit proxitor.config.yaml (it's gitignored)
+```
+
+Or generate a config with the wizard:
+
+```bash
+pnpm run build
+node packages/proxy-core/dist/cli.mjs config wizard
 ```
 
 ## Commits
@@ -42,13 +50,15 @@ chore: bump vitest to 3.x
 
 ## Changesets
 
-If your change affects published behavior (new feature, bug fix, changed config schema), add a changeset:
+User‑facing changes ship with a changeset:
 
 ```bash
-pnpm changeset
+pnpm exec changeset
 ```
 
-Select the bump type (`patch` for fixes, `minor` for new features, `major` for breaking changes) and write a short description. Commit the generated file along with your changes.
+Select the bump type (`patch` for fixes, `minor` for new features, `major` for breaking changes) and write a short description. Commit the generated `.changeset/*.md` file along with your changes.
+
+Changesets are validated by `node scripts/validate-changesets.js` on pre‑push.
 
 You don't need a changeset for docs, tests, CI, or internal refactors.
 
