@@ -58,12 +58,14 @@ function scriptedPrompt(steps: Step[]) {
 function fakeIo(
   prompt: PromptPort,
   outPath: string,
+  existingPaths: string[] = [],
 ): WizardIo & { writes: Map<string, string> } {
   const writes = new Map<string, string>();
+  const existing = new Set(existingPaths);
   const io: WizardIo = {
     prompt,
     async exists(path) {
-      return writes.has(path);
+      return existing.has(path);
     },
     async mkdir() {},
     async writeFile(path, content) {
@@ -178,17 +180,15 @@ describe('runWizard', () => {
     const { prompt } = scriptedPrompt([...HAPPY, { kind: 'confirm', answer: false }]);
     // note: HAPPY ends with the write confirm; the extra step answers the
     // overwrite confirm because the target already exists.
-    const io = fakeIo(prompt, '/tmp/out.yaml');
-    io.writes.set('/tmp/out.yaml', 'existing: true');
+    const io = fakeIo(prompt, '/tmp/out.yaml', ['/tmp/out.yaml']);
     const code = await runWizard({}, io);
     expect(code).toBe(0);
-    expect(io.writes.get('/tmp/out.yaml')).toBe('existing: true');
+    expect(io.writes.get('/tmp/out.yaml')).toBeUndefined();
   });
 
   it('force skips the overwrite confirmation', async () => {
     const { prompt } = scriptedPrompt([...HAPPY]);
-    const io = fakeIo(prompt, '/tmp/out.yaml');
-    io.writes.set('/tmp/out.yaml', 'existing: true');
+    const io = fakeIo(prompt, '/tmp/out.yaml', ['/tmp/out.yaml']);
     expect(await runWizard({ force: true }, io)).toBe(0);
     const config = parseConfig(parseYaml(io.writes.get('/tmp/out.yaml') ?? ''));
     expect(config.providers.openai).toBeDefined();
@@ -213,9 +213,7 @@ describe('runWizard', () => {
     const homeConfigPath = join(homeDir, '.proxitor.yaml');
     // Use default XDG path as output
     const xdgPath = join(homeDir, '.config', 'proxitor', 'config.yaml');
-    const io = fakeIo(prompt, xdgPath);
-    // Simulate home config exists by putting it in writes
-    io.writes.set(homeConfigPath, 'version: 1');
+    const io = fakeIo(prompt, xdgPath, [homeConfigPath]);
     expect(await runWizard({}, io)).toBe(0);
     // Should have shadow note
     expect(notes.some(note => note.includes('shadowed config'))).toBe(true);
@@ -226,9 +224,8 @@ describe('runWizard', () => {
     const { prompt, notes } = scriptedPrompt([...HAPPY]);
     const homeDir = process.env.HOME ?? '/';
     const homeConfigPath = join(homeDir, '.proxitor.yaml');
-    const io = fakeIo(prompt, '/custom/path/config.yaml');
+    const io = fakeIo(prompt, '/custom/path/config.yaml', [homeConfigPath]);
     // Even with home config present, custom path should not trigger shadow note
-    io.writes.set(homeConfigPath, 'version: 1');
     expect(await runWizard({}, io)).toBe(0);
     // Should NOT have shadow note
     expect(notes.some(note => note.includes('shadowed config'))).toBe(false);

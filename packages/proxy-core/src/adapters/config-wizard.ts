@@ -87,8 +87,7 @@ async function askProvider(
   taken: readonly string[],
 ): Promise<WizardProvider | undefined> {
   let name: string;
-  // biome-ignore lint/suspicious/noUnnecessaryConditions: interactive prompt loop
-  while (true) {
+  for (;;) {
     const answer = await prompt.text('Provider name (config key)', {
       placeholder: 'my-openai',
     });
@@ -138,76 +137,80 @@ async function askModel(
   return { match, provider, modelId };
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: wizard orchestrator flow
-export async function runWizard(
-  options: { force?: boolean },
-  io: WizardIo,
-): Promise<number> {
-  const CANCELLED = 130;
-  io.prompt.note(
-    'Generates a minimal v1 config. Plugins are not wizard-managed — hand-edit the file later.',
-    'proxitor config wizard',
-  );
-
+async function collectProviders(
+  prompt: PromptPort,
+): Promise<WizardProvider[] | undefined> {
   const providers: WizardProvider[] = [];
-  // biome-ignore lint/suspicious/noUnnecessaryConditions: interactive prompt loop
-  while (true) {
+  for (;;) {
     const provider = await askProvider(
-      io.prompt,
+      prompt,
       providers.map(p => p.name),
     );
-    if (provider === undefined) return CANCELLED;
+    if (provider === undefined) return undefined;
     providers.push(provider);
-    const more = await io.prompt.confirm('Add another provider?', false);
-    if (more === undefined) return CANCELLED;
+    const more = await prompt.confirm('Add another provider?', false);
+    if (more === undefined) return undefined;
     if (!more) break;
   }
+  return providers;
+}
 
+async function collectModels(
+  prompt: PromptPort,
+  providers: readonly WizardProvider[],
+): Promise<WizardModel[] | undefined> {
   const models: WizardModel[] = [];
-  // biome-ignore lint/suspicious/noUnnecessaryConditions: interactive prompt loop
-  while (true) {
-    const model = await askModel(io.prompt, providers);
-    if (model === undefined) return CANCELLED;
+  for (;;) {
+    const model = await askModel(prompt, providers);
+    if (model === undefined) return undefined;
     models.push(model);
-    const more = await io.prompt.confirm('Add another model route?', false);
-    if (more === undefined) return CANCELLED;
+    const more = await prompt.confirm('Add another model route?', false);
+    if (more === undefined) return undefined;
     if (!more) break;
   }
+  return models;
+}
 
-  let defaultProvider: string | undefined;
+async function collectDefaultProvider(
+  prompt: PromptPort,
+  providers: readonly WizardProvider[],
+): Promise<string | undefined> {
   if (providers.length === 1) {
-    defaultProvider = providers[0]?.name;
-  } else {
-    defaultProvider = await io.prompt.select(
-      'Default provider for model-less requests (embeddings etc.)',
-      providers.map(p => ({ value: p.name, label: p.name })),
-    );
-    if (defaultProvider === undefined) return CANCELLED;
+    return providers[0]?.name;
   }
-  if (defaultProvider === undefined) return CANCELLED;
+  return await prompt.select(
+    'Default provider for model-less requests (embeddings etc.)',
+    providers.map(p => ({ value: p.name, label: p.name })),
+  );
+}
 
-  const host = await io.prompt.text('Listen host', { default: '127.0.0.1' });
-  if (host === undefined) return CANCELLED;
-  let port: number | undefined;
-  while (port === undefined) {
-    const portText = await io.prompt.text('Listen port', { default: '8828' });
-    if (portText === undefined) return CANCELLED;
+async function collectHostPort(
+  prompt: PromptPort,
+): Promise<{ host: string; port: number } | undefined> {
+  const host = await prompt.text('Listen host', { default: '127.0.0.1' });
+  if (host === undefined) return undefined;
+
+  for (;;) {
+    const portText = await prompt.text('Listen port', { default: '8828' });
+    if (portText === undefined) return undefined;
     const parsed = Number.parseInt(portText, 10);
-    if (Number.isInteger(parsed)) port = parsed;
-    else io.prompt.note('Port must be an integer', 'invalid port');
+    if (Number.isInteger(parsed)) {
+      return { host, port: parsed };
+    }
+    prompt.note('Port must be an integer', 'invalid port');
   }
+}
 
-  const answers: WizardAnswers = { providers, models, defaultProvider, host, port };
-  const configObject = wizardConfigObject(answers);
-  buildWizardConfig(answers); // fail fast on synthesis before any write
-  const yaml = serializeConfigYaml(configObject);
-  io.prompt.note(yaml, 'preview');
-
+async function confirmAndWrite(
+  options: { force?: boolean },
+  io: WizardIo,
+  yaml: string,
+): Promise<boolean> {
   const out = io.defaultOutPath;
   const proceed = await io.prompt.confirm(`Write config to ${out}?`, true);
   if (proceed === undefined || proceed === false) {
     io.prompt.note('Nothing written', 'aborted');
-    return 0;
+    return true;
   }
   if (!options.force && (await io.exists(out))) {
     const overwrite = await io.prompt.confirm(
@@ -216,7 +219,7 @@ export async function runWizard(
     );
     if (overwrite === undefined || overwrite === false) {
       io.prompt.note(`left ${out} untouched`, 'aborted');
-      return 0;
+      return true;
     }
   }
   await io.mkdir(dirname(out));
@@ -235,6 +238,43 @@ export async function runWizard(
       );
     }
   }
+  return true;
+}
 
-  return 0;
+export async function runWizard(
+  options: { force?: boolean },
+  io: WizardIo,
+): Promise<number> {
+  const CANCELLED = 130;
+  io.prompt.note(
+    'Generates a minimal v1 config. Plugins are not wizard-managed — hand-edit the file later.',
+    'proxitor config wizard',
+  );
+
+  const providers = await collectProviders(io.prompt);
+  if (providers === undefined) return CANCELLED;
+
+  const models = await collectModels(io.prompt, providers);
+  if (models === undefined) return CANCELLED;
+
+  const defaultProvider = await collectDefaultProvider(io.prompt, providers);
+  if (defaultProvider === undefined) return CANCELLED;
+
+  const hostPort = await collectHostPort(io.prompt);
+  if (hostPort === undefined) return CANCELLED;
+
+  const answers: WizardAnswers = {
+    providers,
+    models,
+    defaultProvider,
+    host: hostPort.host,
+    port: hostPort.port,
+  };
+  const configObject = wizardConfigObject(answers);
+  buildWizardConfig(answers); // fail fast on synthesis before any write
+  const yaml = serializeConfigYaml(configObject);
+  io.prompt.note(yaml, 'preview');
+
+  const done = await confirmAndWrite(options, io, yaml);
+  return done ? 0 : CANCELLED;
 }

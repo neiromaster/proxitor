@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -17,17 +17,22 @@ const SILENT = {
 };
 
 describe('M6 lifecycle integration flow', () => {
+  let tmpDirs: string[] = [];
   let tmpDir: string;
   let configPath: string;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'proxitor-m6-'));
+    tmpDirs.push(tmpDir);
     configPath = join(tmpDir, 'config.yaml');
   });
 
   afterEach(async () => {
-    // Clean up watcher if any proxitor instances were created
-    // Note: watchers are stopped automatically when tests end
+    // Clean up all tmp dirs created by this test
+    for (const dir of tmpDirs) {
+      await rm(dir, { recursive: true, force: true });
+    }
+    tmpDirs = [];
   });
 
   describe('observability through the stack', () => {
@@ -509,8 +514,12 @@ defaultProvider: oai
       watcher.start();
 
       // Force an mtime change by rewriting the file
-      await new Promise(resolve => setTimeout(resolve, 60)); // wait for at least one poll
-      await writeFile(configPath, configText + '\n# updated'); // append a comment
+      // Wait for watcher to be polling by checking that some time has passed
+      // and the watcher hasn't yet fired (bounded retry loop)
+      await expect
+        .poll(async () => reloadSpy.mock.calls.length, { timeout: 200, interval: 10 })
+        .toBe(0);
+      await writeFile(configPath, `${configText}\n# updated`); // append a comment
 
       // Wait for reload to be called (bounded wait with vi.waitFor)
       await vi.waitFor(

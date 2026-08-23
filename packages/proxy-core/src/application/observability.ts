@@ -143,6 +143,9 @@ export function createObservability(deps: {
       return {
         onEvent(event) {
           if (event.type === 'usage') {
+            // CanonicalEvents may end without a usage-bearing event (client abort, wire error);
+            // the outcome line still needs finite numbers, so absent fields read as 0 — this is
+            // display coalescing, not a claim the provider reported zero.
             const fullUsage: Usage = {
               inputTokens: event.usage.inputTokens ?? 0,
               outputTokens: event.usage.outputTokens ?? 0,
