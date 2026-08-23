@@ -30,6 +30,7 @@
     "packages/proxy-core/dist"
   ],
   "scripts": {
+    "bench": "pnpm -r --if-present run bench",
     "build": "pnpm -r --if-present run build",
     "check": "pnpm run typecheck:all && pnpm run check:biome && pnpm run test",
     "check:biome": "biome check ./packages",

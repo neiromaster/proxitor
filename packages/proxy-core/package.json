@@ -7,6 +7,7 @@
     "proxitor": "./dist/cli.mjs"
   },
   "scripts": {
+    "bench": "vitest bench --run",
     "build": "tsdown",
     "start": "node dist/cli.mjs",
     "test": "vitest run",
