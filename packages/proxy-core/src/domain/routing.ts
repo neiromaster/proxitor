@@ -1,6 +1,6 @@
 import { ENDPOINT_PATHS, type WireFormat } from '@proxitor/plugin-api';
 import { RoutingConfigError, RoutingError } from './error.js';
-import { globMatch } from './glob.js';
+import { compileGlob } from './glob.js';
 import {
   type EffectivePlugin,
   mergePluginLayers,
@@ -19,6 +19,12 @@ export type ModelBinding = {
   /** Physical model id, or '$MODEL' to pass the logical name through. */
   readonly modelId: string;
   readonly plugins?: readonly PluginListEntry[];
+};
+
+/** Precompiled binding for O(1) resolve performance (spec §14). */
+type CompiledBinding = {
+  readonly binding: ModelBinding;
+  readonly matches: (logicalModel: string) => boolean;
 };
 
 /** Result of resolving a request to a provider (spec §5.2). */
@@ -120,6 +126,12 @@ export function createRoutingTable(config: RoutingConfig): RoutingTable {
     }
   }
 
+  // Precompile glob matchers for each binding (spec §14: compile once at table build)
+  const rows: readonly CompiledBinding[] = config.models.map(binding => ({
+    binding,
+    matches: compileGlob(binding.match),
+  }));
+
   const resolve = (logicalModel: string, path: string): RouteResolution => {
     const inbound = classifyPath(path);
     if (inbound === MODELS_PATH) {
@@ -128,19 +140,26 @@ export function createRoutingTable(config: RoutingConfig): RoutingTable {
         404,
       );
     }
-    for (const binding of config.models) {
-      if (globMatch(binding.match, logicalModel)) {
-        const provider = config.providers[binding.provider];
+    for (const row of rows) {
+      if (row.matches(logicalModel)) {
+        const provider = config.providers[row.binding.provider];
         if (provider === undefined) {
           // Unreachable: validated above; kept for exhaustiveness under noUncheckedIndexedAccess.
-          throw new RoutingConfigError(`models: unknown provider "${binding.provider}"`);
+          throw new RoutingConfigError(
+            `models: unknown provider "${row.binding.provider}"`,
+          );
         }
         return {
           provider,
-          physicalModel: binding.modelId === '$MODEL' ? logicalModel : binding.modelId,
+          physicalModel:
+            row.binding.modelId === '$MODEL' ? logicalModel : row.binding.modelId,
           inboundFormat: inbound,
           outboundFormat: provider.wireFormat,
-          plugins: mergePluginLayers(config.plugins, provider.plugins, binding.plugins),
+          plugins: mergePluginLayers(
+            config.plugins,
+            provider.plugins,
+            row.binding.plugins,
+          ),
         };
       }
     }

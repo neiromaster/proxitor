@@ -1,5 +1,32 @@
 import { describe, expect, test } from 'vitest';
-import { globMatch } from './glob.js';
+import { compileGlob, globMatch } from './glob.js';
+
+describe('compileGlob', () => {
+  const cases: readonly [pattern: string, value: string, expected: boolean][] = [
+    ['*', 'anything-at-all', true],
+    ['gpt-5*', 'gpt-5.2-preview', true],
+    ['gpt-5*', 'claude-opus-4-1', false],
+    ['claude-opus-4-1', 'CLAUDE-OPUS-4-1', true], // case-insensitive
+    ['a*b*c', 'abc', true], // * matches empty
+    ['a*b*c', 'axxbyyc', true],
+    ['a*b*c', 'acb', false],
+    ['model.name', 'modelXname', false], // dot is literal
+  ];
+
+  for (const [pattern, value, expected] of cases) {
+    test(`${pattern} vs ${value} → ${expected}`, () => {
+      // Arrange / Act / Assert
+      expect(compileGlob(pattern)(value)).toBe(expected);
+    });
+  }
+
+  test('matches globMatch semantics for every case', () => {
+    // Arrange / Act / Assert
+    for (const [pattern, value] of cases) {
+      expect(compileGlob(pattern)(value)).toBe(globMatch(pattern, value));
+    }
+  });
+});
 
 describe('globMatch', () => {
   test('exact pattern matches only the identical value', () => {
