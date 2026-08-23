@@ -209,7 +209,7 @@ plugins:
 | `normalize-volatile-system` | — (no options) |
 | `cache-control` | `cacheControl` (auto/always/skip), `ttl` (5m/1h/omit), `rewriteBlockTtl` (auto/skip) |
 | `session-id` | `mode` (auto/skip) |
-| `openrouter-routing` | [OpenRouter routing options](#openrouter-routing-plugin) |
+| `openrouter-routing` | [OpenRouter routing options](#openrouter-routing) |
 
 Source: [`config-schema.ts:24-26`](../packages/proxy-core/src/application/config-schema.ts#L24-L26)
 

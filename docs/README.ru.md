@@ -179,7 +179,7 @@ server:
 | `normalize-volatile-system` | Убирает хэши `cch=` и `cc_version=` из системных промптов Claude Code (стабилизирует префиксный кэш на не‑Anthropic провайдерах) | — |
 | `cache-control` | Внедряет/переписывает `cache_control` с нормализацией TTL | `cacheControl` (auto/always/skip), `ttl` (5m/1h/omit), `rewriteBlockTtl` (auto/skip) |
 | `session-id` | Липкая маршрутизация через заголовок `x-session-id` | `mode` (auto/skip) |
-| `openrouter-routing` | Хинты маршрутизации провайдеров для `openai-chat` → OpenRouter (пишет `extensions['openai-chat']['$proxitor.provider']`) | [Опции маршрутизации OpenRouter](./configuration.md#openrouter-routing-plugin) |
+| `openrouter-routing` | Хинты маршрутизации провайдеров для `openai-chat` → OpenRouter (пишет `extensions['openai-chat']['$proxitor.provider']`) | [Опции маршрутизации OpenRouter](./configuration.ru.md#openrouter-routing) |
 
 Пишите свои плагины через [`@proxitor/plugin-api`](https://www.npmjs.com/package/@proxitor/plugin-api).
 
@@ -197,7 +197,7 @@ models:
 
 ## Эксплуатация
 
-**Горячая перезагрузка:** Запись конфига → `POST /control/reload` (или автоматический вотчер; keep-last-last-valid при ошибке парсинга)
+**Горячая перезагрузка:** Запись конфига → `POST /control/reload` (или автоматический вотчер; keep-last-valid при ошибке парсинга)
 
 **Управляющая плоскость** (требует `controlPlane.token`):
 

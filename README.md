@@ -178,7 +178,7 @@ Three plugin layers (global → provider → model). Plugins run in declaration 
 | `normalize-volatile-system` | Strip Claude Code's `cch=` and `cc_version=` hashes from system prompts (stabilizes prefix cache on non‑Anthropic providers) | — |
 | `cache-control` | Inject/rewrite `cache_control` breakpoints with TTL normalization | `cacheControl` (auto/always/skip), `ttl` (5m/1h/omit), `rewriteBlockTtl` (auto/skip) |
 | `session-id` | Sticky routing via `x-session-id` header | `mode` (auto/skip) |
-| `openrouter-routing` | Provider routing hints for `openai-chat` → OpenRouter (writes `extensions['openai-chat']['$proxitor.provider']`) | [OpenRouter routing options](./docs/configuration.md#openrouter-routing-plugin) |
+| `openrouter-routing` | Provider routing hints for `openai-chat` → OpenRouter (writes `extensions['openai-chat']['$proxitor.provider']`) | [OpenRouter routing options](./docs/configuration.md#openrouter-routing) |
 
 Write custom plugins against [`@proxitor/plugin-api`](https://www.npmjs.com/package/@proxitor/plugin-api).
 
