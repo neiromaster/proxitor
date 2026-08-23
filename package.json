@@ -1,15 +1,16 @@
 {
   "name": "proxitor",
   "version": "0.20.0",
-  "description": "Lightweight proxy for routing CLI requests (claude-code, codex) to OpenRouter",
+  "description": "Multi-provider LLM gateway with a plugin pipeline: Anthropic Messages and OpenAI Chat in, any provider out",
   "keywords": [
     "proxy",
-    "openrouter",
-    "cli",
+    "llm",
+    "gateway",
+    "anthropic",
+    "openai",
     "claude-code",
-    "codex",
-    "ai",
-    "llm"
+    "plugin",
+    "ai"
   ],
   "homepage": "https://github.com/neiromaster/proxitor#readme",
   "bugs": {
@@ -22,9 +23,11 @@
   "license": "MIT",
   "author": "neiromaster",
   "type": "module",
-  "bin": "./dist/cli.mjs",
+  "bin": {
+    "proxitor": "packages/proxy-core/dist/cli.mjs"
+  },
   "files": [
-    "dist"
+    "packages/proxy-core/dist"
   ],
   "scripts": {
     "build": "pnpm -r --if-present run build",
