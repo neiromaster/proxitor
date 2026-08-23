@@ -2,7 +2,7 @@
 '@proxitor/proxy-core': minor
 ---
 
-# proxitor 0.5.0 — multi-provider plugin gateway (v1 engine)
+# proxitor 0.100.0 — multi-provider plugin gateway (v1 engine)
 
 Complete rewrite as a multi-provider LLM gateway. Point any Anthropic- or OpenAI-compatible client at one local endpoint and route each model to any provider, with a plugin pipeline over a Canonical IR.
 
@@ -15,4 +15,4 @@ Complete rewrite as a multi-provider LLM gateway. Point any Anthropic- or OpenAI
 - **Hot reload:** config file watching with keep-last-valid on errors, inflight-request snapshot isolation, `/control/reload` + `/control/routing` behind a timing-safe token; graceful drain shutdown with second-Ctrl-C force exit.
 - **Ops:** `config` wizard (with shadowed-config detection), `doctor` health checks, XDG/home config discovery, per-provider credential env indirection.
 
-`@proxitor/proxy-core` is bumped in lockstep (private package) so the CLI stamps the release version; both are pinned to 0.5.0 at release time.
+`@proxitor/proxy-core` is bumped in lockstep (private package) so the CLI stamps the release version; both are pinned to 0.100.0 at release time.
