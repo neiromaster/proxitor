@@ -188,7 +188,7 @@ Write custom plugins against [`@proxitor/plugin-api`](https://www.npmjs.com/pack
 models:
   - match: 'claude-*'      # glob prefix
     provider: glm
-    modelId: 'claude-${MODEL}'   # substitute logical name
+    modelId: '$MODEL'    # pass through unchanged
   - match: '*'            # catch‑all
     provider: openai
     modelId: '$MODEL'    # pass through unchanged

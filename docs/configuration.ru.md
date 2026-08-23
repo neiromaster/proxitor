@@ -150,7 +150,7 @@ providers:
 models:
   - match: 'claude-*'          # префикс glob
     provider: glm
-    modelId: 'claude-${MODEL}'   # подставляет логическое имя
+    modelId: '$MODEL'        # передаётся без изменений
   - match: '*'                # catch-all
     provider: openai
     modelId: '$MODEL'        # передаётся без изменений

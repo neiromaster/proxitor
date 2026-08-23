@@ -150,7 +150,7 @@ Source: [`config-schema.ts:18-56`](../packages/proxy-core/src/application/config
 models:
   - match: 'claude-*'          # glob prefix
     provider: glm
-    modelId: 'claude-${MODEL}'   # substitute logical name
+    modelId: '$MODEL'        # pass through unchanged
   - match: '*'                # catch‑all
     provider: openai
     modelId: '$MODEL'        # pass through unchanged
