@@ -205,12 +205,12 @@ async function confirmAndWrite(
   options: { force?: boolean },
   io: WizardIo,
   yaml: string,
-): Promise<boolean> {
+): Promise<void> {
   const out = io.defaultOutPath;
   const proceed = await io.prompt.confirm(`Write config to ${out}?`, true);
   if (proceed === undefined || proceed === false) {
     io.prompt.note('Nothing written', 'aborted');
-    return true;
+    return;
   }
   if (!options.force && (await io.exists(out))) {
     const overwrite = await io.prompt.confirm(
@@ -219,7 +219,7 @@ async function confirmAndWrite(
     );
     if (overwrite === undefined || overwrite === false) {
       io.prompt.note(`left ${out} untouched`, 'aborted');
-      return true;
+      return;
     }
   }
   await io.mkdir(dirname(out));
@@ -238,7 +238,6 @@ async function confirmAndWrite(
       );
     }
   }
-  return true;
 }
 
 export async function runWizard(
@@ -275,6 +274,6 @@ export async function runWizard(
   const yaml = serializeConfigYaml(configObject);
   io.prompt.note(yaml, 'preview');
 
-  const done = await confirmAndWrite(options, io, yaml);
-  return done ? 0 : CANCELLED;
+  await confirmAndWrite(options, io, yaml);
+  return 0;
 }

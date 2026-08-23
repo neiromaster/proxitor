@@ -17,9 +17,6 @@ const changesetDir = join(root, '.changeset');
 
 const workspacePackages = new Set();
 
-const rootPkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-workspacePackages.add(rootPkg.name);
-
 const packagesDir = join(root, 'packages');
 if (existsSync(packagesDir)) {
   for (const entry of readdirSync(packagesDir)) {
