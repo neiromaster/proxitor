@@ -118,6 +118,39 @@ describe('redactConfigForLog', () => {
     expect(text).not.toContain('sk-ant-literal');
     expect(text).toContain('[redacted]');
   });
+
+  test('redacts provider header values but preserves header keys', () => {
+    // Arrange
+    const config = parseConfig(FULL_CONFIG);
+
+    // Act
+    const redacted = redactConfigForLog(config);
+
+    // Assert - values gone from the whole serialized output, keys kept
+    const text = JSON.stringify(redacted);
+    expect(text).not.toContain('2023-06-01');
+    const provider = redacted.providers['anthropic-direct'];
+    if (!provider) {
+      throw new Error('Test setup failed: anthropic-direct provider missing');
+    }
+    expect(provider.headers).toEqual({ 'anthropic-version': '[redacted]' });
+  });
+
+  test('providers without headers keep no headers key', () => {
+    // Arrange
+    const config = parseConfig(FULL_CONFIG);
+
+    // Act
+    const redacted = redactConfigForLog(config);
+
+    // Assert
+    const provider = redacted.providers['openai-prod'];
+    if (!provider) {
+      throw new Error('Test setup failed: openai-prod provider missing');
+    }
+    expect(provider.headers).toBeUndefined();
+    expect('headers' in provider).toBe(false);
+  });
 });
 
 describe('credential ref edges', () => {

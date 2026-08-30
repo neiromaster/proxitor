@@ -179,12 +179,24 @@ export function parseConfig(input: unknown): ProxyConfig {
   return result.data;
 }
 
-/** D16: credentials never reach logs — clone with every credential replaced. */
+/**
+ * D16: credentials and provider header values never reach logs — clone with
+ * every credential replaced and every header value redacted. Header names stay
+ * (they describe what proxitor sends, they are not secrets).
+ */
 export function redactConfigForLog(config: ProxyConfig): ProxyConfig {
   const REDACTED = '[redacted]'; // a plain string is itself a valid CredentialRef
   const providers: Record<string, ProviderConfig> = {};
   for (const [key, provider] of Object.entries(config.providers)) {
-    providers[key] = { ...provider, auth: { ...provider.auth, credential: REDACTED } };
+    const headers =
+      provider.headers === undefined
+        ? undefined
+        : Object.fromEntries(Object.keys(provider.headers).map(name => [name, REDACTED]));
+    providers[key] = {
+      ...provider,
+      auth: { ...provider.auth, credential: REDACTED },
+      ...(headers === undefined ? {} : { headers }),
+    };
   }
   return {
     ...config,
