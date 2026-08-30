@@ -1,15 +1,8 @@
-import type { CanonicalEvent, StopReason } from '@proxitor/plugin-api';
+import type { CanonicalEvent } from '@proxitor/plugin-api';
 import { parseJsonBody } from '../shared/format-error.js';
+import { STOP_MAP } from '../shared/stop-reasons.js';
 import { asArray, asObject, asString } from '../shared/validate.js';
 import { toOpenAiUsage } from './decode-stream.js';
-
-const STOP_MAP: Record<string, StopReason> = {
-  stop: 'end_turn',
-  length: 'max_tokens',
-  tool_calls: 'tool_use',
-  function_call: 'tool_use',
-  content_filter: 'end_turn',
-};
 
 export function decodeOpenAiResponse(body: string): CanonicalEvent[] {
   const completion = parseJsonBody(body);

@@ -1,4 +1,5 @@
 import type { CacheControl, NodeExtensions } from '@proxitor/plugin-api';
+import type { Json } from './validate.js';
 
 /** Codec-internal wire-shape provenance namespace; the plugin channel is `$proxitor.` (spec §4.3). */
 export const WIRE_KEY = '$wire';
@@ -29,4 +30,15 @@ export function fromCacheControl(cc: CacheControl | undefined): unknown {
   return cc.ttl === undefined
     ? { type: 'ephemeral' }
     : { type: 'ephemeral', ttl: cc.ttl };
+}
+
+/** Copy extension keys onto a wire node, skipping the codec-internal `$wire`
+ * namespace (both codecs encode this identically). */
+export function passthrough(extensions?: NodeExtensions): Json {
+  const out: Json = {};
+  for (const [key, value] of Object.entries(extensions ?? {})) {
+    if (key === WIRE_KEY) continue;
+    out[key] = value;
+  }
+  return out;
 }

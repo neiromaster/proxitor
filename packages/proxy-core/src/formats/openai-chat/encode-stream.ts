@@ -1,14 +1,8 @@
 import type { CanonicalEvent, Usage } from '@proxitor/plugin-api';
 import { createEventSequenceNormalizer } from '../shared/event-normalizer.js';
 import { formatSseEvent } from '../shared/sse-serializer.js';
+import { REVERSE_STOP } from '../shared/stop-reasons.js';
 import type { StreamEncodeOptions, StreamEncoder } from '../shared/stream-codec.js';
-
-const REVERSE_STOP: Record<string, string> = {
-  end_turn: 'stop',
-  max_tokens: 'length',
-  tool_use: 'tool_calls',
-  stop_sequence: 'stop',
-};
 
 export function createOpenAiStreamEncoder(options: StreamEncodeOptions): StreamEncoder {
   const normalizer = createEventSequenceNormalizer({

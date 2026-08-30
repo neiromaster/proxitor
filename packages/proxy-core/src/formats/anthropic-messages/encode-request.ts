@@ -10,6 +10,7 @@ import type { Json } from '../shared/validate.js';
 import {
   fromCacheControl,
   PROXITOR_PREFIX,
+  passthrough,
   readWireMeta,
   WIRE_KEY,
 } from '../shared/wire.js';
@@ -126,6 +127,8 @@ function encodeStreamField(ir: CanonicalRequest, wire: Json, wireMeta: Json): vo
   }
 }
 
+// Intentionally NOT shared with openai-chat applyPassthrough: anthropic drops
+// the reserved $proxitor.* keys; openai maps them back onto the wire, stripped.
 function encodePassthroughFields(bag: Json, wire: Json): void {
   for (const [key, value] of Object.entries(bag)) {
     if (key === WIRE_KEY || key.startsWith(PROXITOR_PREFIX)) continue;
@@ -178,15 +181,6 @@ function encodeMessage(message: {
       ? first.text
       : message.content.map(encodeBlock);
   Object.assign(out, passthrough(message.extensions));
-  return out;
-}
-
-function passthrough(extensions?: NodeExtensions): Json {
-  const out: Json = {};
-  for (const [key, value] of Object.entries(extensions ?? {})) {
-    if (key === WIRE_KEY) continue;
-    out[key] = value;
-  }
   return out;
 }
 

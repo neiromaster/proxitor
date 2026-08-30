@@ -1,14 +1,8 @@
 import type { CanonicalEvent, StopReason } from '@proxitor/plugin-api';
 import { parseJsonBody } from '../shared/format-error.js';
+import { CANONICAL_STOP_REASONS } from '../shared/stop-reasons.js';
 import { asArray, asObject, asString } from '../shared/validate.js';
 import { toUsage } from './usage.js';
-
-const CANONICAL_STOP_REASONS = new Set<string>([
-  'end_turn',
-  'max_tokens',
-  'stop_sequence',
-  'tool_use',
-]);
 
 export function decodeAnthropicResponse(body: string): CanonicalEvent[] {
   const message = parseJsonBody(body);

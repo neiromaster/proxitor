@@ -7,12 +7,11 @@ import type {
   CanonicalTool,
   CanonicalToolChoice,
   MaxTokens,
-  NodeExtensions,
 } from '@proxitor/plugin-api';
 import { RESERVED_KEYS } from '@proxitor/plugin-api';
 import { FormatError } from '../shared/format-error.js';
 import type { Json } from '../shared/validate.js';
-import { PROXITOR_PREFIX, readWireMeta, WIRE_KEY } from '../shared/wire.js';
+import { PROXITOR_PREFIX, passthrough, readWireMeta, WIRE_KEY } from '../shared/wire.js';
 
 export type OpenAiMaxTokensField = 'auto' | 'max_tokens' | 'max_completion_tokens';
 export type OpenAiEncodeOptions = {
@@ -290,13 +289,4 @@ function encodeUserPart(block: CanonicalContentBlock): Json {
     message: `user ${block.type} blocks are not expressible in openai-chat user content`,
     status: 400,
   });
-}
-
-function passthrough(extensions?: NodeExtensions): Json {
-  const out: Json = {};
-  for (const [key, value] of Object.entries(extensions ?? {})) {
-    if (key === WIRE_KEY) continue;
-    out[key] = value;
-  }
-  return out;
 }

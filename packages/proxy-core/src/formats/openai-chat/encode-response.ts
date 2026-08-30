@@ -1,14 +1,8 @@
 import type { CanonicalEvent, Usage } from '@proxitor/plugin-api';
 import { createEventSequenceNormalizer } from '../shared/event-normalizer.js';
 import { FormatError } from '../shared/format-error.js';
+import { REVERSE_STOP } from '../shared/stop-reasons.js';
 import type { StreamEncodeOptions } from '../shared/stream-codec.js';
-
-const REVERSE_STOP: Record<string, string> = {
-  end_turn: 'stop',
-  max_tokens: 'length',
-  tool_use: 'tool_calls',
-  stop_sequence: 'stop',
-};
 
 export function encodeOpenAiResponse(
   events: Iterable<CanonicalEvent>,

@@ -1,17 +1,10 @@
-import type { CanonicalEvent, StopReason, Usage } from '@proxitor/plugin-api';
+import type { CanonicalEvent, Usage } from '@proxitor/plugin-api';
 import { invalidRequest } from '../shared/format-error.js';
 import { createSseParser } from '../shared/sse-parser.js';
+import { STOP_MAP } from '../shared/stop-reasons.js';
 import { asObject, type Json } from '../shared/validate.js';
 
 type OpenBlock = { index: number; kind: 'text' | 'thinking' | 'tool_use' };
-
-const STOP_MAP: Record<string, StopReason> = {
-  stop: 'end_turn',
-  length: 'max_tokens',
-  tool_calls: 'tool_use',
-  function_call: 'tool_use',
-  content_filter: 'end_turn',
-};
 
 export function createOpenAiStreamDecoder() {
   const parser = createSseParser();

@@ -1,15 +1,9 @@
 import type { CanonicalEvent, StopReason } from '@proxitor/plugin-api';
 import { invalidRequest } from '../shared/format-error.js';
 import { createSseParser } from '../shared/sse-parser.js';
+import { CANONICAL_STOP_REASONS } from '../shared/stop-reasons.js';
 import { asObject, asString, type Json } from '../shared/validate.js';
 import { toUsage } from './usage.js';
-
-const CANONICAL_STOP_REASONS = new Set<string>([
-  'end_turn',
-  'max_tokens',
-  'stop_sequence',
-  'tool_use',
-]);
 
 export function createAnthropicStreamDecoder() {
   const parser = createSseParser();
