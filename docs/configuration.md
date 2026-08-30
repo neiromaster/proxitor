@@ -167,7 +167,6 @@ Source: [`config-schema.ts:58-67`](../packages/proxy-core/src/application/config
 **Optional.** Provider id (must exist in `providers`). Serves model‑less requests:
 
 - Embeddings API calls (no model in payload)
-- `/v1/models` listing
 
 If omitted, model‑less requests fail with `404`.
 

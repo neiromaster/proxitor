@@ -137,7 +137,7 @@ describe('handle — model-less raw passthrough (D12)', () => {
     expect(await readBody(response.body)).toBe('raw-bytes');
   });
 
-  it('returns a 501 in the openai shape when no defaultProvider is configured', async () => {
+  it('returns a 404 in the openai shape when no defaultProvider is configured', async () => {
     // Arrange — a fetch port that must never be called
     let fetchCalls = 0;
     const deps = makeDeps(false, {
@@ -156,7 +156,7 @@ describe('handle — model-less raw passthrough (D12)', () => {
     });
     // Assert
     expect(fetchCalls).toBe(0);
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(404);
     expect(JSON.parse(await readBody(response.body)).error.type).toBe('routing_error');
   });
 

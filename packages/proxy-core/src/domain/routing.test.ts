@@ -234,7 +234,7 @@ describe('createRoutingTable + resolveModelLess', () => {
     ]);
   });
 
-  test('501 when no defaultProvider is configured', () => {
+  test('404 when no defaultProvider is configured', () => {
     // Arrange
     const table = createRoutingTable(specConfig({ defaultProvider: undefined }));
 
@@ -243,7 +243,7 @@ describe('createRoutingTable + resolveModelLess', () => {
       table.resolveModelLess('/v1/embeddings');
       expect.unreachable('resolveModelLess must throw');
     } catch (error) {
-      expect((error as RoutingError).status).toBe(501);
+      expect((error as RoutingError).status).toBe(404);
     }
   });
 });

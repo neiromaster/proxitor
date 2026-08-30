@@ -168,7 +168,7 @@ export function createRoutingTable(config: RoutingConfig): RoutingTable {
 
   const resolveModelLess = (_path: string): RouteResolution => {
     if (config.defaultProvider === undefined) {
-      throw new RoutingError('no defaultProvider configured for model-less request', 501);
+      throw new RoutingError('no defaultProvider configured for model-less request', 404);
     }
     const provider = config.providers[config.defaultProvider];
     if (provider === undefined) {
