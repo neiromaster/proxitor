@@ -2,7 +2,7 @@ import type { ProxyPlugin } from '@proxitor/plugin-api';
 import { describe, expect, it } from 'vitest';
 import { createRoutingTable, type PluginListEntry } from '../domain/index.js';
 import { createBuiltInPluginRegistry } from '../plugins/built-in/index.js';
-import { createPluginManager } from './plugin-manager.js';
+import { createPluginManager, pluginFormatSkipWarning } from './plugin-manager.js';
 import { createPipeline, type PipelineDeps } from './proxy-pipeline.js';
 import type { UpstreamRequest, UpstreamResponse } from './upstream-fetch.js';
 
@@ -32,6 +32,7 @@ function makeDeps(
   fetchPort: PipelineDeps['fetch'],
   plugins: ReadonlyMap<string, ProxyPlugin>,
   providerPlugins: readonly PluginListEntry[],
+  depsLogger: PipelineDeps['logger'] = logger,
 ): PipelineDeps {
   return {
     table: createRoutingTable({
@@ -48,12 +49,12 @@ function makeDeps(
       models: [{ match: 'claude-*', provider: 'ant', modelId: 'claude-real' }],
       defaultProvider: 'ant',
     }),
-    manager: createPluginManager({ plugins, logger }),
+    manager: createPluginManager({ plugins, logger: depsLogger }),
     fetch: fetchPort,
     credentials: {
       resolve: (ref: unknown) => (typeof ref === 'string' ? ref : 'resolved'),
     },
-    logger,
+    logger: depsLogger,
     clock: { now: () => 0 },
     random: { uuid: () => 'req-1' },
   };
@@ -130,11 +131,18 @@ describe('built-in plugins through the pipeline', () => {
     expect(JSON.parse(clientBody).content).toEqual([{ type: 'text', text: 'Hello' }]); // passthrough reply
   });
 
-  it('openrouter-routing on an anthropic route is skipped, not a 500 (B5.2)', async () => {
+  it('openrouter-routing on an anthropic route is skipped with a warn, not a 500 (B5.2)', async () => {
     // Arrange — the registry already contains openrouter-routing; the provider wires only it
     const { calls, port } = fakeFetch(200, [UPSTREAM_JSON]);
+    const warns: Array<{ message: string; context?: unknown }> = [];
+    const capturing: PipelineDeps['logger'] = {
+      ...logger,
+      warn(message: string, context?: unknown) {
+        warns.push({ message, context });
+      },
+    };
     const pipeline = createPipeline(
-      makeDeps(port, createBuiltInPluginRegistry(), ['openrouter-routing']),
+      makeDeps(port, createBuiltInPluginRegistry(), ['openrouter-routing'], capturing),
     );
 
     // Act
@@ -152,6 +160,19 @@ describe('built-in plugins through the pipeline', () => {
     expect(JSON.parse(clientBody).content).toEqual([{ type: 'text', text: 'Hello' }]);
     expect(calls).toHaveLength(1);
     expect(JSON.parse(calls[0]?.body ?? '{}').provider).toBeUndefined();
+    // Assert — exactly one request-time warn using the shared skip text
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.message).toBe(
+      pluginFormatSkipWarning({
+        plugin: 'openrouter-routing',
+        wireFormat: 'anthropic-messages',
+      }),
+    );
+    expect(warns[0]?.message).toContain('skipped');
+    expect(warns[0]?.context).toMatchObject({
+      plugin: 'openrouter-routing',
+      wireFormat: 'anthropic-messages',
+    });
   });
 
   it('openrouter-routing maps provider hints onto openai-chat wire body', async () => {

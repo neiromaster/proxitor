@@ -168,13 +168,16 @@ describe('mergePluginLayers', () => {
 
   test('non-array disable value keeps one-key-record semantics (a plugin named "disable")', () => {
     // Arrange
-    const layer: readonly PluginListEntry[] = [{ disable: 'cache-control' }];
+    const withString: readonly PluginListEntry[] = [{ disable: 'cache-control' }];
+    const withMixedArray: readonly PluginListEntry[] = [{ disable: ['a', 42] }];
 
     // Act
-    const effective = mergePluginLayers(layer);
+    const stringResult = mergePluginLayers(withString);
+    const mixedArrayResult = mergePluginLayers(withMixedArray);
 
-    // Assert
-    expect(effective).toEqual([{ name: 'disable', config: 'cache-control' }]);
+    // Assert — the mixed array is not the string-array form, so it also falls through
+    expect(stringResult).toEqual([{ name: 'disable', config: 'cache-control' }]);
+    expect(mixedArrayResult).toEqual([{ name: 'disable', config: ['a', 42] }]);
   });
 
   test('disable key next to another key still throws the exactly-one-key error', () => {
