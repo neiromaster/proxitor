@@ -160,20 +160,43 @@ function checkRouting(config: ProxyConfig): DoctorCheck {
   }
 }
 
-function checkActivation(config: ProxyConfig): DoctorCheck {
+function checkActivation(config: ProxyConfig): DoctorCheck[] {
   try {
     const manager = createPluginManager({
       plugins: createBuiltInPluginRegistry(),
       logger: SILENT_LOGGER,
     });
-    validateActivation(config, manager);
-    return { name: 'activation', status: 'ok' };
-  } catch (error) {
-    return {
+    // C: a format-incompatible plugin skip is a warn at load — doctor must
+    // surface it, not swallow it behind a silent ok (a silent logger here is
+    // what hid these warns from the report).
+    const skips: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    validateActivation(config, manager, {
+      info() {},
+      warn(message, context) {
+        skips.push({ message, context });
+      },
+      error() {},
+      debug() {},
+    });
+    if (skips.length === 0) {
+      return [{ name: 'activation', status: 'ok' }];
+    }
+    return skips.map(skip => ({
       name: 'activation',
-      status: 'fail',
-      detail: messageOf(error),
-    };
+      status: 'warn',
+      detail:
+        typeof skip.context?.route === 'string'
+          ? `${skip.message} (route: ${skip.context.route})`
+          : skip.message,
+    }));
+  } catch (error) {
+    return [
+      {
+        name: 'activation',
+        status: 'fail',
+        detail: messageOf(error),
+      },
+    ];
   }
 }
 
@@ -207,7 +230,7 @@ export async function runDoctor(
 
   checks.push(...(await checkCredentials(config, io)));
   checks.push(checkRouting(config));
-  checks.push(checkActivation(config));
+  checks.push(...checkActivation(config));
   checks.push(await checkPort(config, io));
 
   return finish(checks);

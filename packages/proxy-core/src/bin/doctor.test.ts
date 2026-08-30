@@ -149,6 +149,23 @@ describe('runDoctor', () => {
     expect(report.exitCode).toBe(1);
   });
 
+  it('warns on a format-incompatible plugin instead of a silent ok (C)', async () => {
+    // Arrange — openrouter-routing is openai-chat-only; the catch-all route
+    // is anthropic-messages, so its activation skips with a warn
+    const mixed = `${CONFIG}plugins:\n  - openrouter-routing\n`;
+    const report = await runDoctor(
+      { configPath: '/cfg/config.yaml' },
+      makeIo({ readFile: async () => mixed }),
+    );
+    // Assert — the skip surfaces as a warn-level check naming the plugin and
+    // route; warns are not failures, so the exit code stays 0
+    const activation = byName(report, 'activation');
+    expect(activation?.status).toBe('warn');
+    expect(activation?.detail).toContain('openrouter-routing');
+    expect(activation?.detail).toContain('* → local');
+    expect(report.exitCode).toBe(0);
+  });
+
   it('warns but exits 0 when the port is taken', async () => {
     const report = await runDoctor(
       { configPath: '/cfg/config.yaml' },
