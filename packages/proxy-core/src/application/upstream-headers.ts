@@ -72,7 +72,8 @@ export function buildUpstreamHeaders(
   // 2. Plugin channel: may add headers, never override protected ones or re-add stripped ones.
   const protectedKeys = new Set<string>(['content-type', 'accept']);
   if (authHeader !== undefined) {
-    protectedKeys.add(authHeader.name);
+    // Plugin keys are compared lowercased — protect the auth header under any casing.
+    protectedKeys.add(authHeader.name.toLowerCase());
   }
   for (const name of Object.keys(provider.headers ?? {})) {
     protectedKeys.add(name.toLowerCase());

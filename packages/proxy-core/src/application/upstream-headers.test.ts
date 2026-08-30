@@ -110,6 +110,19 @@ describe('buildUpstreamHeaders', () => {
     expect(headers.authorization).toBeUndefined();
   });
 
+  it('protects a mixed-case auth header name against the plugin channel (B3.1)', () => {
+    // Arrange — plugin writes the same header lowercased; only the provider's spelling may win
+    const outboundHeaders = { 'x-custom-auth': 'plugin-forged' };
+    // Act
+    const headers = build({
+      authHeader: { name: 'X-Custom-Auth', value: 'provider-secret' },
+      outboundHeaders,
+    });
+    // Assert
+    expect(headers['X-Custom-Auth']).toBe('provider-secret');
+    expect(headers['x-custom-auth']).toBeUndefined();
+  });
+
   it('extends the allowlist via extraForwardHeaders, lowercased', () => {
     // Arrange — CLIENT_HEADERS carries 'x-custom-allowed': 'extra-allowlist-value'
     // Act
