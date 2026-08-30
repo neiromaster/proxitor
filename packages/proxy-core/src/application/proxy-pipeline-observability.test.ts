@@ -372,6 +372,42 @@ describe('pipeline observability tap', () => {
     expect(endCount).toBeGreaterThan(0);
   });
 
+  it('records the error status, not 200, when non-stream encodeResponse throws', async () => {
+    // Arrange - a clock that throws so encodeResponse fails after decode succeeded
+    const { port, ended } = fakeObservability();
+    const deps: PipelineDeps = {
+      ...makeDeps(
+        new Map(),
+        {
+          fetch: async () => ({
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: fromChunks([OPENAI_JSON]),
+          }),
+        },
+        port,
+      ),
+      clock: {
+        now: () => {
+          throw new Error('clock boom');
+        },
+      },
+    };
+    const pipeline = createPipeline(deps);
+    // Act
+    const response = await pipeline.handle(openaiRequest());
+    let bodyText = '';
+    for await (const chunk of response.body) {
+      bodyText += chunk;
+    }
+    const parsed = JSON.parse(bodyText) as { error: { type: string; message: string } };
+    // Assert - the catch's end(canonical.status) fires; nothing was recorded as 200
+    expect(response.status).toBe(500);
+    expect(parsed.error.type).toBe('plugin_stream_error');
+    expect(parsed.error.message).toContain('clock boom');
+    expect(ended).toEqual([500]);
+  });
+
   it('works unchanged when observability is absent from deps', async () => {
     const deps = makeDeps();
     const pipeline = createPipeline(deps);

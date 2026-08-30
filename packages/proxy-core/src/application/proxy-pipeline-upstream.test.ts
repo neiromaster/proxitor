@@ -2,6 +2,7 @@ import type { CanonicalEvent, ProxyPlugin } from '@proxitor/plugin-api';
 import { describe, expect, it } from 'vitest';
 import type { ProviderConfig } from '../domain/index.js';
 import { createRoutingTable } from '../domain/index.js';
+import type { ObservabilityPort } from './observability.js';
 import { createPluginManager } from './plugin-manager.js';
 import {
   createPipeline,
@@ -77,6 +78,7 @@ function makeDeps(
     { match: 'claude-*', provider: 'oai', modelId: 'gpt-5-real' },
   ],
   pluginNames: readonly string[] = [],
+  observability?: ObservabilityPort,
 ): PipelineDeps {
   // Add plugin names to the provider if specified, otherwise extract from plugins map
   const effectivePluginNames =
@@ -107,7 +109,29 @@ function makeDeps(
     logger,
     clock: { now: () => 0 },
     random: { uuid: () => 'req-1' },
+    observability,
   };
+}
+
+/** Fake observability tap: records begin contexts, end statuses, and event types. */
+function fakeObservability() {
+  const begun: string[] = [];
+  const ended: number[] = [];
+  const events: string[] = [];
+  const port: ObservabilityPort = {
+    begin(ctx) {
+      begun.push(ctx.requestId);
+      return {
+        onEvent: e => events.push(e.type),
+        captureOutbound: () => {},
+        end: status => {
+          ended.push(status);
+        },
+      };
+    },
+    reconfigure: () => {},
+  };
+  return { port, begun, ended, events };
 }
 
 const ANTHROPIC_STREAM_BODY = JSON.stringify({
@@ -338,6 +362,38 @@ describe('pipeline handle — error paths', () => {
     expect(text).toContain('transform boom');
   });
 
+  it('records the emitted error-frame status, not 200, when the stream pipeline fails', async () => {
+    // Arrange - the D8 transform bomber plus an observation tap
+    const upstream = fakeFetch(200, OAI_SSE);
+    const { port, ended } = fakeObservability();
+    const bomber: ProxyPlugin = {
+      name: 'bomber',
+      transformStream: async function* (_ctx, events) {
+        for await (const event of events) {
+          if (event.type === 'content_block_delta') {
+            throw new Error('transform boom');
+          }
+          yield event;
+        }
+      },
+    };
+    const pipeline = createPipeline(
+      makeDeps(
+        upstream.port,
+        new Map([['bomber', bomber]]),
+        undefined,
+        undefined,
+        [],
+        port,
+      ),
+    );
+    // Act - readBody resolving at all proves the clean close
+    const text = await readBody((await pipeline.handle(request())).body);
+    // Assert - the client got the error frame and the observation ended with its status
+    expect(text).toContain('transform boom');
+    expect(ended).toEqual([500]);
+  });
+
   it('renders a transform-injected error event as the response in non-stream mode (I1)', async () => {
     // Arrange - non-stream request + plugin that yields error event
     const upstream = fakeFetch(200, [OAI_JSON]);
@@ -375,10 +431,18 @@ describe('pipeline handle — error paths', () => {
     expect(parsed.error.message).toBe('no capacity');
   });
 
-  it('catches a throwing credentials.resolve and renders 500 internal_error (I2)', async () => {
+  it('catches a throwing credentials.resolve as a 500 in the client shape with the observation ended', async () => {
     // Arrange - credentials.resolve that throws
     const upstream = fakeFetch(200, [OAI_JSON]);
-    const throwingDeps = makeDeps(upstream.port);
+    const { port, ended } = fakeObservability();
+    const throwingDeps = makeDeps(
+      upstream.port,
+      undefined,
+      undefined,
+      undefined,
+      [],
+      port,
+    );
     // Create a new deps object with throwing credentials instead of mutating
     const depsWithThrowingCredentials: PipelineDeps = {
       ...throwingDeps,
@@ -392,12 +456,46 @@ describe('pipeline handle — error paths', () => {
     // Act
     const response = await pipeline.handle(request(ANTHROPIC_BODY));
     const parsed = JSON.parse(await readBody(response.body)) as {
+      type: string;
       error: { type: string; message: string };
     };
-    // Assert - must resolve (no rejection) with status 500 and error body containing 'env unset'
+    // Assert - no rejection, anthropic envelope (client's inbound format, not the
+    // terminal catch's openai shape), 500 status, observation ended, no upstream call
     expect(response.status).toBe(500);
+    expect(parsed.type).toBe('error');
     expect(parsed.error.type).toBe('internal_error');
     expect(parsed.error.message).toContain('env unset');
+    expect(upstream.calls.length).toBe(0);
+    expect(ended).toEqual([500]);
+  });
+
+  it('renders an unexpressible top_k as 400 in the client shape with the observation ended', async () => {
+    // Arrange - anthropic-messages inbound with top_k routed to an openai-chat provider
+    const upstream = fakeFetch(200, [OAI_JSON]);
+    const { port, ended } = fakeObservability();
+    const deps = makeDeps(upstream.port, undefined, undefined, undefined, [], port);
+    const pipeline = createPipeline(deps);
+    const body = JSON.stringify({
+      model: 'claude-sonnet-5',
+      max_tokens: 64,
+      stream: false,
+      top_k: 5,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    // Act
+    const response = await pipeline.handle(request(body));
+    const parsed = JSON.parse(await readBody(response.body)) as {
+      type: string;
+      error: { type: string; message: string };
+    };
+    // Assert - anthropic error envelope with the encode failure, observation ended,
+    // and the request never reached the upstream
+    expect(response.status).toBe(400);
+    expect(parsed.type).toBe('error');
+    expect(parsed.error.type).toBe('invalid_request_error');
+    expect(parsed.error.message).toContain('top_k');
+    expect(upstream.calls.length).toBe(0);
+    expect(ended).toEqual([400]);
   });
 });
 

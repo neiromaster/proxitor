@@ -160,6 +160,46 @@ describe('handle — model-less raw passthrough (D12)', () => {
     expect(JSON.parse(await readBody(response.body)).error.type).toBe('routing_error');
   });
 
+  it('ends the observation and answers openai-shape 500 when model-less auth throws', async () => {
+    // Arrange - credentials.resolve that throws; ended records observation statuses
+    const ended: number[] = [];
+    const deps: PipelineDeps = {
+      ...makeDeps(true),
+      credentials: {
+        resolve: () => {
+          throw new Error('env unset');
+        },
+      },
+      observability: {
+        begin: () => ({
+          onEvent: () => {},
+          captureOutbound: () => {},
+          end: status => {
+            ended.push(status);
+          },
+        }),
+        reconfigure: () => {},
+      },
+    };
+    const pipeline = createPipeline(deps);
+    // Act
+    const response = await pipeline.handle({
+      path: '/v1/embeddings',
+      method: 'POST',
+      headers: {},
+      body: '{}',
+    });
+    const parsed = JSON.parse(await readBody(response.body)) as {
+      error: { type: string; message: string };
+    };
+    // Assert - openai shape (D5: model-less bodies are never decoded), 500 status,
+    // and the observation is ended rather than left open
+    expect(response.status).toBe(500);
+    expect(parsed.error.type).toBe('internal_error');
+    expect(parsed.error.message).toContain('env unset');
+    expect(ended).toEqual([500]);
+  });
+
   it('keeps non-/v1/ paths as 404 (D12)', async () => {
     // Arrange
     const pipeline = createPipeline(makeDeps(true));

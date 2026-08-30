@@ -235,6 +235,7 @@ async function* encodeClientStream(
   requestId: string,
   observation?: RequestObservation,
 ): AsyncGenerator<string> {
+  let emittedStatus: number | undefined;
   try {
     for await (const event of events) {
       const chunk = encoder.push(event);
@@ -248,6 +249,7 @@ async function* encodeClientStream(
     }
   } catch (error) {
     const canonical = await runErrorHooks(active, iterationError(error), deps, requestId);
+    emittedStatus = canonical.status;
     const chunk = encoder.push({ type: 'error', error: canonical });
     if (chunk.length > 0) {
       yield chunk;
@@ -257,8 +259,9 @@ async function* encodeClientStream(
       yield done;
     }
   } finally {
-    // M6 tap point 5: end observation after stream completes or client disconnects
-    observation?.end(200);
+    // M6 tap point 5: end observation after stream completes or client disconnects;
+    // a caught failure records the status of the emitted error frame, not 200.
+    observation?.end(emittedStatus ?? 200);
   }
 }
 
@@ -387,17 +390,9 @@ export async function prepareUpstream(
   try {
     const classified = classifyPath(request.path);
     if (classified === MODELS_PATH) {
-      // handle() (Task 6) intercepts GET /v1/models earlier; a POST here is rejected (D5 shape).
-      // M6 tap point 1: models-POST → 405
-      observeFailure(deps, requestId, undefined, 405);
-      return {
-        kind: 'error',
-        response: errorResponse('openai-chat', {
-          type: 'invalid_request_error',
-          message: `${MODELS_PATH} supports GET only`,
-          status: 405,
-        }),
-      };
+      // Total-code guard: handle() intercepts /v1/models for every method (D10),
+      // so the sentinel never reaches prepareUpstream; kept only for narrowing.
+      throw new RoutingError(`${MODELS_PATH} is synthesized locally`, 404);
     }
     inbound = classified;
   } catch (error) {
@@ -595,15 +590,25 @@ async function runModelLess(
     toolsCount: 0,
   });
 
-  const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
-  const headers = buildUpstreamHeaders({
-    clientHeaders: request.headers,
-    provider,
-    authHeader,
-    outboundHeaders: undefined,
-    streaming: false,
-    extraForwardHeaders: deps.forwardHeaders,
-  });
+  // Same guard as runUpstream: an auth throw must not escape with the observation open.
+  // D5 openai shape: model-less bodies are never decoded, so the client format is unknowable.
+  let headers: Record<string, string>;
+  try {
+    const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
+    headers = buildUpstreamHeaders({
+      clientHeaders: request.headers,
+      provider,
+      authHeader,
+      outboundHeaders: undefined,
+      streaming: false,
+      extraForwardHeaders: deps.forwardHeaders,
+    });
+  } catch (error) {
+    // M6 tap point 7: auth/headers failure → end with the canonical status
+    const canonical = toCanonicalError(error);
+    observation?.end(canonical.status);
+    return errorResponse('openai-chat', canonical);
+  }
   // M3: Collapse /v1/v1 to /v1 for baseUrl suffixed with /v1 (consistent with domain/provider.ts endpointUrl).
   const url = `${provider.baseUrl.replace(/\/+$/, '')}${request.path}`.replace(
     /\/v1\/v1(?=\/)/g,
@@ -707,27 +712,43 @@ async function runUpstream(
     });
   }
 
-  const outboundAdapter = getFormat(resolution.outboundFormat);
-  const outboundIr: CanonicalRequest = {
-    ...ir,
-    model: { logical: ir.model.logical, physical }, // D9
-  };
-  const body = outboundAdapter.encodeRequest(outboundIr, {
-    maxTokensField: provider.maxTokensField,
-  });
+  // Encode/auth window: these can throw (FormatError, credential resolution), and a
+  // throw must not escape to the terminal catch — that answers openai-chat for every
+  // inbound format (D5) and leaves the observation begun but never ended.
+  let outboundAdapter: FormatAdapter;
+  let body: string;
+  let headers: Record<string, string>;
+  try {
+    outboundAdapter = getFormat(resolution.outboundFormat);
+    const outboundIr: CanonicalRequest = {
+      ...ir,
+      model: { logical: ir.model.logical, physical }, // D9
+    };
+    body = outboundAdapter.encodeRequest(outboundIr, {
+      maxTokensField: provider.maxTokensField,
+    });
 
-  // M6 tap point 3: capture outbound body
-  observation?.captureOutbound(body);
+    // M6 tap point 3: capture outbound body
+    observation?.captureOutbound(body);
 
-  const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
-  const headers = buildUpstreamHeaders({
-    clientHeaders: request.headers,
-    provider,
-    authHeader,
-    outboundHeaders: ir.outboundHeaders,
-    streaming: ir.stream,
-    extraForwardHeaders: deps.forwardHeaders,
-  });
+    const authHeader = resolveAuthHeader(provider.auth, deps.credentials);
+    headers = buildUpstreamHeaders({
+      clientHeaders: request.headers,
+      provider,
+      authHeader,
+      outboundHeaders: ir.outboundHeaders,
+      streaming: ir.stream,
+      extraForwardHeaders: deps.forwardHeaders,
+    });
+  } catch (error) {
+    const canonical = toCanonicalError(error);
+    // M6 tap point 3: encode/auth failure → end with the canonical status
+    observation?.end(canonical.status);
+    return errorResponse(
+      inbound,
+      await runErrorHooks(active, canonical, deps, requestId),
+    );
+  }
 
   let upstream: UpstreamResponse;
   try {
@@ -839,12 +860,14 @@ async function streamResponse(
       return errorResponse(inbound, errorEvent.error);
     }
     try {
-      // M6 tap point 4: non-stream success → end with 200
+      const body = inboundAdapter.encodeResponse(collected, encodeOptions);
+      // M6 tap point 4: non-stream success → end with 200 only AFTER encode succeeds,
+      // so an encode failure records the catch's canonical status instead of 200.
       observation?.end(200);
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: singleChunk(inboundAdapter.encodeResponse(collected, encodeOptions)),
+        body: singleChunk(body),
       };
     } catch (error) {
       const canonical =
