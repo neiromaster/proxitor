@@ -124,6 +124,68 @@ describe('mergePluginLayers', () => {
     expect(effective).toEqual([]);
   });
 
+  test('bulk form { disable: [names] } removes each named plugin; unknown names no-op', () => {
+    // Arrange
+    const layer: readonly PluginListEntry[] = [
+      'cache-control',
+      'session-id',
+      { disable: ['cache-control', 'ghost', 'session-id'] },
+    ];
+
+    // Act
+    const effective = mergePluginLayers(layer);
+
+    // Assert
+    expect(effective).toEqual([]);
+  });
+
+  test('bulk disable is not final — a later string re-add appends at the end', () => {
+    // Arrange
+    const globalPlugins: readonly PluginListEntry[] = ['cache-control', 'session-id'];
+    const providerPlugins: readonly PluginListEntry[] = [{ disable: ['cache-control'] }];
+    const bindingPlugins: readonly PluginListEntry[] = ['cache-control'];
+
+    // Act
+    const effective = mergePluginLayers(globalPlugins, providerPlugins, bindingPlugins);
+
+    // Assert
+    expect(effective).toEqual([{ name: 'session-id' }, { name: 'cache-control' }]);
+  });
+
+  test('bulk disable in an inner layer removes globals for that layer only', () => {
+    // Arrange
+    const globalPlugins: readonly PluginListEntry[] = ['cache-control', 'session-id'];
+    const providerPlugins: readonly PluginListEntry[] = [
+      { disable: ['cache-control', 'session-id'] },
+    ];
+
+    // Act
+    const effective = mergePluginLayers(globalPlugins, providerPlugins);
+
+    // Assert
+    expect(effective).toEqual([]);
+  });
+
+  test('non-array disable value keeps one-key-record semantics (a plugin named "disable")', () => {
+    // Arrange
+    const layer: readonly PluginListEntry[] = [{ disable: 'cache-control' }];
+
+    // Act
+    const effective = mergePluginLayers(layer);
+
+    // Assert
+    expect(effective).toEqual([{ name: 'disable', config: 'cache-control' }]);
+  });
+
+  test('disable key next to another key still throws the exactly-one-key error', () => {
+    // Arrange
+    const layer: readonly PluginListEntry[] = [{ disable: [], 'cache-control': {} }];
+
+    // Act / Assert
+    expect(() => mergePluginLayers(layer)).toThrow(RoutingConfigError);
+    expect(() => mergePluginLayers(layer)).toThrow(/exactly one key, got 2/);
+  });
+
   test('object entry with zero or multiple keys throws RoutingConfigError', () => {
     // Arrange
     const empty: readonly PluginListEntry[] = [{}];

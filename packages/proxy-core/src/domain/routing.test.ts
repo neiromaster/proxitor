@@ -356,4 +356,33 @@ describe('createRoutingTable validation', () => {
       /plugin list entry must have exactly one key/,
     );
   });
+
+  test('accepts the documented { disable: [name] } entry form at provider and model layers', () => {
+    // Arrange
+    const base = specConfig();
+    const config = specConfig({
+      providers: {
+        ...base.providers,
+        'openai-prod': {
+          ...openaiProvider(),
+          plugins: [{ disable: ['cache-control'] }],
+        },
+      },
+      models: [
+        {
+          match: 'gpt-5',
+          provider: 'openai-prod',
+          modelId: 'gpt-5',
+          plugins: [{ disable: ['session-id'] }],
+        },
+      ],
+    });
+
+    // Act
+    const table = createRoutingTable(config);
+    const resolution = table.resolve('gpt-5', '/v1/chat/completions');
+
+    // Assert — only the never-disabled global survives the dry-run merge
+    expect(resolution.plugins).toEqual([{ name: 'normalize-volatile-system' }]);
+  });
 });

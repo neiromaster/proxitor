@@ -2,7 +2,8 @@ import { RoutingConfigError } from './error.js';
 
 /**
  * Config form of a plugin declaration (spec §5.3): bare name, `{ name: config }`,
- * or `{ name: false }` to disable an inherited plugin.
+ * `{ name: false }` to disable an inherited plugin, or the documented bulk form
+ * `{ disable: [name, ...] }` to disable several inherited plugins at once.
  */
 export type PluginListEntry = string | Readonly<Record<string, unknown>>;
 
@@ -31,11 +32,36 @@ export function mergePluginLayers(
   return effective;
 }
 
+const isStringArray = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) && value.every(item => typeof item === 'string');
+
+function appendIfAbsent(effective: EffectivePlugin[], name: string): void {
+  if (!effective.some(plugin => plugin.name === name)) {
+    effective.push({ name });
+  }
+}
+
+/** Find-and-splice removal shared by `{ name: false }` and `{ disable: [names] }`. */
+function removeNamed(effective: EffectivePlugin[], name: string): void {
+  const index = effective.findIndex(plugin => plugin.name === name);
+  if (index !== -1) {
+    effective.splice(index, 1);
+  }
+}
+
+function upsertConfig(effective: EffectivePlugin[], name: string, config: unknown): void {
+  const next: EffectivePlugin = config === undefined ? { name } : { name, config };
+  const index = effective.findIndex(plugin => plugin.name === name);
+  if (index === -1) {
+    effective.push(next);
+    return;
+  }
+  effective[index] = next;
+}
+
 function applyEntry(effective: EffectivePlugin[], entry: PluginListEntry): void {
   if (typeof entry === 'string') {
-    if (!effective.some(plugin => plugin.name === entry)) {
-      effective.push({ name: entry });
-    }
+    appendIfAbsent(effective, entry);
     return;
   }
 
@@ -56,17 +82,20 @@ function applyEntry(effective: EffectivePlugin[], entry: PluginListEntry): void 
   const config: unknown = entry[name];
 
   if (config === false) {
-    const index = effective.findIndex(plugin => plugin.name === name);
-    if (index !== -1) {
-      effective.splice(index, 1);
+    removeNamed(effective, name);
+    return;
+  }
+
+  // B5.1: the documented bulk-disable form `{ disable: [names] }` removes each
+  // named plugin with the same find-and-splice as `{ name: false }`. Any other
+  // `disable` shape falls through to the one-key-record semantics below (a
+  // plugin literally named "disable", rejected as unknown at activation).
+  if (name === 'disable' && isStringArray(config)) {
+    for (const pluginName of config) {
+      removeNamed(effective, pluginName);
     }
     return;
   }
 
-  const index = effective.findIndex(plugin => plugin.name === name);
-  if (index === -1) {
-    effective.push(config === undefined ? { name } : { name, config });
-    return;
-  }
-  effective[index] = config === undefined ? { name } : { name, config };
+  upsertConfig(effective, name, config);
 }
