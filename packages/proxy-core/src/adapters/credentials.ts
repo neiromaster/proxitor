@@ -15,7 +15,7 @@ export function createCredentialAdapter(deps?: {
   const env = deps?.env ?? process.env;
   const doRead = deps?.readFile ?? (path => readFile(path, 'utf8'));
   const doStat = deps?.stat ?? (path => stat(path));
-  const fileCache = new Map<string, string>();
+  let fileCache = new Map<string, string>();
 
   const resolve = (ref: CredentialRef): string => {
     if (typeof ref === 'string') return ref;
@@ -42,8 +42,7 @@ export function createCredentialAdapter(deps?: {
     }
   };
 
-  const loadFileRef = async (ref: { file: string }): Promise<void> => {
-    if (fileCache.has(ref.file)) return;
+  const loadFileRef = async (ref: { file: string }): Promise<string> => {
     const info = await doStat(ref.file);
     if ((info.mode & 0o777) !== 0o600) {
       throw new Error(
@@ -54,10 +53,15 @@ export function createCredentialAdapter(deps?: {
     if (content.length === 0) {
       throw new Error(`credential file "${ref.file}" is empty`);
     }
-    fileCache.set(ref.file, content);
+    return content;
   };
 
   const preload = async (refs: readonly CredentialRef[]): Promise<void> => {
+    // Re-read every file ref into a fresh cache so rotated key files are
+    // picked up on reload and stale removed refs are dropped. Swap only on
+    // complete success — on failure the previous cache stays intact
+    // (keep-last-valid: the still-active config keeps resolving).
+    const next = new Map<string, string>();
     for (const ref of refs) {
       if (typeof ref === 'string') continue;
       if ('env' in ref) {
@@ -65,9 +69,10 @@ export function createCredentialAdapter(deps?: {
         continue;
       }
       if ('file' in ref) {
-        await loadFileRef(ref);
+        next.set(ref.file, await loadFileRef(ref));
       }
     }
+    fileCache = next;
   };
 
   return { resolve, preload };
