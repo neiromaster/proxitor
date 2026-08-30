@@ -86,6 +86,30 @@ describe('createFetchUpstream', () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 
+  test('direct abort() fires the fetch signal with no chunks consumed (B2.1)', async () => {
+    // Arrange — hung upstream: body never yields and never closes
+    let capturedSignal: AbortSignal | null | undefined;
+    const adapter = createFetchUpstream({
+      fetchImpl: async (_url, init) => {
+        capturedSignal = init?.signal;
+        return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+          status: 200,
+        });
+      },
+    });
+    const upstream = await adapter.fetch({
+      url: 'https://u/',
+      method: 'POST',
+      headers: {},
+      body: '',
+    });
+    expect(upstream.abort).toBeDefined();
+    // Act — abort the handle directly, without pulling a single chunk
+    upstream.abort?.();
+    // Assert — the fetch signal is aborted regardless of the stalled body
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
   test('clean completion also runs the abort (no-op) without failing the stream', async () => {
     const adapter = createFetchUpstream({ fetchImpl: async () => sseResponse(['a']) });
     const upstream = await adapter.fetch({

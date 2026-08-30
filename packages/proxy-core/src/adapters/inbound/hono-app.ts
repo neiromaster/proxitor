@@ -82,8 +82,10 @@ const ENCODER = new TextEncoder();
 
 /**
  * D-M5a-2/D-M5a-10: every pipeline body streams through a web ReadableStream.
- * Client disconnect (stream cancel, or raw.signal during a pull) returns the
- * iterator — its finally aborts the upstream fetch.
+ * Client disconnect (stream cancel, or raw.signal during a pull) first aborts
+ * the upstream directly via `onClientDisconnect` (B2.1) — `iterator.return()`
+ * alone queues behind the still-pending `next()`, so on a hung upstream the
+ * generator's finally (and the fetch abort) would never run.
  */
 export function toStreamingResponse(pr: PipelineResponse, signal: AbortSignal): Response {
   const iterator = pr.body[Symbol.asyncIterator]();
@@ -95,12 +97,22 @@ export function toStreamingResponse(pr: PipelineResponse, signal: AbortSignal): 
     signal.addEventListener('abort', () => resolve('disconnected'), { once: true });
   });
   let closed = false;
+  // B2.1: abort BEFORE unwinding; after the abort the pending next() rejects
+  // promptly and the generator chain unwinds through that rejection, so the
+  // return() is fire-and-forget (its rejection — the abort surfacing — is
+  // expected and irrelevant once the client is gone).
+  const abortUpstream = (): void => {
+    pr.onClientDisconnect?.();
+    void iterator.return?.().catch(() => {
+      // unwind rejection after abort — nothing left to report to
+    });
+  };
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (closed || signal.aborted) {
         if (!closed) {
           closed = true;
-          await iterator.return?.();
+          abortUpstream();
           controller.close();
         }
         return;
@@ -108,15 +120,20 @@ export function toStreamingResponse(pr: PipelineResponse, signal: AbortSignal): 
       const next = await Promise.race([iterator.next(), disconnected]);
       if (next === 'disconnected' || next.done) {
         closed = true;
-        await iterator.return?.();
+        if (next === 'disconnected') {
+          abortUpstream();
+        } else {
+          // Clean completion: no pending pull to unwind, return() settles immediately.
+          await iterator.return?.();
+        }
         controller.close();
         return;
       }
       controller.enqueue(ENCODER.encode(next.value));
     },
-    async cancel() {
+    cancel() {
       closed = true;
-      await iterator.return?.();
+      abortUpstream();
     },
   });
   return new Response(body, { status: pr.status, headers: { ...pr.headers } });

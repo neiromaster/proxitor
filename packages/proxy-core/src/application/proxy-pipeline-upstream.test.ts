@@ -589,3 +589,54 @@ describe('pipeline handle — stream transforms and observers', () => {
     expect(text).toContain('Hi!');
   });
 });
+
+describe('pipeline handle — client disconnect abort (B2.1)', () => {
+  it('attaches onClientDisconnect that aborts the upstream fetch handle', async () => {
+    // Arrange — upstream body stalls forever (never yields, never closes)
+    let captured: AbortController | undefined;
+    async function* stalled(): AsyncGenerator<string> {
+      await new Promise<void>(() => {});
+    }
+    const port = {
+      fetch: async (): Promise<UpstreamResponse> => {
+        const controller = new AbortController();
+        captured = controller;
+        return {
+          status: 200,
+          headers: {},
+          body: stalled(),
+          abort: () => controller.abort(),
+        };
+      },
+    };
+    const pipeline = createPipeline(makeDeps(port));
+    // Act
+    const response = await pipeline.handle(request());
+    // Assert — the response carries a direct abort that flips the fetch signal
+    expect(response.onClientDisconnect).toBeDefined();
+    expect(captured?.signal.aborted).toBe(false);
+    response.onClientDisconnect?.();
+    expect(captured?.signal.aborted).toBe(true);
+  });
+
+  it('wires onClientDisconnect on the buffered (non-stream) path too', async () => {
+    // Arrange — non-stream request, upstream body fully collected by the pipeline
+    let captured: AbortController | undefined;
+    const port = {
+      fetch: async (): Promise<UpstreamResponse> => {
+        const controller = new AbortController();
+        captured = controller;
+        return { status: 200, headers: {}, body: fromChunks([OAI_JSON]) };
+      },
+    };
+    const pipeline = createPipeline(makeDeps(port));
+    // Act
+    const response = await pipeline.handle(request(ANTHROPIC_BODY));
+    // Assert — field is wired for uniformity while the handle is in scope
+    // (a no-op here: the buffered body is already fully collected)
+    expect(response.status).toBe(200);
+    expect(response.onClientDisconnect).toBeDefined();
+    expect(captured).toBeDefined();
+    expect(() => response.onClientDisconnect?.()).not.toThrow();
+  });
+});

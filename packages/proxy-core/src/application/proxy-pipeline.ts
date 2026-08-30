@@ -47,6 +47,9 @@ export type PipelineResponse = {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: AsyncIterable<string>;
+  /** B2.1: invoked on client disconnect so the inbound adapter can abort the
+   * upstream fetch directly (generator unwinding alone can stall indefinitely). */
+  readonly onClientDisconnect?: () => void;
 };
 
 /** Everything the pipeline needs injected; the M5 composition root assembles it. */
@@ -643,6 +646,7 @@ async function runModelLess(
     status: upstream.status,
     headers: { 'content-type': contentType },
     body: upstream.body, // raw passthrough — never re-decoded
+    onClientDisconnect: () => upstream.abort?.(), // B2.1
   };
 }
 
@@ -868,6 +872,9 @@ async function streamResponse(
         status: 200,
         headers: { 'content-type': 'application/json' },
         body: singleChunk(body),
+        // B2.1: buffered body is already fully collected — abort is a no-op,
+        // wired for uniformity while the upstream handle is in scope.
+        onClientDisconnect: () => upstream.abort?.(),
       };
     } catch (error) {
       const canonical =
@@ -907,5 +914,6 @@ async function streamResponse(
     headers: { 'content-type': 'text/event-stream' },
     // M6 tap point 5: stream success — end() called in encodeClientStream finally
     body: encodeClientStream(observed, encoder, active, deps, requestId, observation),
+    onClientDisconnect: () => upstream.abort?.(), // B2.1
   };
 }

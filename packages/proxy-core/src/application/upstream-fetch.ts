@@ -10,6 +10,8 @@ export type UpstreamResponse = {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: AsyncIterable<string>;
+  /** B2.1: abort the in-flight fetch immediately (idempotent; no-op when settled). */
+  readonly abort?: () => void;
 };
 
 export type UpstreamFetchPort = {

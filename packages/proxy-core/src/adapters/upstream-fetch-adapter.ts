@@ -64,7 +64,14 @@ export function createFetchUpstream(deps?: {
           headers[name.toLowerCase()] = value;
         });
       }
-      return { status: upstream.status, headers, body: decoded() };
+      return {
+        status: upstream.status,
+        headers,
+        body: decoded(),
+        // B2.1: direct abort path — bypasses generator unwinding, which can
+        // stall behind a pending next() on a hung upstream.
+        abort: () => controller.abort(),
+      };
     },
   };
 }

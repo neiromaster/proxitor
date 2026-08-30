@@ -196,4 +196,41 @@ describe('createProxyApp — streaming responses', () => {
     expect(after.done).toBe(true);
     expect(finallyRan).toBe(true);
   });
+
+  test('B2.1: disconnect fires onClientDisconnect directly — hung upstream, no chunks needed', async () => {
+    // Arrange — stalled body: the pending next() never resolves, so generator
+    // unwinding alone (iterator.return()) could never run; onClientDisconnect
+    // stands in for the pipeline's upstream.abort wiring.
+    const client = new AbortController();
+    const upstreamAbort = new AbortController();
+    let disconnectCalled = false;
+    const stalled: PipelineResponse = {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      onClientDisconnect: () => {
+        disconnectCalled = true;
+        upstreamAbort.abort();
+      },
+      body: (async function* () {
+        await new Promise<void>(() => {}); // never yields, never ends
+      })(),
+    };
+    const { pipeline } = stubPipeline(stalled);
+    const app = createProxyApp({ pipeline, bodyLimitBytes: 1024 });
+    // Act — start the pull, then the client vanishes
+    const res = await app.request('/v1/messages', {
+      method: 'POST',
+      body: '{}',
+      signal: client.signal,
+    });
+    const reader = res.body!.getReader();
+    const pending = reader.read();
+    client.abort();
+    const after = await pending;
+    // Assert — the direct abort fired (fake fetch signal aborted) and the
+    // response closed without waiting on the stalled upstream
+    expect(disconnectCalled).toBe(true);
+    expect(upstreamAbort.signal.aborted).toBe(true);
+    expect(after.done).toBe(true);
+  });
 });
