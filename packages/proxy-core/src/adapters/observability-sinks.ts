@@ -1,5 +1,6 @@
 import { type InspectColor, styleText } from 'node:util';
 import type { LoggerPort } from '@proxitor/plugin-api';
+import { messageOf } from '../application/errors.js';
 import type { ObservationRecord, ObservationSink } from '../application/observability.js';
 
 const STYLE: Record<string, InspectColor> = {
@@ -149,7 +150,7 @@ export class DumpSink implements ObservationSink {
         .catch(err => {
           this.logger.debug('DumpSink failed', {
             requestId: record.requestId,
-            error: err instanceof Error ? err.message : String(err),
+            error: messageOf(err),
           });
         })
         .finally(() => {

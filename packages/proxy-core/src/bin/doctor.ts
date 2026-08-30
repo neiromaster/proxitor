@@ -5,6 +5,7 @@ import type { LoggerPort } from '@proxitor/plugin-api';
 import { createConfigFile } from '../adapters/config-file.js';
 import { validateActivation } from '../application/activation-check.js';
 import { type ProxyConfig, parseConfig } from '../application/config-schema.js';
+import { messageOf } from '../application/errors.js';
 import { createPluginManager } from '../application/plugin-manager.js';
 import { createRoutingTable } from '../domain/index.js';
 import { createBuiltInPluginRegistry } from '../plugins/built-in/index.js';
@@ -87,10 +88,6 @@ function skipDependentChecks(checks: DoctorCheck[]): void {
   );
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 async function checkConfig(
   options: { configPath?: string },
   io: DoctorIo,
@@ -109,14 +106,14 @@ async function checkConfig(
       checks.push({
         name: 'config-valid',
         status: 'fail',
-        detail: formatError(error),
+        detail: messageOf(error),
       });
     }
   } catch (error) {
     checks.push({
       name: 'config-found',
       status: 'fail',
-      detail: formatError(error),
+      detail: messageOf(error),
     });
     checks.push({ name: 'config-valid', status: 'skip' });
     return { checks, config: undefined };
@@ -158,7 +155,7 @@ function checkRouting(config: ProxyConfig): DoctorCheck {
     return {
       name: 'routing-table',
       status: 'fail',
-      detail: formatError(error),
+      detail: messageOf(error),
     };
   }
 }
@@ -175,7 +172,7 @@ function checkActivation(config: ProxyConfig): DoctorCheck {
     return {
       name: 'activation',
       status: 'fail',
-      detail: formatError(error),
+      detail: messageOf(error),
     };
   }
 }

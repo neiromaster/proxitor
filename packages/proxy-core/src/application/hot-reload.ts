@@ -1,6 +1,7 @@
 import type { LoggerPort } from '@proxitor/plugin-api';
 import type { RoutingTable } from '../domain/index.js';
 import type { ProxyConfig } from './config-schema.js';
+import { messageOf } from './errors.js';
 
 export type RuntimeState = {
   readonly config: ProxyConfig;
@@ -247,7 +248,7 @@ async function applyReload(
     try {
       deps.reconfigure(nextConfig);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = messageOf(error);
       logger.warn(`config reloaded but reconfigure failed: ${message}`, {
         error,
       });
@@ -256,7 +257,7 @@ async function applyReload(
     logger.info(`config reloaded — ${changes}`);
     return { ok: true, changes };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = messageOf(error);
     logger.error(`config reload failed — keeping previous config: ${message}`, {
       error,
     });
@@ -294,7 +295,7 @@ export function createHotReload(options: {
         // Schedule next tick to avoid recursion
         setImmediate(() => {
           reload().catch(err => {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = messageOf(err);
             logger.error(`coalesced reload retry failed: ${message}`, {
               error: err,
             });

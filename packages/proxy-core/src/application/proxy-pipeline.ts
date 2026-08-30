@@ -31,6 +31,7 @@ import type {
 } from '../formats/shared/stream-codec.js';
 import type { CredentialResolverPort } from './credentials.js';
 import { resolveAuthHeader } from './credentials.js';
+import { messageOf } from './errors.js';
 import type { ObservabilityPort, RequestObservation } from './observability.js';
 import {
   type ActivePlugin,
@@ -105,7 +106,7 @@ export function toCanonicalError(error: unknown): CanonicalError {
   }
   return {
     type: 'internal_error',
-    message: error instanceof Error ? error.message : String(error),
+    message: messageOf(error),
     status: 500,
   };
 }
@@ -180,7 +181,7 @@ async function runErrorHooks(
       deps.logger.warn('plugin onError hook failed; keeping current error', {
         requestId,
         plugin: ap.name,
-        error: hookError instanceof Error ? hookError.message : String(hookError),
+        error: messageOf(hookError),
       });
     }
   }
@@ -217,7 +218,7 @@ async function* observeEvents(
         deps.logger.warn('plugin onEvent observer failed', {
           requestId,
           plugin: ap.name,
-          error: hookError instanceof Error ? hookError.message : String(hookError),
+          error: messageOf(hookError),
         });
       }
     }
@@ -232,7 +233,7 @@ function iterationError(error: unknown): CanonicalError {
   }
   return {
     type: 'plugin_stream_error',
-    message: `stream pipeline failed: ${error instanceof Error ? error.message : String(error)}`,
+    message: `stream pipeline failed: ${messageOf(error)}`,
     status: 500,
   };
 }
@@ -493,7 +494,7 @@ export async function prepareUpstream(
       deps.logger.warn('plugin onRequest hook failed; skipping plugin', {
         requestId,
         plugin: ap.name,
-        error: error instanceof Error ? error.message : String(error),
+        error: messageOf(error),
       });
       continue;
     }
@@ -677,9 +678,6 @@ async function runModelLess(
     onClientDisconnect: () => upstream.abort?.(), // B2.1
   };
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 async function collectBody(chunks: AsyncIterable<string>): Promise<string> {
   let text = '';

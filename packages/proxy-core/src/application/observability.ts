@@ -5,6 +5,7 @@ import type {
   Usage,
 } from '@proxitor/plugin-api';
 import type { ObservabilityConfig } from './config-schema.js';
+import { messageOf } from './errors.js';
 import { classifyCacheOutcome, classifyRequestType } from './observability-classify.js';
 import { SessionTracker } from './observability-session.js';
 
@@ -49,10 +50,6 @@ export type ObservabilityPort = {
   begin(ctx: ObservationContext): RequestObservation;
   reconfigure(config: ObservabilityConfig): void;
 };
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 function emitObservation(
   ctx: ObservationContext,

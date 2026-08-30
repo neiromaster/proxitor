@@ -6,6 +6,7 @@ import {
 } from '@proxitor/plugin-api';
 import type { EffectivePlugin } from '../domain/index.js';
 import { RoutingConfigError } from '../domain/index.js';
+import { messageOf } from './errors.js';
 
 /** A plugin resolved for one route: instance + validated config (spec §7). */
 export type ActivePlugin = {
@@ -76,7 +77,7 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
           config = plugin.validateConfig(entry.config);
         } catch (error) {
           throw new RoutingConfigError(
-            `plugin "${entry.name}" rejected its config: ${error instanceof Error ? error.message : String(error)}`,
+            `plugin "${entry.name}" rejected its config: ${messageOf(error)}`,
             { cause: error },
           );
         }

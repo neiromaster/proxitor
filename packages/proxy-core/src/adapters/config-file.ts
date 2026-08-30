@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { ConfigError } from '../application/config-schema.js';
+import { messageOf } from '../application/errors.js';
 
 export type ConfigFilePort = {
   findAndRead(explicitPath?: string): Promise<{ text: string; path: string }>;
@@ -92,10 +93,9 @@ export function createConfigFile(options?: {
       try {
         return path.endsWith('.json') ? (JSON.parse(text) as unknown) : parseYaml(text);
       } catch (error) {
-        throw new ConfigError(
-          `${path}: parse failed: ${error instanceof Error ? error.message : String(error)}`,
-          { cause: error },
-        );
+        throw new ConfigError(`${path}: parse failed: ${messageOf(error)}`, {
+          cause: error,
+        });
       }
     },
   };

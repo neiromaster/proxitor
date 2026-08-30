@@ -4,6 +4,7 @@ import { command, flag, number, option, optional, string, subcommands } from 'cm
 import { defaultWritePath } from '../adapters/config-file.js';
 import { createWizardIo, runWizard } from '../adapters/config-wizard.js';
 import { createClackPrompt } from '../adapters/prompt-clack.js';
+import { messageOf } from '../application/errors.js';
 import {
   type CreateProxitorOptions,
   createProxitor,
@@ -24,9 +25,7 @@ export function runGuarded<T>(
     try {
       await run(args);
     } catch (error) {
-      console.error(
-        `proxitor: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      console.error(`proxitor: ${messageOf(error)}`);
       process.exit(1);
     }
   };
@@ -84,9 +83,7 @@ export function registerShutdown(
       try {
         await deps.onBeforeExit?.();
       } catch (error) {
-        deps.log(
-          `shutdown: onBeforeExit failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        deps.log(`shutdown: onBeforeExit failed: ${messageOf(error)}`);
       }
 
       server.closeIdleConnections();
