@@ -78,7 +78,11 @@ function applyEntry(effective: EffectivePlugin[], entry: PluginListEntry): void 
       `plugin list entry must have exactly one key, got ${keys.length}: ${JSON.stringify(entry)}`,
     );
   }
-  const name = keys[0] as string;
+  const name = keys[0];
+  if (name === undefined) {
+    // Total-code guard: keys.length === 1 was just enforced above.
+    throw new RoutingConfigError('plugin list entry must have exactly one key');
+  }
   const config: unknown = entry[name];
 
   if (config === false) {
