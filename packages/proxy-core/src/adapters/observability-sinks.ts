@@ -78,6 +78,29 @@ export class LiveLineSink implements ObservationSink {
   }
 }
 
+/** One verbose line per completed request (logging.verbose): requestId, model,
+ * provider, status, and the cache verdict as recorded. Fixed `key=value` shape
+ * so it is greppable and distinct from the LiveLineSink summary format.
+ */
+export function formatVerboseLine(record: ObservationRecord): string {
+  const model = record.model.length > 0 ? record.model : '-';
+  const provider = record.provider ?? '-';
+  return `[${record.requestId}] model=${model} provider=${provider} status=${record.status} cache=${record.outcome.label}`;
+}
+
+/** Sink that emits one verbose line per completed request. */
+export class VerboseLineSink implements ObservationSink {
+  private readonly info: (line: string) => void;
+
+  constructor(deps: { info: (line: string) => void }) {
+    this.info = deps.info;
+  }
+
+  emit(record: ObservationRecord): void {
+    this.info(formatVerboseLine(record));
+  }
+}
+
 export type DumpSinkDeps = {
   env: Record<string, string | undefined>;
   writeFile: (path: string, data: string) => Promise<void>;

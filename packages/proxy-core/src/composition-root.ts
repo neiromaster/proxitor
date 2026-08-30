@@ -10,7 +10,11 @@ import {
 } from './adapters/inbound/control-plane.js';
 import { createProxyApp } from './adapters/inbound/hono-app.js';
 import { consolaLogger } from './adapters/logger.js';
-import { DumpSink, LiveLineSink } from './adapters/observability-sinks.js';
+import {
+  DumpSink,
+  LiveLineSink,
+  VerboseLineSink,
+} from './adapters/observability-sinks.js';
 import { createFetchUpstream } from './adapters/upstream-fetch-adapter.js';
 import { validateActivation } from './application/activation-check.js';
 import {
@@ -84,7 +88,6 @@ export type CreateProxitorOptions = {
 
 /** Composition root (spec §3.1, D13): the only assembler. Throws on any load failure. */
 export async function createProxitor(options: CreateProxitorOptions): Promise<Proxitor> {
-  const logger = options.logger ?? consolaLogger(options.verbose ?? false);
   const env = options.env ?? process.env;
 
   const files = createConfigFile({ env, readFile: options.readFile });
@@ -93,6 +96,12 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
       ? { text: options.configText, path: '<memory>' }
       : await files.findAndRead(options.configPath);
   const config = parseConfig(files.parse(source.text, source.path));
+
+  // logging.verbose is live config: the CLI flag ORs into the log level, and
+  // the config knob additionally adds the per-request verbose sink below.
+  // An injected logger keeps precedence (it is never rebuilt).
+  const verbose = (options.verbose ?? false) || config.logging.verbose;
+  const logger = options.logger ?? consolaLogger(verbose);
 
   const credentials = createCredentialAdapter({
     env,
@@ -104,9 +113,13 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
   const manager = createPluginManager({ plugins: createBuiltInPluginRegistry(), logger });
   validateActivation(config, manager);
 
-  // Construct sinks (options.sinks override defaults)
+  // Construct sinks (options.sinks override defaults). The verbose per-request
+  // line is boot-time config: flipping logging.verbose requires a restart.
   const sinks: readonly ObservationSink[] = options.sinks ?? [
     new LiveLineSink({ info: line => logger.info(line) }),
+    ...(config.logging.verbose
+      ? [new VerboseLineSink({ info: line => logger.info(line) })]
+      : []),
     new DumpSink({
       env,
       writeFile,

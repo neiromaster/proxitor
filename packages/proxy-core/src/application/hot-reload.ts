@@ -88,9 +88,16 @@ function canonicalJsonEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }
 
+/** forwardHeaders is a set of header names — order carries no meaning, so
+ * compare sorted copies to keep reordering from firing a spurious warning. */
+function sortedForwardHeaders(headers: readonly string[]): string[] {
+  return [...headers].sort();
+}
+
 /**
  * Check if server restart keys changed — these require restart to apply.
- * Compares host, port, bodyLimitBytes, and forwardHeaders (JSON equality).
+ * Compares host, port, bodyLimitBytes, forwardHeaders (order-insensitive), and
+ * logging (logger and verbose sink are constructed once at boot).
  */
 function restartKeysChanged(prev: ProxyConfig, next: ProxyConfig): boolean {
   return (
@@ -98,20 +105,22 @@ function restartKeysChanged(prev: ProxyConfig, next: ProxyConfig): boolean {
     JSON.stringify(prev.server.port) !== JSON.stringify(next.server.port) ||
     JSON.stringify(prev.server.bodyLimitBytes) !==
       JSON.stringify(next.server.bodyLimitBytes) ||
-    JSON.stringify(prev.server.forwardHeaders) !==
-      JSON.stringify(next.server.forwardHeaders)
+    JSON.stringify(sortedForwardHeaders(prev.server.forwardHeaders)) !==
+      JSON.stringify(sortedForwardHeaders(next.server.forwardHeaders)) ||
+    JSON.stringify(prev.logging) !== JSON.stringify(next.logging)
   );
 }
 
 /**
  * Summarize configuration diff for logging.
  * Returns empty string when configs are JSON-equal on the operational keys
- * (providers, models, plugins, defaultProvider, observability, controlPlane).
+ * (providers, models, plugins, defaultProvider, observability, logging, controlPlane).
  * Otherwise returns section-level parts:
  * - providers as `+id`/`-id`/`id (changed)`
  * - models as `+match`/`-match`/`match (provider/modelId changed)`
  * - controlPlane as `+controlPlane`/`-controlPlane`/`controlPlane (changed)`
- * - plus `plugins`, `defaultProvider`, `observability` when their canonical JSON differs
+ * - plus `plugins`, `defaultProvider`, `observability`, `logging` when their
+ *   canonical JSON differs
  *
  * Server keys are deliberately NOT in the diff (they belong to the restart-warning).
  */
@@ -182,6 +191,9 @@ function diffMisc(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
   if (!canonicalJsonEqual(prev.observability, next.observability)) {
     parts.push('observability');
   }
+  if (!canonicalJsonEqual(prev.logging, next.logging)) {
+    parts.push('logging');
+  }
   diffControlPlane(prev, next, parts);
 }
 
@@ -205,7 +217,7 @@ export function summarizeConfigDiff(prev: ProxyConfig, next: ProxyConfig): strin
  * Reload process (never throws, never swaps on failure):
  * 1. Coalescing guard — concurrent calls return ok:true with coalesced message
  * 2. readNext() → buildTable() → preloadCredentials() → validate()
- * 3. Restart-check — warn if server keys changed
+ * 3. Restart-check — warn if server/logging keys changed
  * 4. swap() → reconfigure() → log success
  * 5. Any error → log failure, return {ok:false}, keep previous config
  */
@@ -225,7 +237,7 @@ async function applyReload(
     // Restart-check
     if (restartKeysChanged(swap.current.config, nextConfig)) {
       logger.warn(
-        'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
+        'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
       );
     }
 

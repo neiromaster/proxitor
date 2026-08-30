@@ -1,6 +1,7 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { LoggerPort } from '@proxitor/plugin-api';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ConfigError } from './application/config-schema.js';
 import type { ObservationRecord, ObservationSink } from './application/observability.js';
@@ -30,6 +31,52 @@ models:
     modelId: '$MODEL'
 defaultProvider: oai
 `;
+
+// Minimal OpenAI-style streaming response for pipeline round-trips.
+const STREAM_SSE = `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello!"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":6,"total_tokens":16}}
+
+data: [DONE]
+
+`;
+
+const VERBOSE_CONFIG = `
+version: 1
+providers:
+  openai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: { env: OAI_KEY } }
+models:
+  - match: gpt-*
+    provider: openai
+    modelId: gpt-4
+defaultProvider: openai
+logging:
+  verbose: true
+`;
+
+const QUIET_CONFIG = `
+version: 1
+providers:
+  openai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: { env: OAI_KEY } }
+models:
+  - match: gpt-*
+    provider: openai
+    modelId: gpt-4
+defaultProvider: openai
+`;
+
+// The verbose sink is the only emitter using `status=`/`cache=` key=value tokens;
+// the LiveLineSink summary format never contains them.
+const verboseLinesOf = (infoLines: string[]): string[] =>
+  infoLines.filter(line => /status=\d+ cache=/.test(line));
 
 describe('createProxitor', () => {
   test('assembles the full stack from config text', async () => {
@@ -194,6 +241,99 @@ defaultProvider: openai
     expect(record.requestType).toBe('main');
     expect(record.usage.present).toBe(true);
     expect(record.usage.outputTokens).toBe(6);
+  });
+
+  test('logging.verbose on -> one verbose info line per completed request', async () => {
+    // Arrange
+    const infoLines: string[] = [];
+    const recording: LoggerPort = {
+      ...silent,
+      info: (message: string) => {
+        infoLines.push(message);
+      },
+    };
+
+    const proxitor = await createProxitor({
+      configText: VERBOSE_CONFIG,
+      env: { OAI_KEY: 'test-key' },
+      fetchImpl: async () =>
+        new Response(STREAM_SSE, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      logger: recording,
+    });
+
+    // Act - one completed request (stream drained so observation ends)
+    const response = await proxitor.app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      }),
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Response body has no reader');
+    let done = false;
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
+    }
+
+    // Assert
+    expect(response.status).toBe(200);
+    const verboseLines = verboseLinesOf(infoLines);
+    expect(verboseLines).toHaveLength(1);
+    const line = verboseLines[0];
+    if (!line) throw new Error('verbose info line missing');
+    expect(line).toMatch(/^\[\S+\] model=gpt-4 provider=openai status=200 cache=COLD$/);
+  });
+
+  test('logging off -> no verbose per-request line', async () => {
+    // Arrange
+    const infoLines: string[] = [];
+    const recording: LoggerPort = {
+      ...silent,
+      info: (message: string) => {
+        infoLines.push(message);
+      },
+    };
+
+    const proxitor = await createProxitor({
+      configText: QUIET_CONFIG,
+      env: { OAI_KEY: 'test-key' },
+      fetchImpl: async () =>
+        new Response(STREAM_SSE, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      logger: recording,
+    });
+
+    // Act - one completed request (stream drained so observation ends)
+    const response = await proxitor.app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      }),
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Response body has no reader');
+    let done = false;
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
+    }
+
+    // Assert - the request completes (LiveLine still logs) but no verbose line
+    expect(response.status).toBe(200);
+    expect(verboseLinesOf(infoLines)).toHaveLength(0);
+    expect(infoLines.length).toBeGreaterThan(0);
   });
 });
 

@@ -4,7 +4,9 @@ import {
   DumpSink,
   type DumpSinkDeps,
   formatObservationLine,
+  formatVerboseLine,
   LiveLineSink,
+  VerboseLineSink,
 } from './observability-sinks.js';
 
 // Helper to create a minimal record
@@ -161,6 +163,53 @@ describe('LiveLineSink', () => {
     // Assert
     expect(colorCallCount).toBe(1);
     expect(info).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('formatVerboseLine', () => {
+  test('pins the verbose request line format', () => {
+    // Arrange
+    const record = baseRecord();
+    record.outcome = { label: 'HIT', hitPct: 85 };
+
+    // Act
+    const line = formatVerboseLine(record);
+
+    // Assert
+    expect(line).toBe('[req-123] model=gpt-4 provider=openai status=200 cache=HIT');
+  });
+
+  test('uses - placeholder for absent provider and empty model', () => {
+    // Arrange
+    const record = baseRecord();
+    record.provider = undefined;
+    record.model = '';
+
+    // Act
+    const line = formatVerboseLine(record);
+
+    // Assert
+    expect(line).toBe('[req-123] model=- provider=- status=200 cache=MISS');
+  });
+});
+
+describe('VerboseLineSink', () => {
+  test('emits exactly one info line per record', () => {
+    // Arrange
+    const lines: string[] = [];
+    const sink = new VerboseLineSink({
+      info: (line: string) => {
+        lines.push(line);
+      },
+    });
+
+    // Act
+    sink.emit(baseRecord());
+    sink.emit(baseRecord());
+
+    // Assert
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe('[req-123] model=gpt-4 provider=openai status=200 cache=MISS');
   });
 });
 

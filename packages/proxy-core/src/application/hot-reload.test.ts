@@ -240,6 +240,13 @@ describe('summarizeConfigDiff', () => {
     expect(diff).toContain('observability');
   });
 
+  test('logging change surfaces', () => {
+    const config1 = createFakeConfig();
+    const config2 = createFakeConfig({ logging: { verbose: true } });
+    const diff = summarizeConfigDiff(config1, config2);
+    expect(diff).toContain('logging');
+  });
+
   test('added controlPlane surfaces as +controlPlane', () => {
     const config1 = createFakeConfig();
     const config2 = createFakeConfig({ controlPlane: { token: 'tok' } });
@@ -555,7 +562,7 @@ describe('createHotReload', () => {
     // Assert
     expect(result.ok).toBe(true);
     expect(logger.warn).toHaveBeenCalledWith(
-      'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
+      'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
     );
   });
 
@@ -586,7 +593,7 @@ describe('createHotReload', () => {
 
     // Assert
     expect(logger.warn).toHaveBeenCalledWith(
-      'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
+      'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
     );
   });
 
@@ -617,7 +624,7 @@ describe('createHotReload', () => {
 
     // Assert
     expect(logger.warn).toHaveBeenCalledWith(
-      'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
+      'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
     );
   });
 
@@ -648,7 +655,78 @@ describe('createHotReload', () => {
 
     // Assert
     expect(logger.warn).toHaveBeenCalledWith(
-      'host/port/bodyLimit/forwardHeaders changed — restart proxitor to apply (live reload does not re-bind the socket or body parser)',
+      'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
+    );
+  });
+
+  test('forwardHeaders reorder only -> no restart warning (order-insensitive)', async () => {
+    // Arrange
+    const initialConfig = createFakeConfig({
+      server: {
+        host: '127.0.0.1',
+        port: 8828,
+        bodyLimitBytes: 52428800,
+        forwardHeaders: ['x-request-id', 'x-session-id', 'accept'],
+      },
+    });
+    const nextConfig = createFakeConfig({
+      server: {
+        host: '127.0.0.1',
+        port: 8828,
+        bodyLimitBytes: 52428800,
+        forwardHeaders: ['accept', 'x-request-id', 'x-session-id'],
+      },
+    });
+
+    const logger: LoggerPort = { ...silent, warn: vi.fn() };
+    const deps: HotReloadDeps = {
+      readNext: async () => nextConfig,
+      buildTable: () => createFakeRoutingTable('next'),
+      validate: vi.fn(),
+      preloadCredentials: vi.fn(),
+      reconfigure: vi.fn(),
+      logger,
+    };
+
+    const hotReload = createHotReload({
+      initial: { config: initialConfig, table: createFakeRoutingTable('initial') },
+      deps,
+    });
+
+    // Act
+    const result = await hotReload.reload();
+
+    // Assert - same header set, reordered: no restart warning, reload succeeds
+    expect(result.ok).toBe(true);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test('logging.verbose change triggers restart warning', async () => {
+    // Arrange
+    const initialConfig = createFakeConfig();
+    const nextConfig = createFakeConfig({ logging: { verbose: true } });
+
+    const logger: LoggerPort = { ...silent, warn: vi.fn() };
+    const deps: HotReloadDeps = {
+      readNext: async () => nextConfig,
+      buildTable: () => createFakeRoutingTable('next'),
+      validate: vi.fn(),
+      preloadCredentials: vi.fn(),
+      reconfigure: vi.fn(),
+      logger,
+    };
+
+    const hotReload = createHotReload({
+      initial: { config: initialConfig, table: createFakeRoutingTable('initial') },
+      deps,
+    });
+
+    // Act
+    await hotReload.reload();
+
+    // Assert
+    expect(logger.warn).toHaveBeenCalledWith(
+      'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
     );
   });
 
