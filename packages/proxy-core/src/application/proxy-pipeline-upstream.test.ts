@@ -669,3 +669,111 @@ describe('pipeline handle — client disconnect abort (B2.1)', () => {
     expect(() => response.onClientDisconnect?.()).not.toThrow();
   });
 });
+
+describe('pipeline handle — client disconnect status accuracy (A)', () => {
+  /**
+   * Stalled upstream: the read never yields; it rejects like an aborted fetch
+   * once the controller aborts. The rejection promise is created eagerly (an
+   * 'abort' listener registered after abort() would never fire) and honours
+   * an already-aborted signal.
+   */
+  function stalledUpstreamPort(): {
+    port: { fetch: () => Promise<UpstreamResponse> };
+    captured: () => AbortController | undefined;
+  } {
+    let controller: AbortController | undefined;
+    return {
+      captured: () => controller,
+      port: {
+        fetch: async (): Promise<UpstreamResponse> => {
+          const local = new AbortController();
+          controller = local;
+          const aborted = new Promise<never>((_, reject) => {
+            const abortError = (): void =>
+              reject(new Error('This operation was aborted'));
+            if (local.signal.aborted) {
+              abortError();
+              return;
+            }
+            local.signal.addEventListener('abort', abortError, { once: true });
+          });
+          return {
+            status: 200,
+            headers: {},
+            body: (async function* stalled(): AsyncGenerator<string> {
+              await aborted;
+              yield ''; // unreachable: the await above only settles via rejection
+            })(),
+            abort: () => local.abort(),
+          };
+        },
+      },
+    };
+  }
+
+  it('records 499 with no error frame when the client disconnects mid-stream', async () => {
+    // Arrange — stalled upstream whose read rejects only via our own abort
+    const { port: observability, ended } = fakeObservability();
+    const upstream = stalledUpstreamPort();
+    const pipeline = createPipeline(
+      makeDeps(upstream.port, undefined, undefined, undefined, [], observability),
+    );
+    // Act — the client hangs up: the B2.1 handler flips the flag, then aborts
+    const response = await pipeline.handle(request());
+    response.onClientDisconnect?.();
+    const text = await readBody(response.body);
+    // Assert — client-closed convention, no server 500, no futile error frame
+    expect(upstream.captured()?.signal.aborted).toBe(true);
+    expect(ended).toEqual([499]);
+    expect(text).toBe('');
+  });
+
+  it('still records 500 with an error frame when the upstream stream dies on its own', async () => {
+    // Arrange — the upstream aborts WITHOUT a client disconnect having fired
+    const { port: observability, ended } = fakeObservability();
+    /** One chunk, then death: an upstream-side abort, not a client disconnect. */
+    async function* upstreamDiesAlone(): AsyncGenerator<string> {
+      for (const chunk of OAI_SSE.slice(0, 1)) {
+        yield chunk;
+      }
+      throw new Error('This operation was aborted');
+    }
+    const port = {
+      fetch: async (): Promise<UpstreamResponse> => ({
+        status: 200,
+        headers: {},
+        body: upstreamDiesAlone(),
+      }),
+    };
+    const pipeline = createPipeline(
+      makeDeps(port, undefined, undefined, undefined, [], observability),
+    );
+    // Act
+    const text = await readBody((await pipeline.handle(request())).body);
+    // Assert — an upstream-side abort is a genuine failure: 500 + error frame
+    expect(ended).toEqual([500]);
+    expect(text).toContain('plugin_stream_error');
+  });
+});
+
+describe('pipeline handle — request-time format-skip warn dedupe (F)', () => {
+  it('warns once per (plugin, format) across repeated requests', async () => {
+    // Arrange — anthropic-messages-only plugin routed to an openai-chat provider
+    const anthropicOnly: ProxyPlugin = {
+      name: 'anthropicOnlySkipOnce',
+      reservedKeys: { 'anthropic-messages': ['cache_control'] },
+    };
+    const upstream = fakeFetch(200, OAI_SSE);
+    const pipeline = createPipeline(
+      makeDeps(upstream.port, new Map([['anthropicOnlySkipOnce', anthropicOnly]])),
+    );
+    // Act — two full requests through the incompatible route
+    await readBody((await pipeline.handle(request())).body);
+    await readBody((await pipeline.handle(request())).body);
+    // Assert — the skip happens per request, the warn only on the first
+    const skipWarns = logger.warns.filter(message =>
+      message.includes('anthropicOnlySkipOnce'),
+    );
+    expect(skipWarns).toHaveLength(1);
+  });
+});

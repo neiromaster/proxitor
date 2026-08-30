@@ -171,4 +171,16 @@ describe('pipeline stamps the client session hint (B3.2)', () => {
     expect(wireSessionId).toMatch(/^[0-9a-f]{64}$/);
     expect(observedSessionId).toBe(wireSessionId);
   });
+
+  it('falls back to x-session-id when the primary header is present but empty (E)', async () => {
+    // Arrange / Act — empty primary must not shadow the valid lower-priority header
+    const { wireSessionId, observedSessionId } = await handleWithSessionHeaders({
+      'x-claude-code-session-id': '',
+      'x-session-id': 'xyz',
+    });
+
+    // Assert
+    expect(wireSessionId).toBe('xyz');
+    expect(observedSessionId).toBe('xyz');
+  });
 });

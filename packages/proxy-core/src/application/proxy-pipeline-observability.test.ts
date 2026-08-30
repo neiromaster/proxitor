@@ -478,4 +478,86 @@ describe('pipeline observability tap', () => {
     expect(begun).toHaveLength(1);
     expect(ended).toEqual([200]);
   });
+
+  it('records the error status, not the short-circuit status, when short-circuit encodeResponse throws (B)', async () => {
+    // Arrange — openai-chat inbound (its encodeResponse reads the clock), a
+    // short-circuiting plugin, and a clock that throws during that encode
+    const { port, ended } = fakeObservability();
+    const plugin: ProxyPlugin = {
+      name: 'sc-boom-plugin',
+      onRequest: () => ({
+        shortCircuit: true,
+        status: 200,
+        events: [
+          {
+            type: 'message_start',
+            id: 'msg-1',
+            model: 'gpt-5',
+            message: { type: 'message', id: 'msg-1', role: 'assistant' },
+          },
+          {
+            type: 'content_block_start',
+            index: 0,
+            block: { type: 'text', text: 'done' },
+          },
+          { type: 'content_block_stop', index: 0 },
+          {
+            type: 'message_delta',
+            delta: { stop_reason: 'end_turn' },
+            usage: { output_tokens: 8 },
+          },
+        ] as CanonicalEvent[],
+      }),
+    };
+    const deps: PipelineDeps = {
+      // Own table: the plugin must sit on the openai-chat route the request hits
+      // (makeTable wires plugins onto the anthropic binding only).
+      table: createRoutingTable({
+        providers: { oai: OPENAI_PROVIDER },
+        models: [
+          {
+            match: 'gpt-*',
+            provider: 'oai',
+            modelId: 'gpt-5-real',
+            plugins: ['sc-boom-plugin'],
+          },
+        ],
+      }),
+      manager: createPluginManager({
+        plugins: new Map([['sc-boom-plugin', plugin]]),
+        logger,
+      }),
+      fetch: {
+        fetch: async () => {
+          throw new Error('upstream not under test');
+        },
+      },
+      credentials: {
+        resolve: (ref: unknown) => (typeof ref === 'string' ? ref : 'resolved-secret'),
+      },
+      logger,
+      clock: {
+        now: () => {
+          throw new Error('clock boom');
+        },
+      },
+      random: { uuid: () => 'req-1' },
+      observability: port,
+    };
+    // Act
+    const outcome = await prepareUpstream(openaiRequest(), deps);
+    if (outcome.kind !== 'shortCircuit') {
+      throw new Error(`expected shortCircuit, got ${outcome.kind}`);
+    }
+    let bodyText = '';
+    for await (const chunk of outcome.response.body) {
+      bodyText += chunk;
+    }
+    const parsed = JSON.parse(bodyText) as { error: { message: string } };
+    // Assert — the catch ended the observation with the canonical status;
+    // nothing was recorded as the requested 200
+    expect(outcome.response.status).toBe(500);
+    expect(parsed.error.message).toContain('clock boom');
+    expect(ended).toEqual([500]);
+  });
 });

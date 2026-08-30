@@ -94,6 +94,14 @@ export type PrepareOutcome =
   | { readonly kind: 'error'; readonly response: PipelineResponse }
   | { readonly kind: 'ready'; readonly ready: ReadyRequest };
 
+/**
+ * F: request-time activation runs on every request, so its format-skip warn
+ * would repeat per request. Dedupe to once per (plugin, format) per process —
+ * bounded by registry size × wire-format count; load-time warns
+ * (activation-check) are unaffected.
+ */
+const warnedRequestFormatSkips = new Set<string>();
+
 /** Map any pipeline-stage exception to its CanonicalError (spec §10). */
 export function toCanonicalError(error: unknown): CanonicalError {
   if (error instanceof RoutingError) {
@@ -248,6 +256,8 @@ async function* encodeClientStream(
   deps: PipelineDeps,
   requestId: string,
   observation?: RequestObservation,
+  /** A: true once the client hung up and the pipeline aborted the upstream itself. */
+  isClientGone?: () => boolean,
 ): AsyncGenerator<string> {
   let emittedStatus: number | undefined;
   try {
@@ -262,6 +272,16 @@ async function* encodeClientStream(
       yield done;
     }
   } catch (error) {
+    // A: a client disconnect aborts the upstream ourselves, so the surfacing
+    // AbortError is not a server failure — record 499 (nginx client-closed
+    // convention). No error frame: the client is gone and writing is futile,
+    // and the onError chain exists to populate exactly that frame, so it is
+    // skipped with it (no built-in plugin defines onError; observability
+    // still ends 499). An upstream-side abort keeps the 500 behavior below.
+    if (isClientGone?.() === true) {
+      emittedStatus = 499;
+      return;
+    }
     const canonical = await runErrorHooks(active, iterationError(error), deps, requestId);
     emittedStatus = canonical.status;
     const chunk = encoder.push({ type: 'error', error: canonical });
@@ -376,16 +396,20 @@ async function shortCircuitResponse(
       'content-type': 'application/json',
       ...(sc.headers ?? {}),
     };
-    // M6 tap point 6: short-circuit non-stream success
+    const body = adapter.encodeResponse(collected, encodeOptions);
+    // M6 tap point 6: short-circuit non-stream success — end only after the
+    // encode succeeded, so a failure records the catch's status, not sc.status.
     observation?.end(sc.status);
     return {
       status: sc.status,
       headers,
-      body: singleChunk(adapter.encodeResponse(collected, encodeOptions)),
+      body: singleChunk(body),
     };
   } catch (error) {
     const canonical =
       error instanceof FormatError ? error.canonical : iterationError(error);
+    // B: mirror the streamResponse fix — the catch owns the observation end.
+    observation?.end(canonical.status);
     return errorResponse(inbound, canonical);
   }
 }
@@ -461,7 +485,13 @@ export async function prepareUpstream(
       resolution.outboundFormat,
       skip => {
         // B5.2: mirrors load-time activation — a format-incompatible plugin is
-        // skipped with a warn, not a per-request 500.
+        // skipped with a warn, not a per-request 500. F: the warn itself fires
+        // once per (plugin, format) per process; the skip is still per request.
+        const key = `${skip.plugin}:${skip.wireFormat}`;
+        if (warnedRequestFormatSkips.has(key)) {
+          return;
+        }
+        warnedRequestFormatSkips.add(key);
         deps.logger.warn(pluginFormatSkipWarning(skip), {
           requestId,
           plugin: skip.plugin,
@@ -477,10 +507,14 @@ export async function prepareUpstream(
   }
 
   // B3.2: stamp the inbound session hint before the plugin chain so plugins see it.
-  // Inbound headers are lowercased by the adapter; an empty value counts as absent.
-  const clientSessionId =
-    request.headers[CLIENT_SESSION_ID_HEADER] ?? request.headers[SESSION_ID_HEADER];
-  if (clientSessionId !== undefined && clientSessionId.length > 0) {
+  // Inbound headers are lowercased by the adapter; an empty value counts as
+  // absent (E: it must not shadow the lower-priority header — the first
+  // non-empty candidate in priority order wins).
+  const clientSessionId = [
+    request.headers[CLIENT_SESSION_ID_HEADER],
+    request.headers[SESSION_ID_HEADER],
+  ].find(value => value !== undefined && value.length > 0);
+  if (clientSessionId !== undefined) {
     ir.clientSessionId = clientSessionId;
   }
 
@@ -935,11 +969,25 @@ async function streamResponse(
   );
   const observed = observeEvents(transformed, active, deps, requestId, observation);
   const encoder = inboundAdapter.createStreamEncoder(encodeOptions);
+  // A: flipped by onClientDisconnect BEFORE the abort so the streaming error
+  // path can tell our own abort from an upstream-side failure.
+  let clientGone = false;
   return {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
     // M6 tap point 5: stream success — end() called in encodeClientStream finally
-    body: encodeClientStream(observed, encoder, active, deps, requestId, observation),
-    onClientDisconnect: () => upstream.abort?.(), // B2.1
+    body: encodeClientStream(
+      observed,
+      encoder,
+      active,
+      deps,
+      requestId,
+      observation,
+      () => clientGone,
+    ),
+    onClientDisconnect: () => {
+      clientGone = true; // A: the abort below is ours — not an upstream failure
+      upstream.abort?.(); // B2.1
+    },
   };
 }
