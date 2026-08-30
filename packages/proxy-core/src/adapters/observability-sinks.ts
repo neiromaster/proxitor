@@ -117,6 +117,7 @@ export type DumpSinkDeps = {
 export class DumpSink implements ObservationSink {
   private inflight = 0;
   private readonly waiters: Array<() => void> = [];
+  private flushResolvers: Array<() => void> = [];
   private readonly maxConcurrent: number;
   private readonly maxWaiters: number;
   private readonly enabled: () => boolean;
@@ -155,6 +156,11 @@ export class DumpSink implements ObservationSink {
           this.inflight -= 1;
           const next = this.waiters.shift();
           if (next) next();
+          if (this.inflight === 0) {
+            const resolvers = this.flushResolvers;
+            this.flushResolvers = [];
+            for (const resolve of resolvers) resolve();
+          }
         });
     };
 
@@ -168,6 +174,26 @@ export class DumpSink implements ObservationSink {
         requestId: record.requestId,
       });
     }
+  }
+
+  /**
+   * B2.5: resolves once every accepted dump has settled (immediately when none
+   * are in flight). Queued-but-not-started runs are drained, not dropped: they
+   * are started up to maxConcurrent — here where reachable, otherwise by the
+   * emit pump as slots free — so the drain stays bounded and prompt and no
+   * already-accepted write is lost. Idempotent: a second call resolves on the
+   * current inflight state.
+   */
+  flush(): Promise<void> {
+    while (this.inflight < this.maxConcurrent && this.waiters.length > 0) {
+      this.waiters.shift()?.();
+    }
+    if (this.inflight === 0) {
+      return Promise.resolve();
+    }
+    return new Promise<void>(resolve => {
+      this.flushResolvers.push(resolve);
+    });
   }
 
   private async dump(record: ObservationRecord): Promise<void> {

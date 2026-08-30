@@ -335,6 +335,18 @@ defaultProvider: openai
     expect(verboseLinesOf(infoLines)).toHaveLength(0);
     expect(infoLines.length).toBeGreaterThan(0);
   });
+
+  test('proxitor.drain exists and resolves (B2.5 smoke)', async () => {
+    // Arrange
+    const proxitor = await createProxitor({
+      configText: GOOD,
+      env: { OAI_KEY: 'test-key' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+    // Act + Assert — safe with no queued dumps; resolves rather than hanging
+    await expect(proxitor.drain()).resolves.toBeUndefined();
+  });
 });
 
 describe('createProxitor hot-reload wiring', () => {

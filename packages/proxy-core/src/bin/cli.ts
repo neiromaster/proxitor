@@ -53,7 +53,7 @@ export function registerShutdown(
     on(signal: 'SIGINT' | 'SIGTERM', handler: () => void): void;
     exit(code: number): void;
     log(message: string): void;
-    onBeforeExit?(): void;
+    onBeforeExit?(): void | Promise<void>;
   },
 ): void {
   let secondSignal = false;
@@ -73,21 +73,25 @@ export function registerShutdown(
       return;
     }
 
-    // First signal: drain and close
+    // First signal: drain and close. onBeforeExit may be async (B2.5 dump-sink
+    // drain), so the continuation runs fire-and-forget; the second-signal
+    // force-exit above stays fully synchronous as the escape hatch.
     secondSignal = true;
     deps.log('shutting down — press Ctrl-C again to force exit');
 
-    // Wrap onBeforeExit in try/catch to prevent shutdown hang
-    try {
-      deps.onBeforeExit?.();
-    } catch (error) {
-      deps.log(
-        `shutdown: onBeforeExit failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    void (async () => {
+      // Wrap onBeforeExit in try/catch to prevent shutdown hang
+      try {
+        await deps.onBeforeExit?.();
+      } catch (error) {
+        deps.log(
+          `shutdown: onBeforeExit failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
-    server.closeIdleConnections();
-    server.close(() => doExit(0));
+      server.closeIdleConnections();
+      server.close(() => doExit(0));
+    })();
   };
 
   deps.on('SIGINT', shutdown);
@@ -135,7 +139,11 @@ export async function runStart(
     on: register,
     exit: code => process.exit(code),
     log: line => console.log(line),
-    onBeforeExit: () => proxitor.watcher.stop(),
+    // B2.5: stop the watcher, then drain queued dump writes before exit.
+    onBeforeExit: async () => {
+      proxitor.watcher.stop();
+      await proxitor.drain();
+    },
   });
 
   // Start the config watcher after serve succeeds

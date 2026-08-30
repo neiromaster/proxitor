@@ -431,4 +431,135 @@ describe('DumpSink', () => {
     if (!debugCall) throw new Error('logger.debug was not called');
     expect(debugCall[0]).toMatch(/DumpSink|failed/);
   });
+
+  test('flush resolves immediately with nothing in flight', async () => {
+    // Arrange
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const mkdir = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const sink = new DumpSink({
+      env: { PROXITOR_DUMP_BODY: '1' },
+      writeFile,
+      mkdir,
+      logger,
+    });
+
+    // Act + Assert
+    await expect(sink.flush()).resolves.toBeUndefined();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  test('flush waits for in-flight writes to settle', async () => {
+    // Arrange — deferred-promise fake writeFile
+    const resolveWrite: (() => void)[] = [];
+    const writeFile = vi.fn().mockImplementation(async () => {
+      await new Promise<void>(r => resolveWrite.push(r));
+    });
+    const mkdir = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const sink = new DumpSink({
+      env: { PROXITOR_DUMP_BODY: '1' },
+      writeFile,
+      mkdir,
+      logger,
+    });
+    sink.emit(baseRecord());
+    await vi.waitUntil(() => writeFile.mock.calls.length > 0, { timeout: 100 });
+
+    let flushed = false;
+    const pending = sink.flush().then(() => {
+      flushed = true;
+    });
+    // Act — the write is still in flight
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Assert — flush holds until the write settles
+    expect(flushed).toBe(false);
+    resolveWrite[0]?.();
+    await pending;
+    expect(flushed).toBe(true);
+  });
+
+  test('flush drains queued-but-not-started runs (started, not dropped)', async () => {
+    // Arrange — one slot: first emit runs, the other two queue
+    const resolveWrite: (() => void)[] = [];
+    const writeFile = vi.fn().mockImplementation(async () => {
+      await new Promise<void>(r => resolveWrite.push(r));
+    });
+    const mkdir = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const sink = new DumpSink({
+      env: { PROXITOR_DUMP_BODY: '1' },
+      writeFile,
+      mkdir,
+      logger,
+      maxConcurrent: 1,
+      maxWaiters: 10,
+    });
+    for (let i = 0; i < 3; i++) {
+      const record = baseRecord();
+      record.requestId = `req-${i}`;
+      sink.emit(record);
+    }
+    await vi.waitUntil(() => writeFile.mock.calls.length >= 1, { timeout: 100 });
+
+    // Act — drain; queued runs must all be written before flush resolves
+    const pending = sink.flush();
+    resolveWrite[0]?.();
+    await vi.waitUntil(() => writeFile.mock.calls.length >= 2, { timeout: 100 });
+    resolveWrite[1]?.();
+    await vi.waitUntil(() => writeFile.mock.calls.length >= 3, { timeout: 100 });
+    resolveWrite[2]?.();
+    await pending;
+
+    // Assert
+    expect(writeFile).toHaveBeenCalledTimes(3);
+  });
+
+  test('flush after queue-full drops resolves immediately (no hang)', async () => {
+    // Arrange — caps of 0: every emit is dropped, nothing ever in flight
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const mkdir = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const sink = new DumpSink({
+      env: { PROXITOR_DUMP_BODY: '1' },
+      writeFile,
+      mkdir,
+      logger,
+      maxConcurrent: 0,
+      maxWaiters: 0,
+    });
+    sink.emit(baseRecord());
+    await vi.waitUntil(() => logger.debug.mock.calls.length > 0, { timeout: 100 });
+
+    // Act + Assert — dropped records cannot starve the drain
+    await expect(sink.flush()).resolves.toBeUndefined();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  test('flush is safe to call twice while writes are pending', async () => {
+    // Arrange — one in-flight write, two concurrent flushes
+    const resolveWrite: (() => void)[] = [];
+    const writeFile = vi.fn().mockImplementation(async () => {
+      await new Promise<void>(r => resolveWrite.push(r));
+    });
+    const mkdir = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const sink = new DumpSink({
+      env: { PROXITOR_DUMP_BODY: '1' },
+      writeFile,
+      mkdir,
+      logger,
+    });
+    sink.emit(baseRecord());
+    await vi.waitUntil(() => writeFile.mock.calls.length > 0, { timeout: 100 });
+
+    // Act
+    const first = sink.flush();
+    const second = sink.flush();
+    resolveWrite[0]?.();
+
+    // Assert — both settle once the write completes
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+  });
 });

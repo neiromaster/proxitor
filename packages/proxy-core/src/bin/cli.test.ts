@@ -73,7 +73,7 @@ describe('runStart', () => {
 });
 
 describe('registerShutdown', () => {
-  test('v2: first signal logs/drains/closes, second signal exits immediately', () => {
+  test('v2: first signal logs/drains/closes, second signal exits immediately', async () => {
     // Arrange
     const handlers: Array<(signal: string) => void> = [];
     const logs: string[] = [];
@@ -101,11 +101,14 @@ describe('registerShutdown', () => {
         }),
       exit: code => exits.push(code),
       log: message => logs.push(message),
-      onBeforeExit: () => onBeforeExitCalls.push(1),
+      onBeforeExit: () => {
+        onBeforeExitCalls.push(1);
+      },
     });
 
-    // First signal (SIGINT)
+    // First signal (SIGINT); onBeforeExit may be async, so let it settle
     handlers[0]!('SIGINT');
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     // Assert - first signal effects
     expect(logs).toEqual(['shutting down — press Ctrl-C again to force exit']);
@@ -127,7 +130,7 @@ describe('registerShutdown', () => {
     expect(exits).toHaveLength(1);
   });
 
-  test('v2: close callback exits 0 when no second signal', () => {
+  test('v2: close callback exits 0 when no second signal', async () => {
     // Arrange
     const handlers: Array<(signal: string) => void> = [];
     const logs: string[] = [];
@@ -153,6 +156,7 @@ describe('registerShutdown', () => {
 
     // First SIGTERM signal
     handlers[1]!('SIGTERM');
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     // Assert - not exited yet
     expect(exits).toHaveLength(0);
@@ -164,7 +168,7 @@ describe('registerShutdown', () => {
     expect(exits).toEqual([0]);
   });
 
-  test('v2: onBeforeExit runs before closeIdleConnections (order assertion)', () => {
+  test('v2: onBeforeExit runs before closeIdleConnections (order assertion)', async () => {
     // Arrange
     const handlers: Array<(signal: string) => void> = [];
     const order: string[] = [];
@@ -192,12 +196,13 @@ describe('registerShutdown', () => {
     });
 
     handlers[0]!('SIGINT');
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     // Assert - order: log, onBeforeExit, closeIdle, close
     expect(order).toEqual(['onBeforeExit', 'closeIdle', 'close']);
   });
 
-  test('v2: onBeforeExit throw is logged and shutdown continues', () => {
+  test('v2: onBeforeExit throw is logged and shutdown continues', async () => {
     // Arrange
     const handlers: Array<(signal: string) => void> = [];
     const logs: string[] = [];
@@ -230,6 +235,7 @@ describe('registerShutdown', () => {
     });
 
     handlers[0]!('SIGINT');
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     // Assert - error logged but shutdown continued
     expect(logs).toContain('shutting down — press Ctrl-C again to force exit');
@@ -243,6 +249,83 @@ describe('registerShutdown', () => {
 
     // Assert - exits after close completes
     expect(exits).toEqual([0]);
+  });
+
+  test('v2: async onBeforeExit (drain) is awaited before closeIdleConnections', async () => {
+    // Arrange — onBeforeExit returns a promise held open until released
+    const handlers: Array<(signal: string) => void> = [];
+    const order: string[] = [];
+    let releaseDrain: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => {
+      releaseDrain = resolve;
+    });
+
+    const server = {
+      closeIdleConnections: () => {
+        order.push('closeIdle');
+      },
+      close: () => {
+        order.push('close');
+      },
+    };
+
+    // Act
+    registerShutdown(server as ServerWithShutdown, {
+      on: (signal, fn) =>
+        handlers.push(s => {
+          if (s === signal) fn();
+        }),
+      exit: () => {},
+      log: () => {},
+      onBeforeExit: async () => {
+        order.push('drain-start');
+        await drain;
+        order.push('drain-end');
+      },
+    });
+
+    handlers[0]!('SIGINT');
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // Assert - close waits for the in-flight drain
+    expect(order).toEqual(['drain-start']);
+    releaseDrain?.();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(order).toEqual(['drain-start', 'drain-end', 'closeIdle', 'close']);
+  });
+
+  test('v2: second signal during an in-flight drain force-exits immediately', async () => {
+    // Arrange — a drain that never settles on its own
+    const handlers: Array<(signal: string) => void> = [];
+    const exits: number[] = [];
+    let releaseDrain: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => {
+      releaseDrain = resolve;
+    });
+
+    const server = {
+      closeIdleConnections: () => {},
+      close: () => {},
+    };
+
+    registerShutdown(server as ServerWithShutdown, {
+      on: (signal, fn) =>
+        handlers.push(s => {
+          if (s === signal) fn();
+        }),
+      exit: code => exits.push(code),
+      log: () => {},
+      onBeforeExit: () => drain,
+    });
+
+    // Act — first signal starts the stalled drain; second must not wait for it
+    handlers[0]!('SIGINT');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    handlers[0]!('SIGINT');
+
+    // Assert - immediate exit despite the unresolved drain
+    expect(exits).toEqual([0]);
+    releaseDrain?.();
   });
 });
 

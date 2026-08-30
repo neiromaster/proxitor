@@ -71,6 +71,8 @@ export type Proxitor = {
   readonly observability: ObservabilityPort;
   readonly reload: () => Promise<ReloadResult>;
   readonly watcher: ConfigWatcher;
+  /** B2.5: resolves once queued dump writes have settled; await on shutdown. */
+  readonly drain: () => Promise<void>;
 };
 
 export type CreateProxitorOptions = {
@@ -115,19 +117,21 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
 
   // Construct sinks (options.sinks override defaults). The verbose per-request
   // line is boot-time config: flipping logging.verbose requires a restart.
+  // The dump sink is retained so shutdown can drain its queued writes (B2.5).
+  const dumpSink = new DumpSink({
+    env,
+    writeFile,
+    mkdir,
+    logger,
+    maxConcurrent: 16,
+    maxWaiters: 256,
+  });
   const sinks: readonly ObservationSink[] = options.sinks ?? [
     new LiveLineSink({ info: line => logger.info(line) }),
     ...(config.logging.verbose
       ? [new VerboseLineSink({ info: line => logger.info(line) })]
       : []),
-    new DumpSink({
-      env,
-      writeFile,
-      mkdir,
-      logger,
-      maxConcurrent: 16,
-      maxWaiters: 256,
-    }),
+    dumpSink,
   ];
 
   // Create observability (always created now)
@@ -240,5 +244,6 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     observability,
     reload: () => hotReload.reload(),
     watcher,
+    drain: () => dumpSink.flush(),
   };
 }
