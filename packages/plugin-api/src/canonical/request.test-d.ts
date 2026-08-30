@@ -40,7 +40,7 @@ describe('CanonicalRequest types (spec §4.1)', () => {
     >();
   });
 
-  it('model is logical+physical, stream required, outboundHeaders optional', () => {
+  it('model is logical+physical, stream required, outboundHeaders + clientSessionId optional', () => {
     expectTypeOf<CanonicalRequest['model']>().toEqualTypeOf<{
       logical: string;
       physical: string;
@@ -48,6 +48,9 @@ describe('CanonicalRequest types (spec §4.1)', () => {
     expectTypeOf<CanonicalRequest['stream']>().toEqualTypeOf<boolean>();
     expectTypeOf<CanonicalRequest['outboundHeaders']>().toEqualTypeOf<
       Record<string, string> | undefined
+    >();
+    expectTypeOf<CanonicalRequest['clientSessionId']>().toEqualTypeOf<
+      string | undefined
     >();
   });
 });
