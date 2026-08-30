@@ -89,13 +89,19 @@ export function validateProvider(provider: ProviderConfig): void {
 }
 
 /**
- * Upstream endpoint URL: baseUrl + the format's endpoint path, with accidental
- * /v1 doubling collapsed. validateProvider is the load-time gate; this collapse
- * is defense-in-depth for programmatic construction.
+ * Upstream URL assembly: strip trailing slashes off the baseUrl, append the
+ * path, and collapse an accidental /v1/v1 doubling. validateProvider is the
+ * load-time gate; this collapse is defense-in-depth for programmatic
+ * construction (also used by the model-less raw passthrough).
  */
-export function endpointUrl(baseUrl: string, wireFormat: WireFormat): string {
-  const joined = `${baseUrl.replace(/\/+$/, '')}${ENDPOINT_PATHS[wireFormat]}`;
+export function joinEndpointPath(baseUrl: string, path: string): string {
+  const joined = `${baseUrl.replace(/\/+$/, '')}${path}`;
   return joined.replace(/\/v1\/v1(?=\/)/g, '/v1');
+}
+
+/** Upstream endpoint URL: baseUrl + the format's endpoint path. */
+export function endpointUrl(baseUrl: string, wireFormat: WireFormat): string {
+  return joinEndpointPath(baseUrl, ENDPOINT_PATHS[wireFormat]);
 }
 
 function validateBaseUrl(provider: ProviderConfig): void {

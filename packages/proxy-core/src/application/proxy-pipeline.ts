@@ -20,6 +20,7 @@ import type { RouteResolution, RoutingTable } from '../domain/index.js';
 import {
   classifyPath,
   endpointUrl,
+  joinEndpointPath,
   RoutingConfigError,
   RoutingError,
 } from '../domain/index.js';
@@ -642,11 +643,8 @@ async function runModelLess(
     observation?.end(canonical.status);
     return errorResponse('openai-chat', canonical);
   }
-  // M3: Collapse /v1/v1 to /v1 for baseUrl suffixed with /v1 (consistent with domain/provider.ts endpointUrl).
-  const url = `${provider.baseUrl.replace(/\/+$/, '')}${request.path}`.replace(
-    /\/v1\/v1(?=\/)/g,
-    '/v1',
-  );
+  // M3: same trim + /v1/v1 collapse as endpointUrl — single join implementation.
+  const url = joinEndpointPath(provider.baseUrl, request.path);
 
   // M6 tap point 7: capture outbound body
   observation?.captureOutbound(request.body);

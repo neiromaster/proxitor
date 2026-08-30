@@ -11,7 +11,7 @@ and sibling domain modules (enforced by `domain-layers-isolated` in
 | `error.ts` | `RoutingError` (request-time, HTTP status) and `RoutingConfigError` (load-time, fail-loud) |
 | `glob.ts` | `globMatch` — single-star wildcard, case-insensitive |
 | `plugin-merge.ts` | `PluginListEntry` + 3-layer merge (global → provider → binding) with disable/re-enable |
-| `provider.ts` | `ProviderConfig` + `validateProvider` (baseUrl `/v1` rules, anthropic-version, auth shape) + `endpointUrl` |
+| `provider.ts` | `ProviderConfig` + `validateProvider` (baseUrl `/v1` rules, anthropic-version, auth shape) + `joinEndpointPath` / `endpointUrl` |
 | `routing.ts` | `classifyPath`, `ModelBinding`, `createRoutingTable` → `resolve` / `resolveModelLess` / `listModels` |
 
 ## Semantics
