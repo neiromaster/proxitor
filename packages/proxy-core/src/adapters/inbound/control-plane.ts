@@ -11,8 +11,10 @@ import type { ReloadResult } from '../../application/hot-reload.js';
  * POST /reload — trigger config reload (returns ReloadResult shape).
  * GET /routing — read-only routing table snapshot (no credentials).
  *
- * Auth: Bearer token compared timing-safely via sha256 → timingSafeEqual.
+ * Auth: Bearer token resolved per request via deps.getToken (so config reloads
+ * rotate it live) and compared timing-safely via sha256 → timingSafeEqual.
  * Unauthorized → 401 with OpenAI-style error shape.
+ * No token configured (or unresolvable) → 404, identical to the unmounted state.
  * Wrong method → 405.
  */
 
@@ -21,6 +23,14 @@ function unauthorizedResponse(): Response {
   return Response.json(
     { error: { message: 'unauthorized', type: 'invalid_request_error' } },
     { status: 401, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+/** 404 shape matching the proxy app not-found handler (unmounted-equivalent). */
+function notFoundResponse(path: string): Response {
+  return Response.json(
+    { error: { message: `unknown path '${path}'`, type: 'invalid_request_error' } },
+    { status: 404, headers: { 'content-type': 'application/json' } },
   );
 }
 
@@ -55,9 +65,17 @@ function extractBearerToken(authHeader: string | undefined): string | undefined 
   return parts[1];
 }
 
-/** Authentication middleware — runs before route handlers. */
-function authMiddleware(token: string) {
+/** Authentication middleware — runs before route handlers, token resolved per request. */
+function authMiddleware(getToken: () => string | undefined) {
   return async (c: Context, next: Next) => {
+    const token = getToken();
+
+    // No token configured (or unresolvable) → behave as if the control plane
+    // is not mounted at all. Fails closed: never leaks config/token errors as 500.
+    if (token === undefined) {
+      throw new HTTPException(404, { res: notFoundResponse(c.req.path) });
+    }
+
     const authHeader = c.req.raw.headers.get('Authorization') ?? undefined;
     const providedToken = extractBearerToken(authHeader);
 
@@ -164,14 +182,15 @@ export function routingViewOf(config: ProxyConfig): {
 
 /** Control-plane app factory. */
 export function createControlPlaneApp(deps: {
-  token: string;
+  /** Resolved per request so config reloads rotate the token without a restart. */
+  getToken: () => string | undefined;
   reload(): Promise<ReloadResult>;
   routingView(): Record<string, unknown>;
 }): Hono {
   const app = new Hono();
 
   // Apply auth middleware to all routes
-  app.use('*', authMiddleware(deps.token));
+  app.use('*', authMiddleware(deps.getToken));
 
   // POST /reload — trigger config reload
   app.post('/reload', async c => {

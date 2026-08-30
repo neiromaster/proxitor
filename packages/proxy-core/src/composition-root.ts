@@ -140,10 +140,20 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     return parseConfig(files.parse(text, filePath));
   };
 
+  const readNext = async (): Promise<ProxyConfig> => {
+    // configText has no backing file — re-parse the stored text instead of
+    // reading a path that does not exist on disk. The text is immutable, so
+    // such a reload is a no-op change (env refs were resolved at startup).
+    if (source.path === '<memory>') {
+      return parseConfig(files.parse(source.text, source.path));
+    }
+    return readResolved(source.path);
+  };
+
   const hotReload = createHotReload({
     initial,
     deps: {
-      readNext: async () => readResolved(source.path),
+      readNext,
       buildTable: cfg =>
         createRoutingTable({
           providers: cfg.providers,
@@ -173,21 +183,25 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
 
   const app = createProxyApp({ pipeline, bodyLimitBytes: config.server.bodyLimitBytes });
 
-  // D16: resolve and mount control-plane if token configured
-  const controlToken =
-    config.controlPlane === undefined
-      ? undefined
-      : credentials.resolve(config.controlPlane.token);
-  if (controlToken !== undefined) {
-    app.route(
-      '/control',
-      createControlPlaneApp({
-        token: controlToken,
-        reload: () => hotReload.reload(),
-        routingView: () => routingViewOf(hotReload.swap.current.config),
-      }),
-    );
-  }
+  // D16: control-plane is mounted unconditionally — the token is resolved per
+  // request from the live config so reloads rotate it without a restart.
+  // Absent or unresolvable token → 404, identical to the unmounted state.
+  app.route(
+    '/control',
+    createControlPlaneApp({
+      getToken: () => {
+        const cp = hotReload.swap.current.config.controlPlane;
+        if (cp === undefined) return undefined;
+        try {
+          return credentials.resolve(cp.token);
+        } catch {
+          return undefined; // fail closed → 404, never a 500 leak
+        }
+      },
+      reload: () => hotReload.reload(),
+      routingView: () => routingViewOf(hotReload.swap.current.config),
+    }),
+  );
 
   logger.info('config loaded', { path: source.path, config: redactConfigForLog(config) });
 

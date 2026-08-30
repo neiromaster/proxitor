@@ -335,7 +335,7 @@ models:
     expect(afterModels.data[0]!.id).toBe('gpt-4');
   });
 
-  test('configText-sourced proxitor → reload() returns {ok:false}', async () => {
+  test('configText-sourced proxitor → reload() succeeds by re-parsing the stored text (no <memory> file read)', async () => {
     // Arrange - create proxitor from config text (no file path)
     const proxitor = await createProxitor({
       configText: `
@@ -356,14 +356,20 @@ defaultProvider: oai
       logger: silent,
     });
 
-    // Act - attempt reload (no file to watch)
+    // Act - reload (text is immutable, so this is a no-op change, not a failure)
     const reloadResult = await proxitor.reload();
 
     // Assert
-    expect(reloadResult.ok).toBe(false);
-    if (!reloadResult.ok) {
-      expect(reloadResult.error).toContain('<memory>');
+    expect(reloadResult.ok).toBe(true);
+    if (reloadResult.ok) {
+      expect(reloadResult.changes).toBe('');
     }
+    // Stack still serves the same models after reload
+    const res = await proxitor.app.request('/v1/models');
+    expect(res.status).toBe(200);
+    const models = (await res.json()) as { data: Array<{ id: string }> };
+    expect(models.data).toHaveLength(1);
+    expect(models.data[0]!.id).toBe('gpt-4');
   });
 
   test('swap preserves proxitor.watcher lifecycle (start/stop callable)', async () => {
@@ -776,5 +782,164 @@ controlPlane:
     const modelMatches = updatedBody.models.map((m: { match: string }) => m.match);
     expect(modelMatches).toContain('gpt-4');
     expect(modelMatches).toContain('claude-3');
+  });
+
+  test('reload with rotated token file → new token 200, old token 401 (live controlPlane token)', async () => {
+    // Arrange - config whose controlPlane token is a file ref
+    const tokenPath = join(tmpDir, 'control-token');
+    await writeFile(tokenPath, 'token-old\n', { mode: 0o600 });
+    const configWithControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { file: ${JSON.stringify(tokenPath)} }
+`;
+    await writeFile(configPath, configWithControlPlane);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    const call = (token: string) =>
+      proxitor.app.request('/control/reload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+    // Sanity - old token accepted before rotation
+    expect((await call('token-old')).status).toBe(200);
+
+    // Act - rotate the token file and reload (preload re-reads the file)
+    await writeFile(tokenPath, 'token-new\n');
+    const reloadResult = await proxitor.reload();
+
+    // Assert - new token accepted, old token rejected
+    expect(reloadResult.ok).toBe(true);
+    expect((await call('token-new')).status).toBe(200);
+    expect((await call('token-old')).status).toBe(401);
+  });
+
+  test('reload that removes controlPlane → /control/* now 404', async () => {
+    // Arrange - config WITH control-plane
+    const configWithControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: { env: TEST_TOKEN }
+`;
+    await writeFile(configPath, configWithControlPlane);
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: { TEST_TOKEN: 'my-secret-token' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    // Sanity - mounted before the reload: wrong token → 401
+    const before = await proxitor.app.request('/control/reload', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer nope' },
+    });
+    expect(before.status).toBe(401);
+
+    // Act - rewrite config WITHOUT controlPlane and reload
+    const configWithoutControlPlane = `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+`;
+    await writeFile(configPath, configWithoutControlPlane);
+    const reloadResult = await proxitor.reload();
+
+    // Assert - /control/* behaves as unmounted (proxy-shaped 404)
+    expect(reloadResult.ok).toBe(true);
+    const after = await proxitor.app.request('/control/reload', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer my-secret-token' },
+    });
+    expect(after.status).toBe(404);
+    const body = (await after.json()) as { error: { message: string; type: string } };
+    expect(body).toEqual({
+      error: { message: "unknown path '/control/reload'", type: 'invalid_request_error' },
+    });
+  });
+
+  test('controlPlane token change surfaces in reload changes and rotates live auth', async () => {
+    // Arrange - config with literal controlPlane token
+    const writeConfig = (token: string) =>
+      writeFile(
+        configPath,
+        `
+version: 1
+providers:
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: sk-test }
+models:
+  - match: gpt-4
+    provider: oai
+    modelId: gpt-4
+defaultProvider: oai
+controlPlane:
+  token: ${token}
+`,
+      );
+    await writeConfig('token-old');
+
+    const proxitor = await createProxitor({
+      configPath,
+      env: {},
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+    });
+
+    const call = (token: string) =>
+      proxitor.app.request('/control/reload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+    // Act - rotate the literal token in the config and reload
+    await writeConfig('token-new');
+    const reloadResult = await proxitor.reload();
+
+    // Assert - diff names controlPlane and auth follows the new token
+    expect(reloadResult.ok).toBe(true);
+    if (reloadResult.ok) {
+      expect(reloadResult.changes).toContain('controlPlane (changed)');
+    }
+    expect((await call('token-new')).status).toBe(200);
+    expect((await call('token-old')).status).toBe(401);
   });
 });

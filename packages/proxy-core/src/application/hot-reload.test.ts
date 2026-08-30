@@ -240,6 +240,36 @@ describe('summarizeConfigDiff', () => {
     expect(diff).toContain('observability');
   });
 
+  test('added controlPlane surfaces as +controlPlane', () => {
+    const config1 = createFakeConfig();
+    const config2 = createFakeConfig({ controlPlane: { token: 'tok' } });
+    const diff = summarizeConfigDiff(config1, config2);
+    expect(diff).toContain('+controlPlane');
+  });
+
+  test('removed controlPlane surfaces as -controlPlane', () => {
+    const config1 = createFakeConfig({ controlPlane: { token: 'tok' } });
+    const config2 = createFakeConfig();
+    const diff = summarizeConfigDiff(config1, config2);
+    expect(diff).toContain('-controlPlane');
+  });
+
+  test('changed controlPlane token surfaces as controlPlane (changed)', () => {
+    const config1 = createFakeConfig({ controlPlane: { token: 'token-old' } });
+    const config2 = createFakeConfig({ controlPlane: { token: 'token-new' } });
+    const diff = summarizeConfigDiff(config1, config2);
+    expect(diff).toContain('controlPlane (changed)');
+  });
+
+  test('unchanged controlPlane is not in the diff', () => {
+    const config1 = createFakeConfig({ controlPlane: { token: { env: 'T' } } });
+    const config2 = createFakeConfig({
+      controlPlane: { token: { env: 'T' } },
+    });
+    const diff = summarizeConfigDiff(config1, config2);
+    expect(diff).toBe('');
+  });
+
   test('server keys are NOT in diff (restart-warning only)', () => {
     const config1 = createFakeConfig();
     const config2 = createFakeConfig({

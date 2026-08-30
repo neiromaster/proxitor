@@ -24,7 +24,7 @@ describe('control-plane', () => {
   describe('authentication', () => {
     it('should return 401 when no Authorization header is provided', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -42,7 +42,7 @@ describe('control-plane', () => {
 
     it('should return 401 when wrong token is provided', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -63,7 +63,7 @@ describe('control-plane', () => {
 
     it('should return 401 when non-Bearer scheme is used', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -84,7 +84,7 @@ describe('control-plane', () => {
 
     it('should pass authentication with correct token', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -98,12 +98,75 @@ describe('control-plane', () => {
 
       expect(res.status).toBe(200);
     });
+
+    it('should return 404 with the proxy not-found shape when getToken returns undefined', async () => {
+      const app = createControlPlaneApp({
+        getToken: () => undefined,
+        reload: mockReload,
+        routingView: mockRoutingView,
+      });
+
+      const res = await app.request('/reload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${validToken}`,
+        },
+      });
+
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body).toEqual({
+        error: { message: "unknown path '/reload'", type: 'invalid_request_error' },
+      });
+    });
+
+    it('should consult getToken per request — rotated token works, old token 401s', async () => {
+      // Arrange — token source that rotates between requests
+      let currentToken: string | undefined = 'old-secret';
+      const app = createControlPlaneApp({
+        getToken: () => currentToken,
+        reload: mockReload,
+        routingView: mockRoutingView,
+      });
+
+      const withBearer = (token: string): RequestInit => ({
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      // Sanity: old token accepted before rotation
+      const before = await app.request('/routing', withBearer('old-secret'));
+      expect(before.status).toBe(200);
+
+      // Act — rotate the token
+      currentToken = 'new-secret';
+
+      // Assert — new token accepted, old token rejected
+      const afterNew = await app.request('/routing', withBearer('new-secret'));
+      expect(afterNew.status).toBe(200);
+      const afterOld = await app.request('/routing', withBearer('old-secret'));
+      expect(afterOld.status).toBe(401);
+    });
+
+    it('should return 404 (not 405) when getToken returns undefined — unmounted check runs before method guards', async () => {
+      const app = createControlPlaneApp({
+        getToken: () => undefined,
+        reload: mockReload,
+        routingView: mockRoutingView,
+      });
+
+      const res = await app.request('/reload', {
+        method: 'GET',
+      });
+
+      expect(res.status).toBe(404);
+    });
   });
 
   describe('POST /reload', () => {
     it('should return 200 with ok:true on successful reload', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -131,7 +194,7 @@ describe('control-plane', () => {
         } as const);
 
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: failingReload,
         routingView: mockRoutingView,
       });
@@ -153,7 +216,7 @@ describe('control-plane', () => {
 
     it('should return 405 for GET /reload', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -186,7 +249,7 @@ describe('control-plane', () => {
       };
 
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: () => expectedView,
       });
@@ -205,7 +268,7 @@ describe('control-plane', () => {
 
     it('should return 405 for POST /routing', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -224,7 +287,7 @@ describe('control-plane', () => {
   describe('method guards', () => {
     it('should return 405 for PUT /reload', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -241,7 +304,7 @@ describe('control-plane', () => {
 
     it('should return 405 for DELETE /routing', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -258,7 +321,7 @@ describe('control-plane', () => {
 
     it('should return 401 for unauthorized PUT /reload', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -272,7 +335,7 @@ describe('control-plane', () => {
 
     it('should return 401 (not 405) for unauthorized GET /reload — auth runs before method guards', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });
@@ -291,7 +354,7 @@ describe('control-plane', () => {
 
     it('should return 401 (not 405) for unauthorized POST /routing — auth runs before method guards', async () => {
       const app = createControlPlaneApp({
-        token: validToken,
+        getToken: () => validToken,
         reload: mockReload,
         routingView: mockRoutingView,
       });

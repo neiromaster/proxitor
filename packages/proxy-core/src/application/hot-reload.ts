@@ -106,10 +106,11 @@ function restartKeysChanged(prev: ProxyConfig, next: ProxyConfig): boolean {
 /**
  * Summarize configuration diff for logging.
  * Returns empty string when configs are JSON-equal on the operational keys
- * (providers, models, plugins, defaultProvider, observability).
+ * (providers, models, plugins, defaultProvider, observability, controlPlane).
  * Otherwise returns section-level parts:
  * - providers as `+id`/`-id`/`id (changed)`
  * - models as `+match`/`-match`/`match (provider/modelId changed)`
+ * - controlPlane as `+controlPlane`/`-controlPlane`/`controlPlane (changed)`
  * - plus `plugins`, `defaultProvider`, `observability` when their canonical JSON differs
  *
  * Server keys are deliberately NOT in the diff (they belong to the restart-warning).
@@ -156,6 +157,21 @@ function diffModels(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void
   }
 }
 
+function diffControlPlane(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
+  if (prev.controlPlane === undefined && next.controlPlane === undefined) return;
+  if (prev.controlPlane === undefined) {
+    parts.push('+controlPlane');
+    return;
+  }
+  if (next.controlPlane === undefined) {
+    parts.push('-controlPlane');
+    return;
+  }
+  if (!canonicalJsonEqual(prev.controlPlane, next.controlPlane)) {
+    parts.push('controlPlane (changed)');
+  }
+}
+
 function diffMisc(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
   if (!canonicalJsonEqual(prev.plugins, next.plugins)) {
     parts.push('plugins');
@@ -166,6 +182,7 @@ function diffMisc(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
   if (!canonicalJsonEqual(prev.observability, next.observability)) {
     parts.push('observability');
   }
+  diffControlPlane(prev, next, parts);
 }
 
 export function summarizeConfigDiff(prev: ProxyConfig, next: ProxyConfig): string {
