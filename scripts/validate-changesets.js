@@ -4,6 +4,14 @@
  * that exist in the workspace.
  *
  * Exits 1 and lists invalid package names if any are found.
+ *
+ * The repo's vitest run only covers packages/*, so this script has no test
+ * file; instead the package-line regex is self-tested on every invocation
+ * (SELF_TEST below): both frontmatter quote styles must match and a
+ * non-package line must not. The gate once validated nothing because its
+ * regex only accepted double-quoted keys while the house frontmatter is
+ * single-quoted — a failed self-check exits 1 so that can never pass
+ * vacuously again.
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -12,6 +20,30 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const changesetDir = join(root, '.changeset');
+
+// House changeset frontmatter uses single quotes; the changesets CLI writes
+// double quotes. Accept both.
+const PACKAGE_LINE = /^['"]([^'"]+)['"]:\s*(?:patch|minor|major)\s*$/;
+
+// --- Self-test: keep the gate honest (see header) ---
+
+const SELF_TEST = [
+  ["'@proxitor/proxy-core': minor", true],
+  ['"@proxitor/plugin-api": patch', true],
+  ["'@proxitor/proxy-core': mionor", false],
+  ['- "@proxitor/proxy-core": minor', false],
+];
+
+for (const [line, shouldMatch] of SELF_TEST) {
+  if (PACKAGE_LINE.test(line) !== shouldMatch) {
+    console.error(
+      `❌ Self-test failed: package-line regex ${
+        shouldMatch ? 'must match' : 'must reject'
+      }: ${line}`,
+    );
+    process.exit(1);
+  }
+}
 
 // --- Collect workspace package names ---
 
@@ -47,7 +79,7 @@ for (const file of changesetFiles) {
 
   // Changeset frontmatter is YAML, package lines look like: "package-name": patch | minor | major
   for (const line of frontmatter.split('\n')) {
-    const match = line.match(/^"([^"]+)":\s*(?:patch|minor|major)\s*$/);
+    const match = line.match(PACKAGE_LINE);
     if (match && !workspacePackages.has(match[1])) {
       invalid.push({ file, package: match[1] });
     }
