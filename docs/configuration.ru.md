@@ -274,7 +274,7 @@ curl -H "Authorization: Bearer secret-token" http://127.0.0.1:8828/control/routi
 
 | Поле | Тип | По умолчанию | Описание |
 | --- | --- | --- | --- |
-| `routerMetadata` | boolean | `true` | Отправлять заголовок `x-openrouter-metadata` для захвата маршрутизации провайдера (где доступно) |
+| `routerMetadata` | boolean | `true` | Включать провайдера и физическую модель в записи наблюдаемости |
 | `hitThreshold` | number (0‑100) | `80` | Чтение кэша / входные токены % ≥ этого → `HIT` (иначе `PARTIAL`) |
 | `sideMaxTokens` | number (positive) | `4096` | Запрос без инструментов И `max_tokens` ≤ этого → классификация `[side]` |
 | `sessionMaxEntries` | number (positive) | `4096` | Ёмкость ограниченного LRU для трекера сессий (FIFO eviction) |
@@ -361,7 +361,7 @@ models:
       - disable: [session-id]      # отключить глобальный session-id для моделей Claude
 ```
 
-Используйте это для opt-out из глобальных настроек для специфичных маршрутов.
+Используйте это для opt-out из глобальных настроек для специфичных маршрутов. Плагинный эквивалент `- cache-control: false` (`{ name: false }`) отключает ровно один унаследованный плагин.
 
 ## Встроенные плагины
 

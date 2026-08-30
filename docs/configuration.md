@@ -274,7 +274,7 @@ Source: [`config-schema.ts:146-149`](../packages/proxy-core/src/application/conf
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `routerMetadata` | boolean | `true` | Send `x-openrouter-metadata` header to capture provider routing (where available) |
+| `routerMetadata` | boolean | `true` | Include provider and physical model in observability records |
 | `hitThreshold` | number (0‑100) | `80` | Cache read / input tokens % ≥ this → `HIT` (otherwise `PARTIAL`) |
 | `sideMaxTokens` | number (positive) | `4096` | Request with no tools AND `max_tokens` ≤ this → `[side]` classification |
 | `sessionMaxEntries` | number (positive) | `4096` | Bounded LRU capacity for session tracker (FIFO eviction) |
@@ -361,7 +361,7 @@ models:
       - disable: [session-id]      # disable global session-id for Claude models
 ```
 
-Use this to opt‑out of globals for specific routes.
+Use this to opt‑out of globals for specific routes. The per‑plugin equivalent `- cache-control: false` (`{ name: false }`) disables exactly one inherited plugin.
 
 ## Built‑in plugins
 
