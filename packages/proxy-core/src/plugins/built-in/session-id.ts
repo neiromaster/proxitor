@@ -23,7 +23,6 @@ const sessionIdConfigSchema = z.preprocess(
 );
 
 export type SessionIdPluginConfig = z.infer<typeof sessionIdConfigSchema>;
-export type SessionIdState = { fallbackId: string } | undefined;
 
 async function sha256Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
@@ -85,6 +84,8 @@ ${user}`);
 }
 
 export function createSessionIdPlugin(): ProxyPlugin<SessionIdPluginConfig> {
+  // Singleton instance: the composition-root registry creates the plugin once,
+  // so the fallback id below survives a hot-reload by construction.
   let fallbackId: string | undefined;
   return definePlugin(sessionIdConfigSchema, {
     name: 'session-id',
@@ -107,21 +108,6 @@ export function createSessionIdPlugin(): ProxyPlugin<SessionIdPluginConfig> {
         ...req,
         outboundHeaders: { ...req.outboundHeaders, [SESSION_ID_HEADER]: id },
       };
-    },
-    exportState: () =>
-      fallbackId === undefined ? undefined : ({ fallbackId } satisfies SessionIdState),
-    restoreState(state) {
-      if (
-        state !== undefined &&
-        state !== null &&
-        typeof state === 'object' &&
-        'fallbackId' in state
-      ) {
-        const s = state as SessionIdState;
-        if (s !== undefined) {
-          fallbackId = s.fallbackId;
-        }
-      }
     },
   });
 }

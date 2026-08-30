@@ -28,8 +28,8 @@ export type PluginContext<TConfig = unknown> = {
   config: TConfig;
 };
 
-export type ProxyPlugin<TConfig = unknown, TState = unknown> = {
-  /** Unique instance id: dedup across config layers, state-handoff key on hot-reload. */
+export type ProxyPlugin<TConfig = unknown> = {
+  /** Unique instance id: dedup across config layers. */
   name: string;
   validateConfig?(raw: unknown): TConfig;
   /**
@@ -50,6 +50,4 @@ export type ProxyPlugin<TConfig = unknown, TState = unknown> = {
     ctx: PluginContext<TConfig>,
     error: CanonicalError,
   ): Promise<CanonicalError> | CanonicalError;
-  exportState?(): TState;
-  restoreState?(state: TState): void;
 };

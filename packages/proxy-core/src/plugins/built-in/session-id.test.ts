@@ -147,7 +147,7 @@ describe('session-id plugin', () => {
     expect(config).toEqual({ mode: 'auto' });
   });
 
-  it('reuses one fallback id across requests and hands it over via state', async () => {
+  it('reuses one fallback id across requests', async () => {
     // Arrange
     const plugin = createSessionIdPlugin();
     const empty = () => request({ system: [], messages: [] });
@@ -159,17 +159,10 @@ describe('session-id plugin', () => {
     const second = (await plugin.onRequest?.(ctx(), empty())) as
       | CanonicalRequest
       | undefined;
-    const state = plugin.exportState?.();
-    const successor = createSessionIdPlugin();
-    successor.restoreState?.(state);
-    const afterReload = (await successor.onRequest?.(ctx(), empty())) as
-      | CanonicalRequest
-      | undefined;
 
     // Assert
     expect(first?.outboundHeaders?.['x-session-id']).toBe('fallback-uuid');
     expect(second?.outboundHeaders?.['x-session-id']).toBe('fallback-uuid');
-    expect(afterReload?.outboundHeaders?.['x-session-id']).toBe('fallback-uuid');
   });
 
   it('honors clientSessionId verbatim without deriving a fingerprint', async () => {
@@ -185,7 +178,5 @@ describe('session-id plugin', () => {
       throw new Error('expected a CanonicalRequest result');
     }
     expect(result.outboundHeaders?.['x-session-id']).toBe('client-abc');
-    // No fingerprint path ran — the fallback closure was never touched.
-    expect(plugin.exportState?.()).toBeUndefined();
   });
 });

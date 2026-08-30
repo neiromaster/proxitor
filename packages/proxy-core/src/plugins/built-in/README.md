@@ -3,8 +3,8 @@
 Four `ProxyPlugin` factories over the Canonical IR. Bundle via
 `createBuiltInPluginRegistry()` (name → plugin) and hand the map to
 `createPluginManager({ plugins })` in the composition root. Each factory call
-creates a fresh instance; `session-id` keeps per-instance state and hands it
-over hot-reloads via `exportState`/`restoreState`.
+creates a fresh instance; the registry builds each plugin once, so per-instance
+state (`session-id`'s fallback uuid) survives a hot-reload by construction.
 
 Recommended order in a plugin list (request hooks run in list order):
 
@@ -51,7 +51,7 @@ texts + first user message content signature) — the first user message is
 immutable across turns of one conversation, so the id is stable. Writes it as
 `x-session-id` through `ir.outboundHeaders` (sticky routing; OpenRouter reads
 it). Requests without any system/user content share a per-instance fallback
-uuid that survives hot-reload via state handoff.
+uuid; the singleton instance survives hot-reload, so the id stays stable.
 
 ## openrouter-routing
 

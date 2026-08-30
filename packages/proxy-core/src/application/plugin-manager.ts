@@ -31,8 +31,6 @@ export type PluginManager = {
     /** B5.2: called once per format-incompatible entry instead of throwing. */
     onSkip?: (skip: PluginActivationSkip) => void,
   ): ActivePlugin[];
-  snapshot(): Readonly<Record<string, unknown>>;
-  restore(states: Readonly<Record<string, unknown>>): void;
 };
 
 export type PluginManagerOptions = {
@@ -42,7 +40,7 @@ export type PluginManagerOptions = {
 };
 
 export function createPluginManager(options: PluginManagerOptions): PluginManager {
-  const { plugins, logger } = options;
+  const { plugins } = options;
 
   /**
    * Resolve effective plugins for one route. `outboundFormat` enforces the
@@ -88,40 +86,5 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
     return active;
   };
 
-  const snapshot = (): Readonly<Record<string, unknown>> => {
-    const states: Record<string, unknown> = {};
-    for (const [name, plugin] of plugins) {
-      if (plugin.exportState === undefined) {
-        continue;
-      }
-      try {
-        states[name] = plugin.exportState();
-      } catch (error) {
-        logger.warn('plugin state export failed', {
-          plugin: name,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    return states;
-  };
-
-  const restore = (states: Readonly<Record<string, unknown>>): void => {
-    for (const [name, state] of Object.entries(states)) {
-      const plugin = plugins.get(name);
-      if (plugin?.restoreState === undefined) {
-        continue;
-      }
-      try {
-        plugin.restoreState(state);
-      } catch (error) {
-        logger.warn('plugin state restore failed', {
-          plugin: name,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  };
-
-  return { activate, snapshot, restore };
+  return { activate };
 }

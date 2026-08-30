@@ -31,14 +31,11 @@ describe('definePlugin', () => {
 
   it('preserves the plugin fields alongside validateConfig', () => {
     // Arrange
-    const plugin = definePlugin(z.number(), {
-      name: 'limiter',
-      exportState: () => 7,
-    });
+    const plugin = definePlugin(z.number(), { name: 'limiter' });
     // Act
-    const state = plugin.exportState?.();
+    const config = plugin.validateConfig?.(5);
     // Assert
-    expect(state).toBe(7);
+    expect(config).toBe(5);
     expect(plugin.name).toBe('limiter');
   });
 });

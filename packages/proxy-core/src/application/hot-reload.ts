@@ -208,11 +208,9 @@ export function summarizeConfigDiff(prev: ProxyConfig, next: ProxyConfig): strin
 /**
  * Create hot-reload instance with keep-last-valid semantics.
  *
- * State handoff (spec §11 "state-handoff по name"): in v1 the plugin registry
- * instances are singletons created once in the composition root — their state
- * (e.g. session-id's sticky map) survives reload by construction, so no
- * exportState/restoreState round-trip happens on reload. The manager.snapshot/
- * restore methods remain available but are unused here.
+ * Plugin state on reload: the registry instances are singletons created once in
+ * the composition root, so their in-memory state (e.g. session-id's fallback id)
+ * survives reload by construction — no state handoff happens on reload.
  *
  * Reload process (never throws, never swaps on failure):
  * 1. Coalescing guard — concurrent calls return ok:true with coalesced message

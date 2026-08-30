@@ -15,7 +15,7 @@ export {
   buildProviderRouting,
   createOpenRouterRoutingPlugin,
 } from './openrouter-routing.js';
-export type { SessionIdPluginConfig, SessionIdState } from './session-id.js';
+export type { SessionIdPluginConfig } from './session-id.js';
 export { createSessionIdPlugin, deriveSessionId } from './session-id.js';
 
 /** Registry of built-in plugins for the composition root (spec §3.1). */
