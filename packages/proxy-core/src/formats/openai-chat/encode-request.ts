@@ -9,17 +9,10 @@ import type {
   MaxTokens,
   NodeExtensions,
 } from '@proxitor/plugin-api';
+import { RESERVED_KEYS } from '@proxitor/plugin-api';
 import { FormatError } from '../shared/format-error.js';
 import type { Json } from '../shared/validate.js';
-import { readWireMeta, WIRE_KEY } from '../shared/wire.js';
-
-const PROXITOR_PREFIX = '$proxitor.';
-const PROXITOR_RESERVED = [
-  '$proxitor.provider',
-  '$proxitor.models',
-  '$proxitor.route',
-  '$proxitor.transforms',
-];
+import { PROXITOR_PREFIX, readWireMeta, WIRE_KEY } from '../shared/wire.js';
 
 export type OpenAiMaxTokensField = 'auto' | 'max_tokens' | 'max_completion_tokens';
 export type OpenAiEncodeOptions = {
@@ -131,7 +124,9 @@ function applyPassthrough(
     if (key === WIRE_KEY || key.startsWith(PROXITOR_PREFIX)) continue;
     wire[key] = value;
   }
-  for (const key of PROXITOR_RESERVED) {
+  // Intentionally different from anthropic encodePassthroughFields (not shared):
+  // openai maps its reserved $proxitor.* keys BACK onto the wire, prefix stripped.
+  for (const key of RESERVED_KEYS['openai-chat']) {
     if (bag[key] !== undefined) wire[key.slice(PROXITOR_PREFIX.length)] = bag[key];
   }
 }

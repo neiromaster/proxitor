@@ -2,6 +2,11 @@ import type { CacheControl, NodeExtensions } from '@proxitor/plugin-api';
 
 /** Codec-internal wire-shape provenance namespace; the plugin channel is `$proxitor.` (spec §4.3). */
 export const WIRE_KEY = '$wire';
+
+/** Plugin extension-key prefix (spec §4.3); the reserved keys themselves live in
+ * plugin-api `RESERVED_KEYS`. Encoders strip these from the extension bag so a
+ * plugin channel never leaks onto the wire verbatim. */
+export const PROXITOR_PREFIX = '$proxitor.';
 export type WireMeta = Record<string, unknown>;
 
 export function readWireMeta(extensions?: NodeExtensions): WireMeta {

@@ -7,9 +7,12 @@ import type {
 import { FormatError } from '../shared/format-error.js';
 import type { RequestEncodeOptions } from '../shared/stream-codec.js';
 import type { Json } from '../shared/validate.js';
-import { fromCacheControl, readWireMeta, WIRE_KEY } from '../shared/wire.js';
-
-const PROXITOR_PREFIX = '$proxitor.';
+import {
+  fromCacheControl,
+  PROXITOR_PREFIX,
+  readWireMeta,
+  WIRE_KEY,
+} from '../shared/wire.js';
 
 export function encodeAnthropicRequest(
   ir: CanonicalRequest,
