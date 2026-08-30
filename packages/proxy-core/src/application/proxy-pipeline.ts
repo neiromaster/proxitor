@@ -742,6 +742,7 @@ async function runUpstream(
     };
     body = outboundAdapter.encodeRequest(outboundIr, {
       maxTokensField: provider.maxTokensField,
+      unsupportedParams: provider.unsupportedParams,
     });
 
     // M6 tap point 3: capture outbound body

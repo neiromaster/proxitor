@@ -31,6 +31,64 @@ describe('encodeAnthropicRequest', () => {
     expect(() => encodeAnthropicRequest(broken)).toThrowError(/seed is not expressible/);
   });
 
+  test('unsupportedParams drop silently omits inexpressible optional params (spec §10)', () => {
+    // Arrange — seed, responseFormat, and both penalties are inexpressible in anthropic
+    const ir = decodeAnthropicRequest(loadFixture('anthropic-request-shapes.json'));
+    const broken: CanonicalRequest = {
+      ...ir,
+      params: {
+        ...ir.params,
+        seed: 42,
+        responseFormat: { kind: 'json' },
+        presencePenalty: 0.5,
+        frequencyPenalty: -0.5,
+      },
+    };
+    // Act
+    const encoded = JSON.parse(
+      encodeAnthropicRequest(broken, { unsupportedParams: 'drop' }),
+    ) as Record<string, unknown>;
+    // Assert — encoding succeeds and none of the dropped params reach the wire
+    expect(encoded.seed).toBeUndefined();
+    expect(encoded.response_format).toBeUndefined();
+    expect(encoded.presence_penalty).toBeUndefined();
+    expect(encoded.frequency_penalty).toBeUndefined();
+  });
+
+  test('missing max_tokens throws even with unsupportedParams drop (required param)', () => {
+    // Arrange
+    const ir = decodeAnthropicRequest(loadFixture('anthropic-request-shapes.json'));
+    const noMaxTokens: CanonicalRequest = {
+      ...ir,
+      params: { ...ir.params, maxTokens: undefined },
+    };
+    // Act + Assert
+    expect(() =>
+      encodeAnthropicRequest(noMaxTokens, { unsupportedParams: 'drop' }),
+    ).toThrowError(/max_tokens is required/);
+  });
+
+  test('unsupportedParams error (and the default) fail loud for each inexpressible param class (spec §10)', () => {
+    // Arrange — one IR per inexpressible optional param class
+    const ir = decodeAnthropicRequest(loadFixture('anthropic-request-shapes.json'));
+    const cases: CanonicalRequest[] = [
+      { ...ir, params: { ...ir.params, seed: 42 } },
+      { ...ir, params: { ...ir.params, responseFormat: { kind: 'json' } } },
+      { ...ir, params: { ...ir.params, presencePenalty: 0.5 } },
+      { ...ir, params: { ...ir.params, frequencyPenalty: -0.5 } },
+    ];
+    // Act + Assert — explicit 'error' mode throws for every class
+    for (const broken of cases) {
+      expect(() =>
+        encodeAnthropicRequest(broken, { unsupportedParams: 'error' }),
+      ).toThrowError(/not expressible/);
+    }
+    // and the default (mode undefined) behaves identically
+    for (const broken of cases) {
+      expect(() => encodeAnthropicRequest(broken)).toThrowError(/not expressible/);
+    }
+  });
+
   test('drops $proxitor reserved keys (anthropic has an empty reserved list)', () => {
     // Arrange
     const ir = decodeAnthropicRequest(loadFixture('anthropic-request-shapes.json'));

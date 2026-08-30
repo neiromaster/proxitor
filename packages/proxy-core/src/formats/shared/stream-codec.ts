@@ -6,9 +6,14 @@ import type {
   RandomPort,
 } from '@proxitor/plugin-api';
 
-/** Per-provider knobs for outbound request encoding (spec §5.1); anthropic-messages ignores maxTokensField. */
+/**
+ * Per-provider knobs for outbound request encoding (spec §5.1). `unsupportedParams`
+ * (spec §10) governs only OPTIONAL params the outbound format cannot express —
+ * required params (anthropic-messages max_tokens) always fail loud.
+ */
 export type RequestEncodeOptions = {
   readonly maxTokensField?: 'auto' | 'max_tokens' | 'max_completion_tokens';
+  readonly unsupportedParams?: 'error' | 'drop';
 };
 
 /** Format adapter registry contract (Task 9) - non-generic interface for per-format codec objects. */

@@ -22,13 +22,16 @@ const PROXITOR_RESERVED = [
 ];
 
 export type OpenAiMaxTokensField = 'auto' | 'max_tokens' | 'max_completion_tokens';
-export type OpenAiEncodeOptions = { maxTokensField?: OpenAiMaxTokensField };
+export type OpenAiEncodeOptions = {
+  maxTokensField?: OpenAiMaxTokensField;
+  unsupportedParams?: 'error' | 'drop';
+};
 
 export function encodeOpenAiRequest(
   ir: CanonicalRequest,
   options?: OpenAiEncodeOptions,
 ): string {
-  if (ir.params.topK !== undefined) {
+  if (ir.params.topK !== undefined && options?.unsupportedParams !== 'drop') {
     throw new FormatError({
       type: 'invalid_request_error',
       message: 'top_k is not expressible in openai-chat requests',

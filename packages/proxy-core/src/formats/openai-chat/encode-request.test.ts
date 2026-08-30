@@ -66,6 +66,23 @@ describe('encodeOpenAiRequest', () => {
     ).toBe(4096);
   });
 
+  test('unsupportedParams drop omits top_k silently; error (and the default) keep the fail-loud throw (spec §10)', () => {
+    // Arrange — an IR carrying topK, which openai-chat cannot express
+    const ir = decodeOpenAiRequest(loadFixture('openai-request-shapes.json'));
+    const withTopK = { ...ir, params: { ...ir.params, topK: 40 } };
+    // Act
+    const dropped = JSON.parse(
+      encodeOpenAiRequest(withTopK, { unsupportedParams: 'drop' }),
+    ) as Record<string, unknown>;
+    // Assert — the param is silently omitted, encoding succeeds
+    expect(dropped.top_k).toBeUndefined();
+    // Act + Assert — explicit 'error' (and the default) keeps the FormatError
+    expect(() =>
+      encodeOpenAiRequest(withTopK, { unsupportedParams: 'error' }),
+    ).toThrowError(/top_k is not expressible/);
+    expect(() => encodeOpenAiRequest(withTopK)).toThrowError(/top_k is not expressible/);
+  });
+
   test('array-form single-text user content round-trips as an array (identity)', () => {
     // Arrange
     const ir = decodeOpenAiRequest(

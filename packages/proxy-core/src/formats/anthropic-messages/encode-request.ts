@@ -5,16 +5,20 @@ import type {
   NodeExtensions,
 } from '@proxitor/plugin-api';
 import { FormatError } from '../shared/format-error.js';
+import type { RequestEncodeOptions } from '../shared/stream-codec.js';
 import type { Json } from '../shared/validate.js';
 import { fromCacheControl, readWireMeta, WIRE_KEY } from '../shared/wire.js';
 
 const PROXITOR_PREFIX = '$proxitor.';
 
-export function encodeAnthropicRequest(ir: CanonicalRequest): string {
+export function encodeAnthropicRequest(
+  ir: CanonicalRequest,
+  options?: RequestEncodeOptions,
+): string {
   const bag: Json = { ...ir.extensions['anthropic-messages'] };
   const wireMeta = readWireMeta({ [WIRE_KEY]: bag[WIRE_KEY] });
 
-  validateExpressibleParams(ir);
+  validateExpressibleParams(ir, options?.unsupportedParams);
 
   const wire: Json = {
     model: ir.model.physical,
@@ -25,7 +29,15 @@ export function encodeAnthropicRequest(ir: CanonicalRequest): string {
   return JSON.stringify(wire);
 }
 
-function validateExpressibleParams(ir: CanonicalRequest): void {
+/**
+ * §10 fail-loud policy: OPTIONAL params anthropic cannot express throw unless the
+ * provider opted into `drop` (the wire never carries them, so omission is silent).
+ * max_tokens is a REQUIRED param and throws regardless of the mode.
+ */
+function validateExpressibleParams(
+  ir: CanonicalRequest,
+  unsupportedParams?: 'error' | 'drop',
+): void {
   if (ir.params.maxTokens === undefined) {
     throw new FormatError({
       type: 'invalid_request_error',
@@ -33,14 +45,15 @@ function validateExpressibleParams(ir: CanonicalRequest): void {
       status: 400,
     });
   }
-  if (ir.params.seed !== undefined) {
+  const drop = unsupportedParams === 'drop';
+  if (ir.params.seed !== undefined && !drop) {
     throw new FormatError({
       type: 'invalid_request_error',
       message: 'seed is not expressible in anthropic-messages requests',
       status: 400,
     });
   }
-  if (ir.params.responseFormat !== undefined) {
+  if (ir.params.responseFormat !== undefined && !drop) {
     throw new FormatError({
       type: 'invalid_request_error',
       message: 'responseFormat is not expressible in anthropic-messages requests',
@@ -48,8 +61,8 @@ function validateExpressibleParams(ir: CanonicalRequest): void {
     });
   }
   if (
-    ir.params.presencePenalty !== undefined ||
-    ir.params.frequencyPenalty !== undefined
+    !drop &&
+    (ir.params.presencePenalty !== undefined || ir.params.frequencyPenalty !== undefined)
   ) {
     throw new FormatError({
       type: 'invalid_request_error',

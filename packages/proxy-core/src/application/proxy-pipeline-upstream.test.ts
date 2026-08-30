@@ -497,6 +497,35 @@ describe('pipeline handle — error paths', () => {
     expect(upstream.calls.length).toBe(0);
     expect(ended).toEqual([400]);
   });
+
+  it('encodes with unsupportedParams drop: top_k is omitted and the request reaches the upstream (spec §10)', async () => {
+    // Arrange — openai-chat provider opted into dropping inexpressible params
+    const upstream = fakeFetch(200, [OAI_JSON]);
+    const deps = makeDeps(upstream.port, undefined, {
+      oai: { ...OPENAI_PROVIDER, unsupportedParams: 'drop' },
+    });
+    const pipeline = createPipeline(deps);
+    const body = JSON.stringify({
+      model: 'claude-sonnet-5',
+      max_tokens: 64,
+      stream: false,
+      top_k: 5,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    // Act
+    const response = await pipeline.handle(request(body));
+    const parsed = JSON.parse(await readBody(response.body)) as {
+      content: Array<{ text?: string }>;
+    };
+    // Assert — the 200-path encode succeeded, the upstream saw no top_k,
+    // and the client got the translated answer
+    expect(response.status).toBe(200);
+    expect(upstream.calls.length).toBe(1);
+    const call = upstream.calls[0];
+    if (call === undefined) throw new Error('no upstream call');
+    expect(JSON.parse(call.body).top_k).toBeUndefined();
+    expect(parsed.content[0]?.text).toBe('Hi');
+  });
 });
 
 describe('pipeline handle — stream transforms and observers', () => {
