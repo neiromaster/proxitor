@@ -11,14 +11,15 @@ import type {
 } from '@proxitor/plugin-api';
 import {
   CLIENT_SESSION_ID_HEADER,
+  DEFERRED_RESPONSES_PATH,
   ENDPOINT_PATHS,
+  MODELS_PATH,
   SESSION_ID_HEADER,
 } from '@proxitor/plugin-api';
 import type { RouteResolution, RoutingTable } from '../domain/index.js';
 import {
   classifyPath,
   endpointUrl,
-  MODELS_PATH,
   RoutingConfigError,
   RoutingError,
 } from '../domain/index.js';
@@ -595,7 +596,7 @@ function isModelLessPath(request: PipelineRequest): boolean {
   return (
     request.path !== ENDPOINT_PATHS['anthropic-messages'] &&
     request.path !== ENDPOINT_PATHS['openai-chat'] &&
-    request.path !== '/v1/responses' // deferred format → 501, never a passthrough
+    request.path !== DEFERRED_RESPONSES_PATH // deferred format → 501, never a passthrough
   );
 }
 

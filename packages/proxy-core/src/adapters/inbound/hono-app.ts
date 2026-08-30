@@ -1,4 +1,4 @@
-import { ENDPOINT_PATHS } from '@proxitor/plugin-api';
+import { ENDPOINT_PATHS, MODELS_PATH } from '@proxitor/plugin-api';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
@@ -53,7 +53,7 @@ export function createProxyApp(deps: {
     if (CHAT_PATHS.has(path) && method !== 'POST') {
       return openaiError(405, `${path} supports POST only`, { allow: 'POST' });
     }
-    if (path === '/v1/models' && method !== 'GET') {
+    if (path === MODELS_PATH && method !== 'GET') {
       return openaiError(405, `${path} supports GET only`, { allow: 'GET' });
     }
     if (method !== 'POST' && method !== 'GET') {

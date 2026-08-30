@@ -1,13 +1,9 @@
+import { MODELS_PATH } from '@proxitor/plugin-api';
 import { describe, expect, test } from 'vitest';
 import { RoutingConfigError, RoutingError } from './error.js';
 import type { PluginListEntry } from './plugin-merge.js';
 import type { ProviderConfig } from './provider.js';
-import {
-  classifyPath,
-  createRoutingTable,
-  MODELS_PATH,
-  type RoutingConfig,
-} from './routing.js';
+import { classifyPath, createRoutingTable, type RoutingConfig } from './routing.js';
 
 function anthropicProvider(): ProviderConfig {
   return {

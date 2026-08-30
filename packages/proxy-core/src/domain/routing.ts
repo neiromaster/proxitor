@@ -1,4 +1,9 @@
-import { ENDPOINT_PATHS, type WireFormat } from '@proxitor/plugin-api';
+import {
+  DEFERRED_RESPONSES_PATH,
+  ENDPOINT_PATHS,
+  MODELS_PATH,
+  type WireFormat,
+} from '@proxitor/plugin-api';
 import { RoutingConfigError, RoutingError } from './error.js';
 import { compileGlob } from './glob.js';
 import {
@@ -7,9 +12,6 @@ import {
   type PluginListEntry,
 } from './plugin-merge.js';
 import { type ProviderConfig, validateProvider } from './provider.js';
-
-/** Locally-synthesized model listing endpoint (spec §5.2). */
-export const MODELS_PATH = '/v1/models';
 
 /** One row of the model routing table (spec §5.2). */
 export type ModelBinding = {
@@ -52,8 +54,8 @@ export type RoutingTable = {
 
 /**
  * Classify an inbound path (spec §5.2): the two LLM endpoints map to their
- * wire formats, `/v1/models` returns its sentinel, `/v1/responses` is a 501
- * (format deferred, §17), anything else is a 404.
+ * wire formats, MODELS_PATH returns its sentinel, DEFERRED_RESPONSES_PATH is
+ * a 501 (format deferred, §17), anything else is a 404.
  */
 export function classifyPath(path: string): WireFormat | typeof MODELS_PATH {
   if (path === ENDPOINT_PATHS['anthropic-messages']) {
@@ -65,7 +67,7 @@ export function classifyPath(path: string): WireFormat | typeof MODELS_PATH {
   if (path === MODELS_PATH) {
     return MODELS_PATH;
   }
-  if (path === '/v1/responses') {
+  if (path === DEFERRED_RESPONSES_PATH) {
     throw new RoutingError('openai-responses format is deferred (see spec §17)', 501);
   }
   throw new RoutingError(`unknown path '${path}'`, 404);

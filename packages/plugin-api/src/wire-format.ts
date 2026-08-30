@@ -27,6 +27,14 @@ export const ENDPOINT_PATHS: Readonly<Record<WireFormat, string>> = {
 };
 
 /**
+ * Inbound proxy-owned paths (spec §5.2): `/v1/models` is synthesized locally
+ * from the routing table; `/v1/responses` (openai-responses format) is
+ * deferred — classified to a 501 (§17), never a passthrough.
+ */
+export const MODELS_PATH = '/v1/models';
+export const DEFERRED_RESPONSES_PATH = '/v1/responses';
+
+/**
  * Session headers (spec §10a): the pipeline stamps the first present value onto
  * `CanonicalRequest.clientSessionId`; the session-id plugin forwards it upstream.
  */
