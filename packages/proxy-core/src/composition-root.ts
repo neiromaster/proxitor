@@ -113,7 +113,7 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
   await credentials.preload(credentialRefsOf(config));
 
   const manager = createPluginManager({ plugins: createBuiltInPluginRegistry(), logger });
-  validateActivation(config, manager);
+  validateActivation(config, manager, logger);
 
   // Construct sinks (options.sinks override defaults). The verbose per-request
   // line is boot-time config: flipping logging.verbose requires a restart.
@@ -178,7 +178,7 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
           plugins: cfg.plugins,
           defaultProvider: cfg.defaultProvider,
         }),
-      validate: cfg => validateActivation(cfg, manager),
+      validate: cfg => validateActivation(cfg, manager, logger),
       preloadCredentials: cfg => credentials.preload(credentialRefsOf(cfg)),
       reconfigure: cfg => observability.reconfigure(cfg.observability),
       logger,

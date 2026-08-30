@@ -1,6 +1,11 @@
-import type { LoggerPort, ProxyPlugin, WireFormat } from '@proxitor/plugin-api';
+import {
+  type LoggerPort,
+  type ProxyPlugin,
+  WIRE_FORMATS,
+  type WireFormat,
+} from '@proxitor/plugin-api';
 import type { EffectivePlugin } from '../domain/index.js';
-import { assertPluginFormatCompatible, RoutingConfigError } from '../domain/index.js';
+import { RoutingConfigError } from '../domain/index.js';
 
 /** A plugin resolved for one route: instance + validated config (spec §7). */
 export type ActivePlugin = {
@@ -9,10 +14,22 @@ export type ActivePlugin = {
   readonly config: unknown;
 };
 
+/** A plugin skipped at activation: its reservedKeys don't cover the wire format (B5.2). */
+export type PluginActivationSkip = {
+  readonly plugin: string;
+  readonly wireFormat: WireFormat;
+};
+
+/** Shared warn text so load-time and request-time skips read identically. */
+export const pluginFormatSkipWarning = (skip: PluginActivationSkip): string =>
+  `plugin "${skip.plugin}" does not support wire format ${skip.wireFormat}; skipped for this route`;
+
 export type PluginManager = {
   activate(
     effective: readonly EffectivePlugin[],
     outboundFormat: WireFormat,
+    /** B5.2: called once per format-incompatible entry instead of throwing. */
+    onSkip?: (skip: PluginActivationSkip) => void,
   ): ActivePlugin[];
   snapshot(): Readonly<Record<string, unknown>>;
   restore(states: Readonly<Record<string, unknown>>): void;
@@ -29,12 +46,14 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
 
   /**
    * Resolve effective plugins for one route. `outboundFormat` enforces the
-   * reservedKeys↔wireFormat contract (spec §4.3) — a mismatch is a config
-   * error, never a silent no-op.
+   * reservedKeys↔wireFormat contract (spec §4.3): a plugin whose reservedKeys
+   * don't cover the route's format is skipped and reported through `onSkip`
+   * (B5.2), while unknown plugin names and rejected configs still throw.
    */
   const activate = (
     effective: readonly EffectivePlugin[],
     outboundFormat: WireFormat,
+    onSkip?: (skip: PluginActivationSkip) => void,
   ): ActivePlugin[] => {
     const active: ActivePlugin[] = [];
     for (const entry of effective) {
@@ -44,7 +63,15 @@ export function createPluginManager(options: PluginManagerOptions): PluginManage
           `unknown plugin "${entry.name}" (registered: ${[...plugins.keys()].join(', ') || 'none'})`,
         );
       }
-      assertPluginFormatCompatible(plugin, outboundFormat, entry.name);
+      // B5.2: the plugin simply doesn't affect routes in other formats —
+      // skipping mirrors the documented behavior instead of aborting startup.
+      const declared = WIRE_FORMATS.filter(
+        format => format in (plugin.reservedKeys ?? {}),
+      );
+      if (declared.length > 0 && !declared.includes(outboundFormat)) {
+        onSkip?.({ plugin: entry.name, wireFormat: outboundFormat });
+        continue;
+      }
       let config: unknown = entry.config;
       if (plugin.validateConfig !== undefined) {
         try {

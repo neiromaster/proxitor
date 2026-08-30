@@ -46,36 +46,50 @@ describe('validateActivation', () => {
     expect(() => validateActivation(config, manager)).not.toThrow();
   });
 
-  test('a format-incompatible binding fails at load (D7: no request-time 500)', () => {
+  test('global openrouter-routing loads mixed formats: warn on anthropic, active on openai (B5.2)', () => {
+    // Arrange
     const config = parseConfig({
       ...CONFIG_TEXT,
-      models: [
-        {
-          match: 'claude-*',
-          provider: 'ant',
-          modelId: '$MODEL',
-          plugins: [{ 'openrouter-routing': { only: ['anthropic'] } }],
-        },
-      ],
+      plugins: [{ 'openrouter-routing': { only: ['anthropic'] } }],
     });
+    const warns: Array<{ message: string; context?: unknown }> = [];
+    const logger = {
+      info() {},
+      warn(message: string, context?: unknown) {
+        warns.push({ message, context });
+      },
+      error() {},
+      debug() {},
+    };
     const manager = createPluginManager({
       plugins: createBuiltInPluginRegistry(),
-      logger: silent,
+      logger,
     });
-    expect(() => validateActivation(config, manager)).toThrow(RoutingConfigError);
+
+    // Act
+    expect(() => validateActivation(config, manager, logger)).not.toThrow();
+
+    // Assert — exactly one warn, for the anthropic-messages route only
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.message).toContain('openrouter-routing');
+    expect(warns[0]?.message).toContain('anthropic-messages');
+    expect(warns[0]?.message).toContain('skipped');
+    expect(warns[0]?.context).toMatchObject({ plugin: 'openrouter-routing' });
+    // the openai-chat route still activates the plugin
+    const active = manager.activate([{ name: 'openrouter-routing' }], 'openai-chat');
+    expect(active).toHaveLength(1);
   });
 
   test('defaultProvider route is validated too', () => {
     const config = parseConfig({ ...CONFIG_TEXT, defaultProvider: 'ant' });
     const configBad = parseConfig({
       ...CONFIG_TEXT,
-      defaultProvider: 'oai',
+      defaultProvider: 'ant',
       providers: {
         ...CONFIG_TEXT.providers,
-        oai: {
-          ...CONFIG_TEXT.providers.oai!,
-          wireFormat: 'anthropic-messages',
-          headers: { 'anthropic-version': '2023-06-01' },
+        ant: {
+          ...CONFIG_TEXT.providers.ant!,
+          plugins: [{ 'no-such-plugin': {} }],
         },
       },
     });
@@ -85,5 +99,24 @@ describe('validateActivation', () => {
     });
     expect(() => validateActivation(config, manager)).not.toThrow();
     expect(() => validateActivation(configBad, manager)).toThrow(RoutingConfigError);
+    expect(() => validateActivation(configBad, manager)).toThrow(/no-such-plugin/);
+  });
+
+  test('an unknown plugin name still fails at load (B5.2 keeps this fatal)', () => {
+    // Arrange
+    const config = parseConfig({
+      ...CONFIG_TEXT,
+      plugins: ['no-such-plugin'],
+    });
+    const manager = createPluginManager({
+      plugins: createBuiltInPluginRegistry(),
+      logger: silent,
+    });
+
+    // Act + Assert
+    expect(() => validateActivation(config, manager)).toThrow(RoutingConfigError);
+    expect(() => validateActivation(config, manager)).toThrow(
+      /unknown plugin "no-such-plugin"/,
+    );
   });
 });

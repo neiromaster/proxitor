@@ -32,7 +32,11 @@ import type {
 import type { CredentialResolverPort } from './credentials.js';
 import { resolveAuthHeader } from './credentials.js';
 import type { ObservabilityPort, RequestObservation } from './observability.js';
-import type { ActivePlugin, PluginManager } from './plugin-manager.js';
+import {
+  type ActivePlugin,
+  type PluginManager,
+  pluginFormatSkipWarning,
+} from './plugin-manager.js';
 import type { UpstreamFetchPort, UpstreamResponse } from './upstream-fetch.js';
 import { buildUpstreamHeaders } from './upstream-headers.js';
 
@@ -449,7 +453,19 @@ export async function prepareUpstream(
 
   let active: readonly ActivePlugin[];
   try {
-    active = deps.manager.activate(resolution.plugins, resolution.outboundFormat);
+    active = deps.manager.activate(
+      resolution.plugins,
+      resolution.outboundFormat,
+      skip => {
+        // B5.2: mirrors load-time activation — a format-incompatible plugin is
+        // skipped with a warn, not a per-request 500.
+        deps.logger.warn(pluginFormatSkipWarning(skip), {
+          requestId,
+          plugin: skip.plugin,
+          wireFormat: skip.wireFormat,
+        });
+      },
+    );
   } catch (error) {
     // D7: request-time activation failures are 500s.
     // M6 tap point 1: activation failure → 500

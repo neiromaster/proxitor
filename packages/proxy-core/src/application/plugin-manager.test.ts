@@ -1,7 +1,7 @@
 import type { ProxyPlugin } from '@proxitor/plugin-api';
 import { describe, expect, it } from 'vitest';
 import { RoutingConfigError } from '../domain/index.js';
-import { createPluginManager } from './plugin-manager.js';
+import { createPluginManager, type PluginActivationSkip } from './plugin-manager.js';
 
 type Warn = { message: string; context?: unknown };
 
@@ -173,8 +173,9 @@ describe('createPluginManager', () => {
     ]);
   });
 
-  it('rejects a plugin whose reservedKeys target another wire format', () => {
+  it('skips a plugin whose reservedKeys target another wire format and reports the skip', () => {
     // Arrange
+    const skips: PluginActivationSkip[] = [];
     const manager = createPluginManager({
       plugins: new Map([
         [
@@ -185,10 +186,42 @@ describe('createPluginManager', () => {
       logger,
     });
 
-    // Act + Assert
-    expect(() => manager.activate([{ name: 'or-route' }], 'anthropic-messages')).toThrow(
-      RoutingConfigError,
+    // Act
+    const active = manager.activate([{ name: 'or-route' }], 'anthropic-messages', skip =>
+      skips.push(skip),
     );
+
+    // Assert
+    expect(active).toEqual([]);
+    expect(skips).toEqual([{ plugin: 'or-route', wireFormat: 'anthropic-messages' }]);
+  });
+
+  it('skips only the incompatible entries; compatible ones still activate in order', () => {
+    // Arrange
+    const orRoute: ProxyPlugin = {
+      name: 'or-route',
+      reservedKeys: { 'openai-chat': ['$proxitor.provider'] },
+    };
+    const plain = makePlugin('plain');
+    const manager = createPluginManager({
+      plugins: new Map([
+        ['or-route', orRoute],
+        ['plain', plain],
+      ]),
+      logger,
+    });
+    const skips: PluginActivationSkip[] = [];
+
+    // Act
+    const active = manager.activate(
+      [{ name: 'or-route' }, { name: 'plain' }],
+      'anthropic-messages',
+      skip => skips.push(skip),
+    );
+
+    // Assert
+    expect(active).toEqual([{ name: 'plain', plugin: plain, config: undefined }]);
+    expect(skips).toEqual([{ plugin: 'or-route', wireFormat: 'anthropic-messages' }]);
   });
 
   it('accepts a plugin whose reservedKeys match the outbound wire format', () => {

@@ -95,7 +95,7 @@ describe('createProxitor', () => {
     expect(((await res.json()) as { data: unknown[] }).data.length).toBeGreaterThan(0);
   });
 
-  test('load-time activation failure rejects (D-M5a-4)', async () => {
+  test('unknown plugin fails activation at load (D-M5a-4)', async () => {
     const text = `
 version: 1
 providers:
@@ -104,7 +104,7 @@ providers:
     wireFormat: anthropic-messages
     auth: { type: bearer, credential: k }
     headers: { anthropic-version: '2023-06-01' }
-    plugins: [{ 'openrouter-routing': { only: [anthropic] } }]
+    plugins: [{ 'no-such-plugin': {} }]
 models:
   - match: '*'
     provider: ant
@@ -118,6 +118,118 @@ models:
         logger: silent,
       }),
     ).rejects.toThrow(RoutingConfigError);
+    await expect(
+      createProxitor({
+        configText: text,
+        env: {},
+        fetchImpl: async () => new Response('{}'),
+        logger: silent,
+      }),
+    ).rejects.toThrow(/no-such-plugin/);
+  });
+
+  test('global openrouter-routing loads mixed formats: skipped on anthropic, active on openai (B5.2)', async () => {
+    // Arrange
+    const upstreamBodies: Array<{ url: string; body: string }> = [];
+    const anthropicUpstream = JSON.stringify({
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-5',
+      content: [{ type: 'text', text: 'Hello' }],
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    const configText = `
+version: 1
+plugins:
+  - openrouter-routing:
+      only: anthropic
+providers:
+  ant:
+    baseUrl: https://ant.example.com
+    wireFormat: anthropic-messages
+    auth: { type: bearer, credential: k }
+    headers: { anthropic-version: '2023-06-01' }
+  oai:
+    baseUrl: https://oai.example.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: k }
+models:
+  - match: 'claude-*'
+    provider: ant
+    modelId: '$MODEL'
+  - match: 'gpt-*'
+    provider: oai
+    modelId: '$MODEL'
+`;
+    const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      upstreamBodies.push({ url, body: String(init?.body ?? '') });
+      if (url.includes('ant.example.com')) {
+        return new Response(anthropicUpstream, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(STREAM_SSE, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+    const proxitor = await createProxitor({
+      configText,
+      env: {},
+      fetchImpl,
+      logger: silent,
+    });
+
+    // Act — anthropic-messages route (global openrouter-routing is incompatible here)
+    const antRes = await proxitor.app.request('/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 64,
+        stream: false,
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    });
+    // Act — openai-chat route (the plugin activates here)
+    const oaiRes = await proxitor.app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+      }),
+    });
+    const oaiReader = oaiRes.body?.getReader();
+    if (!oaiReader) throw new Error('Response body has no reader');
+    let done = false;
+    while (!done) {
+      const result = await oaiReader.read();
+      done = result.done;
+    }
+
+    // Assert — anthropic request succeeds with no reserved-key channel on the wire
+    expect(antRes.status).toBe(200);
+    const antUpstream = upstreamBodies.find(entry =>
+      entry.url.includes('ant.example.com'),
+    );
+    expect(antUpstream).toBeDefined();
+    expect(antUpstream!.body).not.toContain('$proxitor');
+    expect(JSON.parse(antUpstream!.body)).not.toHaveProperty('provider');
+    // Assert — openai request carries the provider routing hints
+    expect(oaiRes.status).toBe(200);
+    const oaiUpstream = upstreamBodies.find(entry =>
+      entry.url.includes('oai.example.com'),
+    );
+    expect(oaiUpstream).toBeDefined();
+    expect(JSON.parse(oaiUpstream!.body).provider).toEqual({
+      only: ['anthropic'],
+    });
   });
 
   test('missing env credential rejects at startup (D16)', async () => {

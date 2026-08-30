@@ -130,9 +130,9 @@ describe('built-in plugins through the pipeline', () => {
     expect(JSON.parse(clientBody).content).toEqual([{ type: 'text', text: 'Hello' }]); // passthrough reply
   });
 
-  it('openrouter-routing on an anthropic route fails activation with plugin_config_error', async () => {
+  it('openrouter-routing on an anthropic route is skipped, not a 500 (B5.2)', async () => {
     // Arrange — the registry already contains openrouter-routing; the provider wires only it
-    const { port } = fakeFetch(200, [UPSTREAM_JSON]);
+    const { calls, port } = fakeFetch(200, [UPSTREAM_JSON]);
     const pipeline = createPipeline(
       makeDeps(port, createBuiltInPluginRegistry(), ['openrouter-routing']),
     );
@@ -147,15 +147,11 @@ describe('built-in plugins through the pipeline', () => {
     let clientBody = '';
     for await (const chunk of response.body) clientBody += chunk;
 
-    // Assert
-    expect(response.status).toBe(500);
-    expect(JSON.parse(clientBody)).toEqual({
-      type: 'error',
-      error: {
-        type: 'plugin_config_error',
-        message: expect.stringContaining('openrouter-routing'),
-      },
-    });
+    // Assert — request succeeds; no reserved-key channel on the anthropic wire body
+    expect(response.status).toBe(200);
+    expect(JSON.parse(clientBody).content).toEqual([{ type: 'text', text: 'Hello' }]);
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0]?.body ?? '{}').provider).toBeUndefined();
   });
 
   it('openrouter-routing maps provider hints onto openai-chat wire body', async () => {

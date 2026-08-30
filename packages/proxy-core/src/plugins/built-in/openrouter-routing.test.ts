@@ -1,7 +1,9 @@
 import type { CanonicalRequest, PluginContext } from '@proxitor/plugin-api';
 import { describe, expect, it } from 'vitest';
-import { createPluginManager } from '../../application/plugin-manager.js';
-import { RoutingConfigError } from '../../domain/index.js';
+import {
+  createPluginManager,
+  type PluginActivationSkip,
+} from '../../application/plugin-manager.js';
 import {
   buildProviderRouting,
   createOpenRouterRoutingPlugin,
@@ -181,20 +183,26 @@ describe('openrouter-routing plugin', () => {
     expect(result).toBe(req);
   });
 
-  it('is rejected on non-openai-chat routes by the activation gate', () => {
+  it('is skipped on non-openai-chat routes by the activation gate (B5.2)', () => {
     // Arrange
     const manager = createPluginManager({
       plugins: new Map([['openrouter-routing', createOpenRouterRoutingPlugin()]]),
       logger: console,
     });
+    const skips: PluginActivationSkip[] = [];
 
-    // Act + Assert — Task 1's gate wired through the real manager
-    expect(() =>
-      manager.activate(
-        [{ name: 'openrouter-routing', config: { only: ['anthropic'] } }],
-        'anthropic-messages',
-      ),
-    ).toThrow(RoutingConfigError);
+    // Act — anthropic route: skipped, not thrown
+    const active = manager.activate(
+      [{ name: 'openrouter-routing', config: { only: ['anthropic'] } }],
+      'anthropic-messages',
+      skip => skips.push(skip),
+    );
+
+    // Assert — the openai-chat route still activates it
+    expect(active).toEqual([]);
+    expect(skips).toEqual([
+      { plugin: 'openrouter-routing', wireFormat: 'anthropic-messages' },
+    ]);
     expect(() =>
       manager.activate(
         [{ name: 'openrouter-routing', config: { only: ['anthropic'] } }],
