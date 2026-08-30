@@ -171,4 +171,21 @@ describe('session-id plugin', () => {
     expect(second?.outboundHeaders?.['x-session-id']).toBe('fallback-uuid');
     expect(afterReload?.outboundHeaders?.['x-session-id']).toBe('fallback-uuid');
   });
+
+  it('honors clientSessionId verbatim without deriving a fingerprint', async () => {
+    // Arrange — empty system/messages: the fingerprint path would mint the fallback id
+    const plugin = createSessionIdPlugin();
+    const req = request({ clientSessionId: 'client-abc', system: [], messages: [] });
+
+    // Act
+    const result = await plugin.onRequest?.(ctx(), req);
+
+    // Assert
+    if (result === undefined || !('outboundHeaders' in result)) {
+      throw new Error('expected a CanonicalRequest result');
+    }
+    expect(result.outboundHeaders?.['x-session-id']).toBe('client-abc');
+    // No fingerprint path ran — the fallback closure was never touched.
+    expect(plugin.exportState?.()).toBeUndefined();
+  });
 });

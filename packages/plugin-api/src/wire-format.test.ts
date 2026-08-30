@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ENDPOINT_PATHS, RESERVED_KEYS, WIRE_FORMATS } from './wire-format.js';
+import {
+  CLIENT_SESSION_ID_HEADER,
+  ENDPOINT_PATHS,
+  RESERVED_KEYS,
+  SESSION_ID_HEADER,
+  WIRE_FORMATS,
+} from './wire-format.js';
 
 describe('wire formats', () => {
   it('exposes both v1 formats', () => {
@@ -33,5 +39,13 @@ describe('ENDPOINT_PATHS', () => {
     // Arrange / Act / Assert
     expect(ENDPOINT_PATHS['anthropic-messages']).toBe('/v1/messages');
     expect(ENDPOINT_PATHS['openai-chat']).toBe('/v1/chat/completions');
+  });
+});
+
+describe('session id headers', () => {
+  it('names the client hint and the wire header, both lowercased', () => {
+    // Arrange / Act / Assert
+    expect(CLIENT_SESSION_ID_HEADER).toBe('x-claude-code-session-id');
+    expect(SESSION_ID_HEADER).toBe('x-session-id');
   });
 });

@@ -4,16 +4,18 @@ import type {
   CanonicalSystemBlock,
   ProxyPlugin,
 } from '@proxitor/plugin-api';
-import { definePlugin } from '@proxitor/plugin-api';
+import { definePlugin, SESSION_ID_HEADER } from '@proxitor/plugin-api';
 import { z } from 'zod';
 
 /**
  * Sticky routing via `x-session-id` on the outboundHeaders channel (D18,
- * spec §10a). Content-fingerprint derivation (D-M4b-4): sha256 over logical
- * model + joined system texts + first user message content signature. The
- * FIRST user message is immutable in a growing conversation, so the id is
- * stable across turns; signatures exclude cacheControl fields so plugin order
- * cannot drift the fingerprint. Port of legacy src/proxy/utils/session-id.ts.
+ * spec §10a). mode:auto honors the client's session hint when the pipeline
+ * stamped one (`CanonicalRequest.clientSessionId`); otherwise content
+ * fingerprint derivation (D-M4b-4): sha256 over logical model + joined system
+ * texts + first user message content signature. The FIRST user message is
+ * immutable in a growing conversation, so the id is stable across turns;
+ * signatures exclude cacheControl fields so plugin order cannot drift the
+ * fingerprint. Port of legacy src/proxy/utils/session-id.ts.
  */
 const sessionIdConfigSchema = z.preprocess(
   val => (val === undefined || val === null ? {} : val),
@@ -88,10 +90,23 @@ export function createSessionIdPlugin(): ProxyPlugin<SessionIdPluginConfig> {
     name: 'session-id',
     async onRequest(ctx, req) {
       if (ctx.config.mode === 'skip') return req;
+      if (req.clientSessionId !== undefined) {
+        // Honor the client's id verbatim — no fingerprint, no fallback state.
+        return {
+          ...req,
+          outboundHeaders: {
+            ...req.outboundHeaders,
+            [SESSION_ID_HEADER]: req.clientSessionId,
+          },
+        };
+      }
       const fb = fallbackId ?? ctx.random.uuid();
       fallbackId = fb;
       const id = await deriveSessionId(req, () => fb);
-      return { ...req, outboundHeaders: { ...req.outboundHeaders, 'x-session-id': id } };
+      return {
+        ...req,
+        outboundHeaders: { ...req.outboundHeaders, [SESSION_ID_HEADER]: id },
+      };
     },
     exportState: () =>
       fallbackId === undefined ? undefined : ({ fallbackId } satisfies SessionIdState),

@@ -105,4 +105,6 @@ export type CanonicalRequest = {
   extensions: ExtensionsBag;
   /** Plugin → upstream header channel (D18); auth + provider.headers are protected. */
   outboundHeaders?: Record<string, string>;
+  /** Inbound client session hint, stamped by the pipeline from client headers; plugins may honor it instead of deriving their own id. */
+  clientSessionId?: string;
 };

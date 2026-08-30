@@ -435,7 +435,7 @@ Source: [`plugins/built-in/cache-control.ts`](../packages/proxy-core/src/plugins
 
 ### `session-id`
 
-Sticky routing via `x-session-id` header. Derives a stable session ID from the logical model, system prompt, and first user message.
+Sticky routing via `x-session-id` header. Uses the client's session id (`x-claude-code-session-id` / `x-session-id` headers) if sent; otherwise derives a stable session ID from the logical model, system prompt, and first user message.
 
 **Options:**
 
@@ -447,7 +447,7 @@ Sticky routing via `x-session-id` header. Derives a stable session ID from the l
 
 | Mode | Behavior |
 | --- | --- |
-| `auto` | Generate session ID if client didn't send one |
+| `auto` | Use the client's session id (`x-claude-code-session-id` / `x-session-id` headers) if sent; otherwise derive a stable id from model + system prompt + first user message |
 | `skip` | Passthrough — do not generate |
 
 **Example:**

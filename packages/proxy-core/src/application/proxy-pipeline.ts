@@ -9,7 +9,11 @@ import type {
   ShortCircuit,
   WireFormat,
 } from '@proxitor/plugin-api';
-import { ENDPOINT_PATHS } from '@proxitor/plugin-api';
+import {
+  CLIENT_SESSION_ID_HEADER,
+  ENDPOINT_PATHS,
+  SESSION_ID_HEADER,
+} from '@proxitor/plugin-api';
 import type { RouteResolution, RoutingTable } from '../domain/index.js';
 import {
   classifyPath,
@@ -453,6 +457,14 @@ export async function prepareUpstream(
     return { kind: 'error', response: errorResponse(inbound, toCanonicalError(error)) };
   }
 
+  // B3.2: stamp the inbound session hint before the plugin chain so plugins see it.
+  // Inbound headers are lowercased by the adapter; an empty value counts as absent.
+  const clientSessionId =
+    request.headers[CLIENT_SESSION_ID_HEADER] ?? request.headers[SESSION_ID_HEADER];
+  if (clientSessionId !== undefined && clientSessionId.length > 0) {
+    ir.clientSessionId = clientSessionId;
+  }
+
   for (const ap of active) {
     if (ap.plugin.onRequest === undefined) {
       continue;
@@ -499,7 +511,7 @@ export async function prepareUpstream(
     model: ir.model.logical,
     provider: resolution.provider.id,
     physicalModel: resolution.physicalModel,
-    sessionId: ir.outboundHeaders?.['x-session-id'],
+    sessionId: ir.outboundHeaders?.[SESSION_ID_HEADER],
     toolsCount: ir.tools?.length ?? 0,
     maxTokens: ir.params.maxTokens?.value,
   });

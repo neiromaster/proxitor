@@ -25,3 +25,10 @@ export const ENDPOINT_PATHS: Readonly<Record<WireFormat, string>> = {
   'anthropic-messages': '/v1/messages',
   'openai-chat': '/v1/chat/completions',
 };
+
+/**
+ * Session headers (spec §10a): the pipeline stamps the first present value onto
+ * `CanonicalRequest.clientSessionId`; the session-id plugin forwards it upstream.
+ */
+export const CLIENT_SESSION_ID_HEADER = 'x-claude-code-session-id';
+export const SESSION_ID_HEADER = 'x-session-id';
