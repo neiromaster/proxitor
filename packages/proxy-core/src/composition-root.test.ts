@@ -459,6 +459,22 @@ defaultProvider: openai
     // Act + Assert — safe with no queued dumps; resolves rather than hanging
     await expect(proxitor.drain()).resolves.toBeUndefined();
   });
+
+  test('drain resolves when sinks are overridden (H: no DumpSink retained)', async () => {
+    // Arrange — caller-provided sinks replace the defaults entirely
+    const recordingSink: ObservationSink = {
+      emit(_record: ObservationRecord): void {},
+    };
+    const proxitor = await createProxitor({
+      configText: GOOD,
+      env: { OAI_KEY: 'test-key' },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+      logger: silent,
+      sinks: [recordingSink],
+    });
+    // Act + Assert — nothing retained to drain; must resolve, not hang
+    await expect(proxitor.drain()).resolves.toBeUndefined();
+  });
 });
 
 describe('createProxitor hot-reload wiring', () => {

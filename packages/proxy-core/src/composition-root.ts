@@ -115,23 +115,28 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
   const manager = createPluginManager({ plugins: createBuiltInPluginRegistry(), logger });
   validateActivation(config, manager, logger);
 
-  // Construct sinks (options.sinks override defaults). The verbose per-request
-  // line is boot-time config: flipping logging.verbose requires a restart.
-  // The dump sink is retained so shutdown can drain its queued writes (B2.5).
-  const dumpSink = new DumpSink({
-    env,
-    writeFile,
-    mkdir,
-    logger,
-    maxConcurrent: 16,
-    maxWaiters: 256,
-  });
+  // Construct sinks (options.sinks override defaults — no DumpSink is built
+  // or retained when overridden). The verbose per-request line is boot-time
+  // config: flipping logging.verbose requires a restart. The dump sink is
+  // retained so shutdown can drain its queued writes (B2.5); with overridden
+  // sinks there is nothing to drain and drain() resolves immediately.
+  const dumpSink =
+    options.sinks === undefined
+      ? new DumpSink({
+          env,
+          writeFile,
+          mkdir,
+          logger,
+          maxConcurrent: 16,
+          maxWaiters: 256,
+        })
+      : undefined;
   const sinks: readonly ObservationSink[] = options.sinks ?? [
     new LiveLineSink({ info: line => logger.info(line) }),
     ...(config.logging.verbose
       ? [new VerboseLineSink({ info: line => logger.info(line) })]
       : []),
-    dumpSink,
+    ...(dumpSink !== undefined ? [dumpSink] : []),
   ];
 
   // Create observability (always created now)
@@ -244,6 +249,6 @@ export async function createProxitor(options: CreateProxitorOptions): Promise<Pr
     observability,
     reload: () => hotReload.reload(),
     watcher,
-    drain: () => dumpSink.flush(),
+    drain: () => dumpSink?.flush() ?? Promise.resolve(),
   };
 }
