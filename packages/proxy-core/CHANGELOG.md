@@ -1,5 +1,12 @@
 # @proxitor/proxy-core
 
+## 0.100.0-beta.1
+
+### Patch Changes
+
+- Updated dependencies [72efa10]
+  - @proxitor/plugin-api@0.1.0-beta.1
+
 ## 0.100.0-beta.0
 
 ### Minor Changes
