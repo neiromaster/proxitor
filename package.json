@@ -45,7 +45,7 @@
     "start": "node packages/proxy-core/dist/cli.mjs",
     "test": "pnpm -r --if-present run test",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "typecheck:all": "pnpm -r --if-present run typecheck",
+    "typecheck:all": "pnpm run build && pnpm -r --if-present run typecheck",
     "version-packages": "changeset version"
   },
   "dependencies": {
