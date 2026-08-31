@@ -2,7 +2,7 @@
   "mode": "pre",
   "tag": "beta",
   "initialVersions": {
-    "proxitor": "0.20.0"
+    "proxitor": "0.100.0"
   },
   "changesets": []
 }
