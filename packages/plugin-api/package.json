@@ -1,6 +1,6 @@
 {
   "name": "@proxitor/plugin-api",
-  "version": "0.0.0",
+  "version": "0.1.0-beta.0",
   "description": "Published proxitor plugin contract: Canonical IR, plugin hooks, ports",
   "license": "MIT",
   "type": "module",

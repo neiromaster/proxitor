@@ -1,8 +1,4 @@
 {
   "mode": "pre",
-  "tag": "beta",
-  "initialVersions": {
-    "proxitor": "0.100.0"
-  },
-  "changesets": []
+  "tag": "beta"
 }
