@@ -1,0 +1,64 @@
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 1024,
+  "stream": false,
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a coding agent.",
+      "cache_control": { "type": "ephemeral" }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "Read this screenshot and fix the bug." },
+        {
+          "type": "image",
+          "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "aGk="
+          }
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "text", "text": "Let me look." },
+        {
+          "type": "tool_use",
+          "id": "toolu_fix1",
+          "name": "read_file",
+          "input": { "path": "src/index.ts" }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_fix1",
+          "content": "file body"
+        },
+        { "type": "text", "text": "Now fix it." }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read a file",
+      "input_schema": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      }
+    }
+  ],
+  "tool_choice": { "type": "auto" },
+  "temperature": 1
+}

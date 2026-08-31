@@ -1,0 +1,229 @@
+import type { ProxyPlugin } from '@proxitor/plugin-api';
+import { describe, expect, it } from 'vitest';
+import { createRoutingTable, type PluginListEntry } from '../domain/index.js';
+import { createBuiltInPluginRegistry } from '../plugins/built-in/index.js';
+import { createPluginManager, pluginFormatSkipWarning } from './plugin-manager.js';
+import { createPipeline, type PipelineDeps } from './proxy-pipeline.js';
+import type { UpstreamRequest, UpstreamResponse } from './upstream-fetch.js';
+
+const logger = {
+  info(_m: string) {},
+  warn(_m: string) {},
+  error(_m: string) {},
+  debug(_m: string) {},
+};
+
+async function* fromChunks(chunks: string[]): AsyncGenerator<string> {
+  for (const chunk of chunks) yield chunk;
+}
+
+function fakeFetch(status: number, chunks: string[]) {
+  const calls: UpstreamRequest[] = [];
+  const port = {
+    fetch: async (request: UpstreamRequest): Promise<UpstreamResponse> => {
+      calls.push(request);
+      return { status, headers: {}, body: fromChunks(chunks) };
+    },
+  };
+  return { calls, port };
+}
+
+function makeDeps(
+  fetchPort: PipelineDeps['fetch'],
+  plugins: ReadonlyMap<string, ProxyPlugin>,
+  providerPlugins: readonly PluginListEntry[],
+  depsLogger: PipelineDeps['logger'] = logger,
+): PipelineDeps {
+  return {
+    table: createRoutingTable({
+      providers: {
+        ant: {
+          id: 'ant',
+          baseUrl: 'https://ant.example.com',
+          wireFormat: 'anthropic-messages',
+          auth: { type: 'x-api-key', credential: 'sk-ant-test' },
+          headers: { 'anthropic-version': '2023-06-01' },
+          plugins: providerPlugins,
+        },
+      },
+      models: [{ match: 'claude-*', provider: 'ant', modelId: 'claude-real' }],
+      defaultProvider: 'ant',
+    }),
+    manager: createPluginManager({ plugins, logger: depsLogger }),
+    fetch: fetchPort,
+    credentials: {
+      resolve: (ref: unknown) => (typeof ref === 'string' ? ref : 'resolved'),
+    },
+    logger: depsLogger,
+    clock: { now: () => 0 },
+    random: { uuid: () => 'req-1' },
+  };
+}
+
+const BODY = JSON.stringify({
+  model: 'claude-sonnet-5',
+  max_tokens: 64,
+  stream: false,
+  system: [
+    {
+      type: 'text',
+      text: 'agent cch=deadbeef cc_version=2.1.3.cafe123',
+      cache_control: { type: 'ephemeral', ttl: '5m' },
+    },
+    { type: 'text', text: 'extra instructions' },
+  ],
+  messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+});
+
+const SIMPLE_BODY = JSON.stringify({
+  model: 'claude-sonnet-5',
+  max_tokens: 64,
+  stream: true,
+  messages: [{ role: 'user', content: 'hi' }],
+});
+
+const UPSTREAM_JSON = JSON.stringify({
+  id: 'msg_1',
+  type: 'message',
+  role: 'assistant',
+  model: 'claude-real',
+  content: [{ type: 'text', text: 'Hello' }],
+  stop_reason: 'end_turn',
+  usage: { input_tokens: 1, output_tokens: 1 },
+});
+
+const OAI_SSE = [
+  'data: {"id":"c","model":"gpt-5-real","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n',
+  'data: {"id":"c","model":"gpt-5-real","choices":[{"index":0,"delta":{"content":"Hi"}}]}\n\n',
+  'data: {"id":"c","model":"gpt-5-real","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+  'data: [DONE]\n\n',
+];
+
+describe('built-in plugins through the pipeline', () => {
+  it('normalize + rewrite + inject + session-id all land on the upstream request', async () => {
+    // Arrange
+    const { calls, port } = fakeFetch(200, [UPSTREAM_JSON]);
+    const pipeline = createPipeline(
+      makeDeps(port, createBuiltInPluginRegistry(), [
+        'normalize-volatile-system',
+        { 'cache-control': { ttl: '1h' } },
+        'session-id',
+      ]),
+    );
+
+    // Act
+    const response = await pipeline.handle({
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {},
+      body: BODY,
+    });
+    let clientBody = '';
+    for await (const chunk of response.body) clientBody += chunk;
+
+    // Assert
+    expect(response.status).toBe(200);
+    const sent = JSON.parse(calls[0]?.body ?? '{}');
+    expect(sent.system[0].text).toBe('agent cch=00000 cc_version=2.1.3.0'); // normalize-volatile-system
+    expect(sent.system[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' }); // rewrite 5m → 1h
+    expect(sent.system[1].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' }); // inject (auto: breakpoint existed)
+    expect(calls[0]?.headers['x-session-id']).toMatch(/^[0-9a-f]{64}$/); // session-id
+    expect(JSON.parse(clientBody).content).toEqual([{ type: 'text', text: 'Hello' }]); // passthrough reply
+  });
+
+  it('openrouter-routing on an anthropic route is skipped with a warn, not a 500 (B5.2)', async () => {
+    // Arrange — the registry already contains openrouter-routing; the provider wires only it
+    const { calls, port } = fakeFetch(200, [UPSTREAM_JSON]);
+    const warns: Array<{ message: string; context?: unknown }> = [];
+    const capturing: PipelineDeps['logger'] = {
+      ...logger,
+      warn(message: string, context?: unknown) {
+        warns.push({ message, context });
+      },
+    };
+    const pipeline = createPipeline(
+      makeDeps(port, createBuiltInPluginRegistry(), ['openrouter-routing'], capturing),
+    );
+
+    // Act
+    const response = await pipeline.handle({
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {},
+      body: BODY,
+    });
+    let clientBody = '';
+    for await (const chunk of response.body) clientBody += chunk;
+
+    // Assert — request succeeds; no reserved-key channel on the anthropic wire body
+    expect(response.status).toBe(200);
+    expect(JSON.parse(clientBody).content).toEqual([{ type: 'text', text: 'Hello' }]);
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0]?.body ?? '{}').provider).toBeUndefined();
+    // Assert — exactly one request-time warn using the shared skip text
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.message).toBe(
+      pluginFormatSkipWarning({
+        plugin: 'openrouter-routing',
+        wireFormat: 'anthropic-messages',
+      }),
+    );
+    expect(warns[0]?.message).toContain('skipped');
+    expect(warns[0]?.context).toMatchObject({
+      plugin: 'openrouter-routing',
+      wireFormat: 'anthropic-messages',
+    });
+  });
+
+  it('openrouter-routing maps provider hints onto openai-chat wire body', async () => {
+    // Arrange — openai-chat provider with openrouter-routing plugin, anthropic inbound → openai outbound
+    const { calls, port } = fakeFetch(200, OAI_SSE);
+    // Override provider to openai-chat wireFormat for this test
+    const table = createRoutingTable({
+      providers: {
+        oai: {
+          id: 'oai',
+          baseUrl: 'https://oai.example.com',
+          wireFormat: 'openai-chat',
+          auth: { type: 'bearer', credential: { env: 'OAI_KEY' } },
+          plugins: [
+            { 'openrouter-routing': { only: ['anthropic'], order: ['anthropic'] } },
+          ],
+        },
+      },
+      models: [{ match: 'claude-*', provider: 'oai', modelId: 'gpt-5-real' }],
+      defaultProvider: 'oai',
+    });
+    const pipelineWithOpenai = createPipeline({
+      table,
+      manager: createPluginManager({ plugins: createBuiltInPluginRegistry(), logger }),
+      fetch: port,
+      credentials: {
+        resolve: (ref: unknown) => (typeof ref === 'string' ? ref : 'resolved'),
+      },
+      logger,
+      clock: { now: () => 0 },
+      random: { uuid: () => 'req-1' },
+    });
+
+    // Act
+    const response = await pipelineWithOpenai.handle({
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {},
+      body: SIMPLE_BODY,
+    });
+    let _clientBody = '';
+    for await (const chunk of response.body) _clientBody += chunk;
+
+    // Assert
+    expect(calls.length).toBe(1);
+    expect(response.status).toBe(200);
+    const sent = JSON.parse(calls[0]?.body ?? '{}');
+    expect(sent.provider).toEqual({
+      only: ['anthropic'],
+      order: ['anthropic'],
+      allow_fallbacks: true,
+    });
+  });
+});

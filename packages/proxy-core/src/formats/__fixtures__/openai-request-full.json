@@ -1,0 +1,61 @@
+{
+  "model": "gpt-5",
+  "stream": true,
+  "messages": [
+    { "role": "system", "content": "You are helpful." },
+    { "role": "developer", "content": "Be safe." },
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "What is this?" },
+        {
+          "type": "image_url",
+          "image_url": { "url": "data:image/png;base64,aGk=" }
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "name": "helper",
+      "content": "Checking.",
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": { "name": "lookup", "arguments": "{\"q\":\"x\"}" }
+        }
+      ]
+    },
+    { "role": "tool", "tool_call_id": "call_1", "content": "found" },
+    { "role": "user", "content": "go on" }
+  ],
+  "max_completion_tokens": 4096,
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "stop": ["END"],
+  "presence_penalty": 0.1,
+  "frequency_penalty": 0.2,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "out",
+      "strict": true,
+      "schema": { "type": "object" }
+    }
+  },
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup",
+        "description": "Look up",
+        "parameters": {
+          "type": "object",
+          "properties": { "q": { "type": "string" } }
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "logprobs": true
+}

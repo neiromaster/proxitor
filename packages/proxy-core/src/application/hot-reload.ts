@@ -1,0 +1,309 @@
+import type { LoggerPort } from '@proxitor/plugin-api';
+import type { RoutingTable } from '../domain/index.js';
+import type { ProxyConfig } from './config-schema.js';
+import { messageOf } from './errors.js';
+
+export type RuntimeState = {
+  readonly config: ProxyConfig;
+  readonly table: RoutingTable;
+};
+
+export type RuntimeSwap = {
+  readonly current: RuntimeState;
+  readonly table: RoutingTable; // stable delegating facade
+  swap(next: RuntimeState): void;
+};
+
+export type ReloadResult =
+  | { readonly ok: true; readonly changes: string }
+  | { readonly ok: false; readonly error: string };
+
+export type HotReloadDeps = {
+  readNext(): Promise<ProxyConfig>; // throws on unreadable/invalid
+  buildTable(config: ProxyConfig): RoutingTable; // throws RoutingConfigError
+  validate(config: ProxyConfig): void; // validateActivation wrapper, throws
+  preloadCredentials(config: ProxyConfig): Promise<void>; // D16 fail-fast, throws
+  reconfigure(config: ProxyConfig): void; // observability.reconfigure wrapper
+  logger: LoggerPort;
+};
+
+export type HotReload = {
+  readonly swap: RuntimeSwap;
+  reload(): Promise<ReloadResult>;
+};
+
+/**
+ * Create a runtime swap facade that delegates to the current routing table.
+ * The facade object reference stays stable across swaps — inflight requests
+ * holding the old reference continue using the old table, while new requests
+ * see the updated table.
+ */
+export function createRuntimeSwap(initial: RuntimeState): RuntimeSwap {
+  let current = initial;
+
+  const facade: RoutingTable = {
+    resolve(logicalModel: string, path: string) {
+      return current.table.resolve(logicalModel, path);
+    },
+    resolveModelLess(path: string) {
+      return current.table.resolveModelLess(path);
+    },
+    listModels() {
+      return current.table.listModels();
+    },
+  };
+
+  return {
+    get current() {
+      return current;
+    },
+    table: facade,
+    swap(next: RuntimeState) {
+      current = next;
+    },
+  };
+}
+
+/**
+ * Canonical JSON comparison — recursively sorts object keys before stringify.
+ * Key-order-agnostic comparison for provider/plugin/observability config diffs.
+ */
+function canonicalJsonEqual(a: unknown, b: unknown): boolean {
+  const canonicalize = (value: unknown): unknown => {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map(canonicalize);
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([keyA], [keyB]) => {
+          if (keyA < keyB) return -1;
+          if (keyA > keyB) return 1;
+          return 0;
+        })
+        .map(([key, val]) => [key, canonicalize(val)]),
+    );
+  };
+  return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+}
+
+/** forwardHeaders is a set of header names — order carries no meaning, so
+ * compare sorted copies to keep reordering from firing a spurious warning. */
+function sortedForwardHeaders(headers: readonly string[]): string[] {
+  return [...headers].sort();
+}
+
+/**
+ * Check if server restart keys changed — these require restart to apply.
+ * Compares host, port, bodyLimitBytes, forwardHeaders (order-insensitive), and
+ * logging (logger and verbose sink are constructed once at boot).
+ */
+function restartKeysChanged(prev: ProxyConfig, next: ProxyConfig): boolean {
+  return (
+    JSON.stringify(prev.server.host) !== JSON.stringify(next.server.host) ||
+    JSON.stringify(prev.server.port) !== JSON.stringify(next.server.port) ||
+    JSON.stringify(prev.server.bodyLimitBytes) !==
+      JSON.stringify(next.server.bodyLimitBytes) ||
+    JSON.stringify(sortedForwardHeaders(prev.server.forwardHeaders)) !==
+      JSON.stringify(sortedForwardHeaders(next.server.forwardHeaders)) ||
+    JSON.stringify(prev.logging) !== JSON.stringify(next.logging)
+  );
+}
+
+/**
+ * Summarize configuration diff for logging.
+ * Returns empty string when configs are JSON-equal on the operational keys
+ * (providers, models, plugins, defaultProvider, observability, logging, controlPlane).
+ * Otherwise returns section-level parts:
+ * - providers as `+id`/`-id`/`id (changed)`
+ * - models as `+match`/`-match`/`match (provider/modelId changed)`
+ * - controlPlane as `+controlPlane`/`-controlPlane`/`controlPlane (changed)`
+ * - plus `plugins`, `defaultProvider`, `observability`, `logging` when their
+ *   canonical JSON differs
+ *
+ * Server keys are deliberately NOT in the diff (they belong to the restart-warning).
+ */
+function diffProviders(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
+  const allProviderIds = new Set([
+    ...Object.keys(prev.providers),
+    ...Object.keys(next.providers),
+  ]);
+
+  for (const id of allProviderIds) {
+    const prevProvider = prev.providers[id];
+    const nextProvider = next.providers[id];
+
+    if (prevProvider === undefined) {
+      parts.push(`+${id}`);
+    } else if (nextProvider === undefined) {
+      parts.push(`-${id}`);
+    } else if (!canonicalJsonEqual(prevProvider, nextProvider)) {
+      parts.push(`${id} (changed)`);
+    }
+  }
+}
+
+function diffModels(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
+  const prevModels = new Map(prev.models.map(m => [m.match, m]));
+  const nextModels = new Map(next.models.map(m => [m.match, m]));
+  const allMatches = new Set([...prevModels.keys(), ...nextModels.keys()]);
+
+  for (const match of allMatches) {
+    const prevModel = prevModels.get(match);
+    const nextModel = nextModels.get(match);
+
+    if (prevModel === undefined) {
+      parts.push(`+${match}`);
+    } else if (nextModel === undefined) {
+      parts.push(`-${match}`);
+    } else if (
+      prevModel.provider !== nextModel.provider ||
+      prevModel.modelId !== nextModel.modelId
+    ) {
+      parts.push(`${match} (changed)`);
+    }
+  }
+}
+
+function diffControlPlane(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
+  if (prev.controlPlane === undefined && next.controlPlane === undefined) return;
+  if (prev.controlPlane === undefined) {
+    parts.push('+controlPlane');
+    return;
+  }
+  if (next.controlPlane === undefined) {
+    parts.push('-controlPlane');
+    return;
+  }
+  if (!canonicalJsonEqual(prev.controlPlane, next.controlPlane)) {
+    parts.push('controlPlane (changed)');
+  }
+}
+
+function diffMisc(prev: ProxyConfig, next: ProxyConfig, parts: string[]): void {
+  if (!canonicalJsonEqual(prev.plugins, next.plugins)) {
+    parts.push('plugins');
+  }
+  if (prev.defaultProvider !== next.defaultProvider) {
+    parts.push('defaultProvider');
+  }
+  if (!canonicalJsonEqual(prev.observability, next.observability)) {
+    parts.push('observability');
+  }
+  if (!canonicalJsonEqual(prev.logging, next.logging)) {
+    parts.push('logging');
+  }
+  diffControlPlane(prev, next, parts);
+}
+
+export function summarizeConfigDiff(prev: ProxyConfig, next: ProxyConfig): string {
+  const parts: string[] = [];
+  diffProviders(prev, next, parts);
+  diffModels(prev, next, parts);
+  diffMisc(prev, next, parts);
+  return parts.join(', ');
+}
+
+/**
+ * Create hot-reload instance with keep-last-valid semantics.
+ *
+ * Plugin state on reload: the registry instances are singletons created once in
+ * the composition root, so their in-memory state (e.g. session-id's fallback id)
+ * survives reload by construction — no state handoff happens on reload.
+ *
+ * Reload process (never throws, never swaps on failure):
+ * 1. Coalescing guard — concurrent calls return ok:true with coalesced message
+ * 2. readNext() → buildTable() → preloadCredentials() → validate()
+ * 3. Restart-check — warn if server/logging keys changed
+ * 4. swap() → reconfigure() → log success
+ * 5. Any error → log failure, return {ok:false}, keep previous config
+ */
+async function applyReload(
+  deps: HotReloadDeps,
+  swap: RuntimeSwap,
+): Promise<ReloadResult> {
+  const logger = deps.logger;
+
+  try {
+    // Apply reload steps
+    const nextConfig = await deps.readNext();
+    const nextTable = deps.buildTable(nextConfig);
+    await deps.preloadCredentials(nextConfig);
+    deps.validate(nextConfig);
+
+    // Restart-check
+    if (restartKeysChanged(swap.current.config, nextConfig)) {
+      logger.warn(
+        'host/port/bodyLimit/forwardHeaders/logging changed — restart proxitor to apply (live reload does not re-bind the socket, body parser, or logger)',
+      );
+    }
+
+    // Swap and reconfigure
+    const changes = summarizeConfigDiff(swap.current.config, nextConfig);
+    swap.swap({ config: nextConfig, table: nextTable });
+
+    // Reconfigure failure is degraded-observation, not a reload failure
+    try {
+      deps.reconfigure(nextConfig);
+    } catch (error) {
+      const message = messageOf(error);
+      logger.warn(`config reloaded but reconfigure failed: ${message}`, {
+        error,
+      });
+    }
+
+    logger.info(`config reloaded — ${changes}`);
+    return { ok: true, changes };
+  } catch (error) {
+    const message = messageOf(error);
+    logger.error(`config reload failed — keeping previous config: ${message}`, {
+      error,
+    });
+    return { ok: false, error: message };
+  }
+}
+
+export function createHotReload(options: {
+  initial: RuntimeState;
+  deps: HotReloadDeps;
+}): HotReload {
+  const { initial, deps } = options;
+  let loading = false;
+  let pending = false;
+
+  const swap = createRuntimeSwap(initial);
+  const logger = deps.logger;
+
+  const reload = async (): Promise<ReloadResult> => {
+    // Coalescing guard
+    if (loading) {
+      pending = true;
+      return { ok: true, changes: 'reload already in progress — coalesced' };
+    }
+
+    loading = true;
+
+    try {
+      return await applyReload(deps, swap);
+    } finally {
+      loading = false;
+      // Re-run if a concurrent request came in
+      if (pending) {
+        pending = false;
+        // Schedule next tick to avoid recursion
+        setImmediate(() => {
+          reload().catch(err => {
+            const message = messageOf(err);
+            logger.error(`coalesced reload retry failed: ${message}`, {
+              error: err,
+            });
+          });
+        });
+      }
+    }
+  };
+
+  return { swap, reload };
+}

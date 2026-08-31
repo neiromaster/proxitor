@@ -1,0 +1,194 @@
+import { ENDPOINT_PATHS, WIRE_FORMATS, type WireFormat } from '@proxitor/plugin-api';
+import { RoutingConfigError } from './error.js';
+import type { PluginListEntry } from './plugin-merge.js';
+
+/** Where a credential comes from (spec §5.1); shape only — file perms are M5. */
+export type CredentialRef = string | { readonly env: string } | { readonly file: string };
+
+export type AuthType = 'bearer' | 'x-api-key' | 'header' | 'none';
+
+export type AuthConfig = {
+  readonly type: AuthType;
+  readonly credential: CredentialRef;
+  /** For x-api-key (default 'x-api-key') and header auth (required). */
+  readonly headerName?: string;
+};
+
+export type MaxTokensField = 'auto' | 'max_tokens' | 'max_completion_tokens';
+
+export type ProviderConfig = {
+  readonly id: string;
+  /** Everything before the version path — the format adapter owns that. */
+  readonly baseUrl: string;
+  readonly wireFormat: WireFormat;
+  readonly auth: AuthConfig;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly plugins?: readonly PluginListEntry[];
+  /** Default 'error' (§10 fail-loud policy). */
+  readonly unsupportedParams?: 'error' | 'drop';
+  /** Default 'auto' (openai-chat adapter heuristic). */
+  readonly maxTokensField?: MaxTokensField;
+};
+
+const AUTH_TYPES: readonly AuthType[] = ['bearer', 'x-api-key', 'header', 'none'];
+
+/**
+ * Fail-loud provider validation (spec §5.1). Throws RoutingConfigError on the
+ * first violation; returns void when the config is well-formed.
+ */
+export function validateProvider(provider: ProviderConfig): void {
+  if (typeof provider.id !== 'string' || provider.id.length === 0) {
+    throw new RoutingConfigError('provider id must be a non-empty string');
+  }
+  if (!WIRE_FORMATS.includes(provider.wireFormat)) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": unknown wire format '${String(provider.wireFormat)}' (known: ${WIRE_FORMATS.join(', ')})`,
+    );
+  }
+  validateBaseUrl(provider);
+
+  // F5: Validate header value types
+  if (provider.headers !== undefined) {
+    for (const [key, value] of Object.entries(provider.headers)) {
+      if (typeof value !== 'string') {
+        throw new RoutingConfigError(
+          `provider "${provider.id}": headers["${key}"] must be a string, got ${typeof value}`,
+        );
+      }
+    }
+  }
+
+  if (
+    provider.wireFormat === 'anthropic-messages' &&
+    (provider.headers?.['anthropic-version'] ?? '').length === 0
+  ) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": anthropic-messages providers must set headers["anthropic-version"]`,
+    );
+  }
+  validateAuth(provider);
+  if (
+    provider.unsupportedParams !== undefined &&
+    provider.unsupportedParams !== 'error' &&
+    provider.unsupportedParams !== 'drop'
+  ) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": unsupportedParams must be 'error' or 'drop'`,
+    );
+  }
+  if (
+    provider.maxTokensField !== undefined &&
+    provider.maxTokensField !== 'auto' &&
+    provider.maxTokensField !== 'max_tokens' &&
+    provider.maxTokensField !== 'max_completion_tokens'
+  ) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": maxTokensField must be 'auto', 'max_tokens', or 'max_completion_tokens'`,
+    );
+  }
+}
+
+/**
+ * Upstream URL assembly: strip trailing slashes off the baseUrl, append the
+ * path, and collapse an accidental /v1/v1 doubling. validateProvider is the
+ * load-time gate; this collapse is defense-in-depth for programmatic
+ * construction (also used by the model-less raw passthrough).
+ */
+export function joinEndpointPath(baseUrl: string, path: string): string {
+  const joined = `${baseUrl.replace(/\/+$/, '')}${path}`;
+  return joined.replace(/\/v1\/v1(?=\/)/g, '/v1');
+}
+
+/** Upstream endpoint URL: baseUrl + the format's endpoint path. */
+export function endpointUrl(baseUrl: string, wireFormat: WireFormat): string {
+  return joinEndpointPath(baseUrl, ENDPOINT_PATHS[wireFormat]);
+}
+
+function validateBaseUrl(provider: ProviderConfig): void {
+  let url: URL;
+  try {
+    url = new URL(provider.baseUrl);
+  } catch (error) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" is not a valid URL`,
+      { cause: error },
+    );
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl protocol must be http or https, got "${url.protocol}"`,
+    );
+  }
+  if (url.search !== '') {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" must not contain query parameters — baseUrl must be origin + path only`,
+    );
+  }
+  if (url.hash !== '') {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" must not contain a fragment — baseUrl must be origin + path only`,
+    );
+  }
+  if (/\/v1\/?$/i.test(url.pathname)) {
+    const cleanUrl = provider.baseUrl.replace(/\/v1\/?$/i, '');
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" ends with /v1 — the format adapter owns the version path (${ENDPOINT_PATHS[provider.wireFormat]}), so this would produce a doubled path. Remove the /v1 suffix: use "${cleanUrl}"`,
+    );
+  }
+
+  // Check if baseUrl already contains the full endpoint path
+  const endpointPath = ENDPOINT_PATHS[provider.wireFormat];
+  if (url.pathname === endpointPath || url.pathname.endsWith(endpointPath)) {
+    const cleanUrl = provider.baseUrl.slice(0, -endpointPath.length).replace(/\/+$/, '');
+    throw new RoutingConfigError(
+      `provider "${provider.id}": baseUrl "${provider.baseUrl}" already ends with the endpoint path "${endpointPath}" — the format adapter owns this path, so this would produce a doubled path. Remove the endpoint path: use "${cleanUrl}"`,
+    );
+  }
+}
+
+function validateAuth(provider: ProviderConfig): void {
+  const auth = provider.auth;
+  if (typeof auth !== 'object' || auth === null) {
+    throw new RoutingConfigError(`provider "${provider.id}": auth must be an object`);
+  }
+  if (!AUTH_TYPES.includes(auth.type)) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": auth.type must be one of ${AUTH_TYPES.join(', ')}, got '${String(auth.type)}'`,
+    );
+  }
+  validateCredentialRef(provider.id, auth.credential);
+  if (auth.type === 'header' && (auth.headerName ?? '').length === 0) {
+    throw new RoutingConfigError(
+      `provider "${provider.id}": auth.type "header" requires headerName`,
+    );
+  }
+}
+
+function validateCredentialRef(providerId: string, credential: CredentialRef): void {
+  if (typeof credential === 'string') {
+    if (credential.length === 0) {
+      throw new RoutingConfigError(
+        `provider "${providerId}": credential must be a non-empty string, { env: string }, or { file: string }`,
+      );
+    }
+    return;
+  }
+  if (typeof credential !== 'object' || credential === null) {
+    throw new RoutingConfigError(
+      `provider "${providerId}": credential must be a non-empty string, { env: string }, or { file: string }`,
+    );
+  }
+  const record = credential as Readonly<Record<string, unknown>>;
+  const keys = Object.keys(record);
+  const single = keys.length === 1 ? keys[0] : undefined;
+  const value = single === undefined ? undefined : record[single];
+  const valid =
+    (single === 'env' || single === 'file') &&
+    typeof value === 'string' &&
+    value.length > 0;
+  if (!valid) {
+    throw new RoutingConfigError(
+      `provider "${providerId}": credential must be a non-empty string, { env: string }, or { file: string }`,
+    );
+  }
+}

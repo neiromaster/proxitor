@@ -1,15 +1,16 @@
 {
   "name": "proxitor",
   "version": "0.20.0",
-  "description": "Lightweight proxy for routing CLI requests (claude-code, codex) to OpenRouter",
+  "description": "Multi-provider LLM gateway with a plugin pipeline: Anthropic Messages and OpenAI Chat in, any provider out",
   "keywords": [
     "proxy",
-    "openrouter",
-    "cli",
+    "llm",
+    "gateway",
+    "anthropic",
+    "openai",
     "claude-code",
-    "codex",
-    "ai",
-    "llm"
+    "plugin",
+    "ai"
   ],
   "homepage": "https://github.com/neiromaster/proxitor#readme",
   "bugs": {
@@ -22,40 +23,36 @@
   "license": "MIT",
   "author": "neiromaster",
   "type": "module",
-  "bin": "./dist/cli.mjs",
+  "bin": {
+    "proxitor": "packages/proxy-core/dist/cli.mjs"
+  },
   "files": [
-    "dist"
+    "packages/proxy-core/dist"
   ],
   "scripts": {
-    "build": "tsdown",
+    "bench": "pnpm -r --if-present run bench",
+    "build": "pnpm -r --if-present run build",
     "check": "pnpm run typecheck:all && pnpm run check:biome && pnpm run test",
-    "check:biome": "biome check ./src",
-    "dev": "tsdown --watch",
-    "format": "biome format --write ./src",
-    "format:check": "biome format ./src",
-    "lint": "biome lint ./src",
-    "lint:fix": "biome lint --fix ./src",
+    "check:biome": "biome check ./packages",
+    "format": "biome format --write ./packages",
+    "format:check": "biome format ./packages",
+    "lint": "biome lint ./packages",
+    "lint:arch": "depcruise packages --config .dependency-cruiser.mjs",
+    "lint:fix": "biome lint --fix ./packages",
     "prepare": "lefthook install",
     "prepublishOnly": "pnpm run build",
     "release": "changeset publish",
-    "start": "node dist/cli.mjs",
-    "start:dev": "pnpm run build && pnpm run start",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "test:integration": "vitest run --reporter verbose tests/integration/",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "typecheck:all": "tsc --noEmit -p tsconfig.tests.json",
+    "start": "node packages/proxy-core/dist/cli.mjs",
+    "test": "pnpm -r --if-present run test",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "typecheck:all": "pnpm -r --if-present run typecheck",
     "version-packages": "changeset version"
   },
   "dependencies": {
     "@clack/prompts": "^1.5.0",
     "@hono/node-server": "^2.0.4",
     "cmd-ts": "^0.15.0",
-    "conf": "^15.1.0",
     "consola": "^3.4.2",
-    "dotenv": "^17.4.2",
     "hono": "^4.12.23",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
@@ -64,11 +61,9 @@
     "@biomejs/biome": "^2.5.0",
     "@changesets/cli": "^3.0.0",
     "@types/node": "^26.0.1",
-    "@vitest/coverage-v8": "^4.1.8",
+    "dependency-cruiser": "^18.2.0",
     "lefthook": "^2.1.9",
-    "tsdown": "^0.22.1",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "typescript": "^6.0.3"
   },
   "packageManager": "pnpm@11.5.1",
   "engines": {

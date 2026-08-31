@@ -2,566 +2,598 @@
 
 🌍 [English](./configuration.md) · **Русский**
 
-Полный референс по ручной настройке proxitor. Если не хочется править файлы — интерактивное меню (`proxitor config`) покрывает большую часть этого и использует живые данные OpenRouter. Быстрый старт см. в [README](./README.ru.md).
+Полная справка по ручной настройке proxitor v1. Каждое поле получено из [`packages/proxy-core/src/application/config-schema.ts`](../packages/proxy-core/src/application/config-schema.ts).
 
-Шаблон с комментариями — [`proxitor.config.example.yaml`](../proxitor.config.example.yaml).
+Полный пример с комментариями — в файле [`proxitor.config.example.yaml`](../proxitor.config.example.yaml).
 
-## Где лежит конфиг
+## Расположение конфига
 
-Proxitor ищет файл конфигурации в таком порядке:
+Proxitor ищет конфиг в таком порядке:
 
 ```
-proxitor.config.yaml  →  proxitor.config.yml  →  proxitor.config.json
-.proxitor.yaml        →  .proxitor.yml         →  .proxitor.json
+1. --config <путь>                              # флаг CLI (явный путь)
+2. ~/proxitor.config.{yaml,yml,json}           # HOME перекрывает XDG
+3. ~/.proxitor.{yaml,yml,json}
+4. $XDG_CONFIG_HOME/proxitor/config.{yaml,yml,json}   # по умолчанию ~/.config/proxitor/…
 ```
 
-**Приоритет:** флаги CLI > файл конфигурации > переменные окружения > значения по умолчанию.
+`XDG_CONFIG_HOME` по умолчанию — `~/.config` на Linux/macOS.
 
-## Тип аутентификации
+**Приоритет:** флаги CLI > файл конфига > переменные окружения > значения по умолчанию схемы.
 
-По умолчанию proxitor отправляет API-ключ как `Bearer`-токен (`Authorization: Bearer sk-...`). Для кастомного прокси-провайдера, который ждёт заголовок `OAuth`, задайте `authType: oauth`:
+> **HOME перекрывает XDG:** Если конфиг существует в `~/proxitor.config.yaml` или `~/.proxitor.yaml`, он **перекрывает** расположение XDG. Мастер настройки предупреждает об этом. Загружается только один файл конфига; первый найденный в порядке поиска выигрывает.
+
+## Обзор схемы конфига
 
 ```yaml
-authType: oauth    # "bearer" (по умолчанию) или "oauth"
+version: 1                    # обязательно, литерал 1
+
+providers:                    # обязательно, минимум один
+  <provider-id>:             # ключ YAML становится id провайдера
+    baseUrl: <string>
+    wireFormat: <anthropic-messages | openai-chat>
+    auth:
+      type: <bearer | x-api-key | header | none>
+      credential: <string | {env: <VAR>} | {file: <path>}>
+      headerName: <string>   # обязательно когда type=header
+    headers:                 # опционально, дополнительные заголовки провайдера
+      <name>: <value>
+    plugins:                 # опционально, список плагинов уровня провайдера
+    unsupportedParams: <error | drop>
+    maxTokensField: <auto | max_tokens | max_completion_tokens>
+
+models:                       # обязательно, минимум одна привязка
+  - match: <glob>
+    provider: <provider-id>
+    modelId: <string | $MODEL>
+    plugins:                 # опционально, список плагинов уровня модели
+
+defaultProvider: <provider-id>   # опционально, обслуживает запросы без модели
+
+plugins:                      # опционально, глобальный список плагинов
+
+server:                       # опционально, значения по умолчанию показаны
+  host: 127.0.0.1
+  port: 8828
+  bodyLimit: 50mb
+  forwardHeaders: []         # опционально, имена заголовков для проброса от входящего запроса
+
+controlPlane:                 # опционально
+  token: <string | {env: <VAR>} | {file: <path}>
+
+observability:                # опционально, значения по умолчанию показаны
+  routerMetadata: true
+  hitThreshold: 80
+  sideMaxTokens: 4096
+  sessionMaxEntries: 4096
+  sessionTtlMs: 600000
+
+logging:                      # опционально
+  verbose: false
 ```
 
-Заголовок поменяется на `Authorization: OAuth sk-...`.
+## Поля верхнего уровня
 
-## Кастомный URL API и фолбэк данных
+### `version`
 
-При использовании кастомного `openrouterBaseUrl`, указывающего на сторонний сервис, тот может не поддерживать специфичные эндпоинты OpenRouter вроде `/providers` или `/models/{author}/{slug}/endpoints`. Proxitor обрабатывает это автоматически:
-
-- **Автоматический фолбэк** — если кастомный API вернул ошибку (4xx/5xx) или неожиданный формат ответа для data-эндпоинтов, proxitor откатывается на `https://openrouter.ai/api` (API-ключ не нужен — эти эндпоинты публичные).
-- **`openrouterDataUrl`** — задайте явно основной URL для загрузки данных, независимо от `openrouterBaseUrl` (который используется для проксирования запросов).
+**Обязательно.** Литерал `1` — версия схемы конфига.
 
 ```yaml
-# Запросы идут на кастомный сервис, загрузка данных откатывается на OpenRouter.
-# ВАЖНО: НЕ добавляйте /v1 в базовый URL — пути запросов вроде /v1/chat/completions
-# форвардятся как есть, поэтому /v1 задвоится.
-openrouterBaseUrl: 'https://custom-service.example.com/api'
-
-# Основной URL данных явно (опц., по умолчанию равен openrouterBaseUrl).
-# openrouterDataUrl: 'https://openrouter.ai/api'
+version: 1
 ```
 
-При срабатывании фолбэка proxitor пишет предупреждение: `Custom API did not return providers, using OpenRouter as fallback`.
+Источник: [`config-schema.ts:159`](../packages/proxy-core/src/application/config-schema.ts#L159)
 
-## Маршрутизация провайдеров
+### `providers`
 
-Управляйте, какой провайдер обслуживает запросы. Все три опции принимают строку или массив:
+**Обязательно.** Карта конфигураций провайдеров. Ключ YAML **становится** id провайдера (ссылается в `models[].provider` и `defaultProvider`).
 
-```yaml
-# Жёсткая фиксация — только этот провайдер, без фолбэков
-provider:
-  only: "anthropic"
+Нужно объявить минимум один провайдер.
 
-# Ограниченный пул — балансировка только между этими провайдерами
-provider:
-  only:
-    - "anthropic"
-    - "deepinfra"
+**Поля провайдера:**
 
-# Порядок приоритета — сначала Anthropic, при недоступности фолбэк на остальных
-provider:
-  order: "anthropic"
-  allowFallbacks: true
-
-# Строгий порядок — перебор по списку, без фолбэков вне списка
-provider:
-  order:
-    - "anthropic"
-    - "deepinfra"
-  allowFallbacks: false
-
-# Чёрный список — никогда не использовать этих провайдеров
-provider:
-  ignore: "azure"
-```
-
-| Опция | Поведение |
-|---|---|
-| `only` | Ограничение перечисленными провайдерами. Балансирует по цене внутри списка. Никогда не уходит за пределы — если все недоступны, запрос падает. |
-| `order` | Перебор провайдеров в указанном приоритете. Если ни один не сработал, фолбэк на другие доступные (если только `allowFallbacks: false`). |
-| `ignore` | Никогда не направлять запросы перечисленным провайдерам. |
-
-Без `provider` запросы форвардятся без изменений.
-
-Полный список поддерживаемых провайдеров и опций — в [документации маршрутизации OpenRouter](https://openrouter.ai/docs/guides/routing/provider-selection).
-
-### Продвинутые опции провайдеров
-
-```yaml
-provider:
-  sort: "throughput"          # сортировка: price | throughput | latency
-  quantizations:
-    - "fp8"                   # фильтр по уровню квантизации
-  maxPrice:
-    prompt: 1                 # $/M токенов
-    completion: 2
-  requireParameters: true     # только провайдеры, поддерживающие все параметры запроса
-  dataCollection: "deny"      # "allow" | "deny"
-  zdr: true                   # принудительный Zero Data Retention
-  preferredMinThroughput:
-    p90: 50                   # токенов/сек (мягкий порог)
-  preferredMaxLatency:
-    p90: 3                    # секунды (мягкий порог)
-```
-
-## Переопределения по моделям
-
-Маршрутизируйте разные модели по-разному. Ключи — точные имена или префиксные маски. Более специфичные совпадения выигрывают.
-
-```yaml
-provider:
-  order: "deepinfra"   # глобальное значение по умолчанию
-
-modelOverrides:
-  # Точное совпадение — зафиксировать эту модель на Anthropic
-  "claude-sonnet-4-6":
-    provider:
-      only: "anthropic"
-
-  # Маска — все claude-* предпочитают Anthropic с фолбэком
-  "claude-*":
-    provider:
-      order:
-        - "anthropic"
-        - "deepinfra"
-
-  # GPT-модели на OpenAI/Azure плюс кастомный заголовок
-  "gpt-*":
-    provider:
-      only:
-        - "openai"
-        - "azure"
-    headers:
-      X-Model-Family: "gpt"
-```
-
-**Приоритет совпадения:** полное точное имя > префиксная маска > совпадение по слагу (bare-имя ↔ с префиксом вендора) > префикс слага.
-
-Имя модели матчится с префиксом вендора или без: bare `kimi-k2.6` соответствует ключу оверрайда `moonshotai/kimi-k2.6`. Датированный или вариантный суффикс требует явного `*` — `moonshotai/kimi-k2.6-20260420` матчится на `moonshotai/kimi-k2.6*`, а не на bare-ключ `moonshotai/kimi-k2.6`, — поэтому `gpt-4` не перехватит `gpt-4o`. Префикс вендора различает вендоров: `openai/gpt-4o` матчит bare `gpt-4o`, но никогда — `azure/gpt-4o` другого вендора. Входящее имя модели уходит upstream без изменений.
-
-> **Коллизии одинаковых слагов:** если несколько ключей оверрайда имеют одно имя модели у разных вендоров (напр. `openai/gpt-4o` и `azure/gpt-4o`), а Claude Code шлёт bare-имя, proxitor разрешает его в один ключ — bare-ключ, если он есть, иначе первый объявленный с префиксом (предупреждение называет этот ключ). `proxitor` предупреждает один раз при старте и в `proxitor doctor`; чтобы выбрать конкретного вендора, шлите имя с префиксом.
-
-## Кастомные заголовки
-
-Добавляйте заголовки ко всем проксируемым запросам или по моделям (наследуются поверх глобальных):
-
-```yaml
-headers:
-  X-Custom-Header: "my-value"
-  X-Environment: "production"
-
-modelOverrides:
-  "claude-*":
-    headers:
-      X-Custom-Header: "claude-override"  # перекрывает глобальное значение
-      X-Extra: "only-for-claude"          # добавляется только для этой модели
-```
-
-## Кэширование подсказок
-
-Кэширование подсказок **привязано к провайдеру**: кэш, собранный на Anthropic, не поможет, когда следующий запрос уйдёт на другого провайдера. Три настройки формирования запроса позволяют кэшированию переживать между запросами. Думайте о них как о **рычагах** — большинству сетапов хватает первых двух.
-
-| Рычаг | Поле | По умолчанию | Что делает |
+| Поле | Тип | По умолчанию | Описание |
 | --- | --- | --- | --- |
-| **Активировать кэширование** | `cacheControl` | `auto` | Внедряет `cache_control`, чтобы апстрим закэшировал промпт (провайдеры, нативные для Anthropic) |
-| **Зафиксировать провайдера** | `sessionId` | `auto` | Внедряет `session_id`, чтобы маршрутизация липла с первого запроса — без «дрожания» провайдера, сбрасывающего кэш |
-| **Стабилизировать префикс** | `normalizeVolatileSystem` | `false` | Вырезает волатильные хэши `cch` и `cc_version` из Claude Code из системного промпта, чтобы префикс перестал меняться (не-Anthropic провайдеры) |
+| `baseUrl` | string (min 1) | — | Базовый URL провайдера (напр. `https://api.openai.com`) |
+| `wireFormat` | enum | — | `anthropic-messages` или `openai-chat` |
+| `auth.type` | enum | — | `bearer`, `x-api-key`, `header`, `none` |
+| `auth.credential` | string или `{env: VAR}` или `{file: path}` | — | API-ключ или ссылка на креденшиал |
+| `auth.headerName` | string (min 1) | — | Имя заголовка (обязательно когда `type: header`) |
+| `headers` | `{[key: string]: string}` | — | Дополнительные заголовки для этого провайдера (опционально) |
+| `plugins` | список плагинов | — | Плагины уровня провайдера (опционально) |
+| `unsupportedParams` | `error` \| `drop` | — | Как обрабатывать неподдерживаемые параметры запроса (опционально) |
+| `maxTokensField` | `auto` \| `max_tokens` \| `max_completion_tokens` | — | Какое поле использовать для max tokens (опционально) |
 
-**Эмпирическое правило:** моделям Anthropic нужны рычаги **1+2**; не-Anthropic провайдерам (qwen / glm / и т.д. за Claude Code) нужны **все три**.
-
-`cacheControlTtl` (ниже) — подопция рычага 1 — она управляет внедряемым `cache_control.ttl`, а не отдельным рычагом.
-
-**`cacheControl`** — внедряет `cache_control: { "type": "ephemeral" }` в тело запроса. OpenRouter использует это для расстановки точек кэша и их продвижения по мере роста диалога.
-
-**`cacheControlTtl`** (`5m` / `1h` / `omit` / `skip`, по умолчанию отсутствует = passthrough) — управляет полем `ttl` во внедрённом `cache_control` (только для эндпоинтов Anthropic). TTL действует только при активном кэшировании (`cacheControl` равен `auto`/`always`); в редакторе задаётся независимо от режима кэша.
-
-**`rewriteBlockTtl`** (`auto` / `always` / `skip`, по умолчанию `skip`) — приводит `ttl` на **блочных** `cache_control`-брейкпойнтах, которые клиент уже расставил (в `system`, `tools`, `messages[].content`), к значению `cacheControlTtl`. Claude Code шлёт эти блоки в основном без `ttl` (Anthropic считает их `5m`); если вы зададите `cacheControlTtl: 1h`, запрос уйдёт с прокси с `1h` на корне и `5m` на блоках — смешанные TTL, которые Anthropic отклоняет. `rewriteBlockTtl` это чинит.
-
-| Режим | Поведение |
-| --- | --- |
-| `skip` (по умолчанию) | Не трогает клиентский блочный `ttl`. Рассинхрон возможен — оставляйте, только если блоками должен управлять клиент. |
-| `auto` | Переписывает блочный TTL в `cacheControlTtl` на эндпоинтах, нативных для Anthropic (при активном кэшировании). |
-| `always` | Переписывает блочный TTL на всех эндпоинтах. |
-
-Значение берётся из `cacheControlTtl` (`5m` / `1h` / `omit`) и переписываются только **существующие** брейкпойнты — новые не добавляются, поэтому лимит Anthropic в ≤4 брейкпойнта и расстановка клиента соблюдаются. Включается через `proxitor config` → **💾 Caching** → Activate caching → *Rewrite block TTLs* (третий шаг: режим → TTL → переписывать ли блочный TTL), или per-model в редакторе переопределений.
-
-> **Примечание:** одного `cacheControlTtl: 1h` **недостаточно** — `rewriteBlockTtl` тоже должен быть `auto` или `always`.
+**Пример:**
 
 ```yaml
-cacheControl: auto
-cacheControlTtl: 1h
-rewriteBlockTtl: auto   # привести блочные брейкпойнты к 1h (чинит отказ Anthropic со смешанным ttl)
-
-modelOverrides:
-  "claude-opus-*":
-    rewriteBlockTtl: skip   # оставить блочный TTL Opus как шлёт клиент
+providers:
+  openai:
+    baseUrl: https://api.openai.com
+    wireFormat: openai-chat
+    auth: { type: bearer, credential: { env: OPENAI_API_KEY } }
+  anthropic:
+    baseUrl: https://api.anthropic.com
+    wireFormat: anthropic-messages
+    auth: { type: x-api-key, credential: { env: ANTHROPIC_API_KEY } }
+    headers: { anthropic-version: '2023-06-01' }
 ```
 
-**`normalizeResponses`** (`true` / `false`, по умолчанию `true`) — чинит тела запросов `/v1/responses`, чтобы они соответствовали строгой схеме `input` в OpenRouter. OpenRouter валидирует каждый айтем `input` как объединение, различаемое полем `type`; клиенты, опускающие `type` у message-айтемов (допустимо у OpenAI, где выводится `message`), получают `400 invalid_prompt | Invalid Responses API request`. Нормализатор:
+**Резолвинг креденшиалов:**
 
-- проставляет айтемам с ролью без `type` поле `type: "message"`;
-- переносит айтемы `role: "system"` в top-level поле `instructions` (в Responses у OpenRouter нет роли system в `input`);
-- генерирует `id` / `status`, которые OpenRouter требует для assistant-истории.
+- `credential: "sk-..."` — строка-литерал (только для тестирования; **не рекомендуется** для продакшена)
+- `credential: { env: "VAR_NAME" }` — читать из переменной окружения (`process.env.VAR_NAME`)
+- `credential: { file: "/path/to/file" }` — читать из файла (загрузка при рантайме; горячая перезагрузка перезапускается если файл меняется)
 
-Идемпотентен, меняет только то, что нужно, и действует только на `/v1/responses`. Выкл (`false`) — чистый passthrough (такие клиентские запросы затем падают в OpenRouter). Поключается и через override-редактор по модели.
+**Предупреждение:** Изменение креденшиала на основе `env:` требует перезапуска proxitor — вотчер перезагружается только при записи файла конфига, не при изменениях env vars.
 
-**`normalizeMessages`** (`true` / `false`, по умолчанию `false`) — поднимает случайные айтемы `role:"system"` из массива `messages` в запросах `/v1/messages`. Anthropic Messages API разрешает в `messages` только `user`/`assistant`; айтем `role:"system"` в середине треда (например, внедрённый вывод хука `SessionStart`) режектится строгими Anthropic-формат провайдерами (OpenRouter → GLM и др.) с `400 ... messages[n].role: Input should be 'user' or 'assistant'`. Нормализатор:
+Источник: [`config-schema.ts:18-56`](../packages/proxy-core/src/application/config-schema.ts#L18-L56)
 
-- переносит текст каждого system-айтема в top-level поле `system` (строка остаётся строкой, массив блоков дополняется новым блоком `{type:"text"}`);
-- убирает айтем из `messages`, что заодно сохраняет чередование `user`/`assistant`;
-- выкидывает system-айтемы, у которых нет извлекаемого текста.
+### `models`
 
-Идемпотентен и действует только на `/v1/messages` — перенос никогда не валиден на chat-completions (там `system` принадлежит `messages`) или responses, поэтому гейтится по эндпоинту вне зависимости от настройки. По умолчанию выкл; включается глобально или по модели через override-редактор.
+**Обязательно.** Массив привязок моделей. Нужно объявить минимум одну привязку.
 
-**`sessionId`** — внедряет `session_id` для «липкой» маршрутизации к провайдеру. Без него OpenRouter привязывается к провайдеру только после фиксации попадания в кэш. С ним маршрутизация липнет с **первого запроса** — критично для моделей OpenAI, где отложенное кэширование означает 0 закэшированных токенов на первых 1-2 запросах.
+**Поля привязки:**
 
-И `cacheControl`, и `sessionId` поддерживают режимы `auto` / `always` / `skip`:
-
-| Режим | `cacheControl` | `sessionId` |
+| Поле | Тип | Описание |
 | --- | --- | --- |
-| `auto` (по умолчанию) | Модели Anthropic на `/v1/chat/completions`; все модели на `/v1/messages` и `/v1/responses` | Прокидывает client session ID, если есть; иначе генерирует proxy UUID |
-| `always` | Все модели, все эндпоинты | Всегда генерирует proxy session ID, игнорируя клиентский |
-| `skip` | Passthrough: не трогает клиентский `cache_control`, ничего не внедряет | Passthrough: не трогает клиентские заголовки сессии |
+| `match` | string (min 1) | Glob-паттерн для матчинга логических имён моделей (напр. `claude-*`, `*`) |
+| `provider` | string (min 1) | ID провайдера (должен существовать в `providers`) |
+| `modelId` | string (min 1) | Идентификатор модели для исходящего запроса; `$MODEL` передаёт логическое имя без изменений |
+| `plugins` | список плагинов | Плагины уровня модели (опционально) |
 
-Значения `cacheControlTtl`:
+**Первое совпадение выигрывает.** Паттерны — glob'ы; `*` матчит любую последовательность. Используйте `$MODEL` для передачи имени модели от клиента без изменений (обычно когда провайдер использует те же имена).
 
-| Значение | TTL | Цена записи | Когда использовать |
-| --- | --- | --- | --- |
-| _(отсутствует)_ | Passthrough: сохранить клиентский `ttl`, ничего не добавлять; per-model absent наследует глобальный TTL | — | По умолчанию |
-| `5m` | 5 минут (значение Anthropic по умолчанию) | 1.25× | Явный короткий кэш; частые запросы (>1 за 5 мин) |
-| `1h` | 1 час | 2.0× | Редкие или долгие сессии |
-| `omit` | Вырезать поле `ttl`, гарантированно без TTL (даже присланный клиентом) | — | Принудительно выключить TTL |
-| `skip` | Passthrough: сохранить клиентский `ttl`, ничего не добавлять, игнорировать унаследованное | — | Игнорировать глобальный TTL без вырезания |
-
-> **Примечание:** `null` (ранее принимался в model overrides для отмены унаследованного TTL) **удалён** — мигрируйте на `skip`. `null` был недокументирован и не выставлялся из UI.
+**Пример:**
 
 ```yaml
-cacheControl: auto    # безопасное значение по умолчанию — только Anthropic и безопасные эндпоинты
-sessionId: auto       # всегда обеспечивает липкую маршрутизацию (клиентский заголовок или proxy UUID)
-
-# Кэш на 1 час для всех моделей Anthropic (дороже запись, длиннее TTL)
-cacheControlTtl: 1h
-
-# Принудительное кэширование для всех моделей (может дать 400 на не-Anthropic /v1/chat/completions)
-# cacheControl: always
-
-# Переопределения по моделям — TTL поддерживает '5m', '1h', 'omit' или 'skip' (passthrough)
-modelOverrides:
-  "gpt-*":
-    cacheControl: skip        # OpenAI кэширует автоматически, внедрение не нужно
-    sessionId: always         # но липкая маршрутизация всё равно помогает
-  "claude-opus-*":
-    cacheControlTtl: skip     # passthrough для Opus — игнорировать глобальный 1h, брать клиентский ttl
+models:
+  - match: 'claude-*'          # префикс glob
+    provider: glm
+    modelId: '$MODEL'        # передаётся без изменений
+  - match: '*'                # catch-all
+    provider: openai
+    modelId: '$MODEL'        # передаётся без изменений
 ```
 
-**Почему важны рычаги:**
+Когда клиент запрашивает `claude-sonnet-4-6`:
+1. `claude-*` матчится → `provider: glm`, `modelId` становится `claude-claude-sonnet-4-6`
+2. Тот провайдер/модель используется для запроса
 
-- **Модели Anthropic** — рычаг 1 (`cache_control`) активирует кэширование, `cacheControlTtl` продлевает его свыше 5 мин, рычаг 2 (`session_id`) предотвращает «дрожание» провайдера, которое бы его инвалидировало.
-- **Модели OpenAI** — кэширование автоматическое (рычаг 1 не нужен), но рычаг 2 (`session_id`) обеспечивает липкую маршрутизацию с запроса №1 вместо ожидания попадания в кэш.
-- **Не-Anthropic модели за Claude Code (qwen / glm / …)** — рычаг 3 (`normalizeVolatileSystem`) стабилизирует префикс; без него меняющиеся хэши `cch`/`cc_version` не дают префиксному кэшу согреться.
-- **Все модели** — рычаг 2 (`session_id`) предотвращает переключение провайдера, которое молча сбрасывает кэш.
+Источник: [`config-schema.ts:58-67`](../packages/proxy-core/src/application/config-schema.ts#L58-L67)
 
-## Наблюдаемость кэша
+### `defaultProvider`
 
-Пока proxitor работает, он печатает **классифицированную строку кэша на каждый запрос** для каждого проксированного ответа (non-streaming JSON и стриминговый SSE), чтобы сразу было видно, помогает ли кэширование. Настройка не нужна — включено по умолчанию.
+**Опционально.** ID провайдера (должен существовать в `providers`). Обслуживает запросы без модели:
+
+- Вызовы embeddings API (нет модели в payload)
+
+Если опущено, запросы без модели падают с `404`.
+
+**Пример:**
+
+```yaml
+defaultProvider: openai
+```
+
+Источник: [`config-schema.ts:163`](../packages/proxy-core/src/application/config-schema.ts#L163)
+
+### `plugins`
+
+**Опционально.** Глобальный список плагинов. Плагины выполняются в порядке объявления на каждом запросе.
+
+Каждая запись либо:
+
+- Строка (имя плагина, напр. `cache-control`)
+- Объект `{name: <plugin>, options: {...}}` для опций плагина
+
+**Пример:**
+
+```yaml
+plugins:
+  - normalize-volatile-system
+  - cache-control:
+      cacheControl: auto
+      ttl: 1h
+      rewriteBlockTtl: auto
+  - session-id
+```
+
+**Слои плагинов (порядок мёржа):** глобальный → провайдер → модель. Внутренние слои могут отключать плагины внешних слоёв через список `disable` (см. ниже).
+
+**Встроенные плагины:**
+
+| Имя плагина | Опции |
+| --- | --- |
+| `normalize-volatile-system` | — (без опций) |
+| `cache-control` | `cacheControl` (auto/always/skip), `ttl` (5m/1h/omit), `rewriteBlockTtl` (auto/skip) |
+| `session-id` | `mode` (auto/skip) |
+| `openrouter-routing` | [Опции маршрутизации OpenRouter](#openrouter-routing) |
+
+Источник: [`config-schema.ts:24-26`](../packages/proxy-core/src/application/config-schema.ts#L24-L26)
+
+### `server`
+
+**Опционально.** Конфигурация сервера.
+
+| Поле | Тип | По умолчанию | Описание |
+| --- | --- | --- | --- |
+| `host` | string (min 1) | `127.0.0.1` | Адрес прослушивания |
+| `port` | number (1‑65535) | `8828` | Порт прослушивания |
+| `bodyLimit` | string или number | `50mb` | Макс. размер тела запроса (напр. `10mb`, `50mb`, `1gb`) |
+| `forwardHeaders` | `string[]` | `[]` | Имена заголовков для проброса от входящего запроса к провайдеру |
+
+**Форматы `bodyLimit`:** `"50mb"` (строка) или `52428800` (число байтов). Единицы: `b`, `kb`, `mb`, `gb` (регистронезависимо).
+
+**Пример:**
+
+```yaml
+server:
+  host: 0.0.0.0        # все интерфейсы
+  port: 9000
+  bodyLimit: 100mb
+  forwardHeaders:
+    - x-custom-api-key
+    - x-request-id
+```
+
+Источник: [`config-schema.ts:110-125`](../packages/proxy-core/src/application/config-schema.ts#L110-L125)
+
+### `controlPlane`
+
+**Опционально.** Аутентификация управляющей плоскости.
+
+| Поле | Тип | Описание |
+| --- | --- | --- |
+| `token` | string или `{env: VAR}` или `{file: path}` | Токен для эндпоинтов `/control/*` |
+
+Если опущено, эндпоинты `/control/*` возвращают `404` (неразличимо от отсутствующего маршрута).
+
+**Пример:**
+
+```yaml
+controlPlane:
+  token: { env: PROXITOR_CONTROL_TOKEN }
+```
+
+Использование:
+
+```bash
+# Экспортируйте токен
+export PROXITOR_CONTROL_TOKEN=secret-token
+
+# Обратитесь к управляющей плоскости
+curl -H "Authorization: Bearer secret-token" http://127.0.0.1:8828/control/routing
+```
+
+Источник: [`config-schema.ts:146-149`](../packages/proxy-core/src/application/config-schema.ts#L146-L149)
+
+### `observability`
+
+**Опционально.** Наблюдаемость и трекинг кэша.
+
+| Поле | Тип | По умолчанию | Описание |
+| --- | --- | --- | --- |
+| `routerMetadata` | boolean | `true` | Включать провайдера и физическую модель в записи наблюдаемости |
+| `hitThreshold` | number (0‑100) | `80` | Чтение кэша / входные токены % ≥ этого → `HIT` (иначе `PARTIAL`) |
+| `sideMaxTokens` | number (positive) | `4096` | Запрос без инструментов И `max_tokens` ≤ этого → классификация `[side]` |
+| `sessionMaxEntries` | number (positive) | `4096` | Ёмкость ограниченного LRU для трекера сессий (FIFO eviction) |
+| `sessionTtlMs` | number (positive) | `600000` | TTL записи трекера сессий (10 минут) |
+
+**Метки исхода кэша:**
+
+| Метка | Значение |
+| --- | --- |
+| `HIT` | Чтение кэша ≥ `hitThreshold`% от входных токенов |
+| `PARTIAL` | Частичное чтение кэша, но ниже порога |
+| `MISS` | Нет чтения кэша на **повторном** запросе в той же сессии |
+| `COLD` | Нет чтения кэша на **первом** запросе в сессии |
+| `NOUSAGE` | Объект usage не наблюдался (неправильный ответ и т.п.) |
+
+**Тип запроса:** Каждый запрос логируется как `[main]` или `[side]`. `[side]` = нет инструментов И `max_tokens ≤ sideMaxTokens`.
+
+**Пример:**
+
+```yaml
+observability:
+  routerMetadata: true
+  hitThreshold: 80
+  sideMaxTokens: 4096
+  sessionMaxEntries: 4096
+  sessionTtlMs: 600000
+```
+
+**Вывод в консоль (по запросу):**
 
 ```
 [a1b2] HIT   99%  read 48640  in 48874  glm-4.5-air  [main]
 [c3d4] PARTIAL  42%  read 1088  in 2600  provider=anthropic  claude-sonnet-4-6  [side]
-[e5f6] MISS   in 48874  provider=novita  glm-4.5-air  [main]
-[g7h8] COLD   in 48874  glm-4.5-air  [main]
-[i9j0] NOUSAGE   claude-sonnet-4-6  [main]
 ```
 
-Каждая строка несёт ID запроса, **метку**, процент попадания (для `HIT`/`PARTIAL`), `read N` / `write N` токенов при наличии, `in N` входных токенов, `provider=…` при наличии метаданных маршрутизации, модель и тип запроса `[main]`/`[side]`. (`read N` появляется только при ненулевом чтении из кэша, поэтому в строках `MISS`/`COLD` его нет.)
+**Дампы тел:** Установите `PROXITOR_DUMP_BODY=1` для записи парных дампов запроса/ответа в `~/.cache/proxitor/dumps`. Каждый дамп обогащён `label`, `hitPct`, `provider` и т.д.
 
-### Метки
+Источник: [`config-schema.ts:127-144`](../packages/proxy-core/src/application/config-schema.ts#L127-L144)
 
-| Метка | Значение |
+### `logging`
+
+**Опционально.** Конфигурация логирования.
+
+| Поле | Тип | По умолчанию | Описание |
+| --- | --- | --- | --- |
+| `verbose` | boolean | `false` | Подробное логирование |
+
+**Пример:**
+
+```yaml
+logging:
+  verbose: true
+```
+
+Источник: [`config-schema.ts:151-156`](../packages/proxy-core/src/application/config-schema.ts#L151-L156)
+
+## Слои плагинов и семантика отключения
+
+Плагины выполняются в трёх слоях:
+
+1. **Глобальный** (`plugins` верхнего уровня) — выполняется на каждом запросе
+2. **Провайдер** (`providers.<id>.plugins`) — выполняется только для этого провайдера
+3. **Модель** (`models[].plugins`) — выполняется только для этой модели
+
+**Порядок мёржа:** глобальный → провайдер → модель (внутренние слои дополняют внешние).
+
+**Отключение:** Любой слой может отключить специфичные плагины внешних слоёв:
+
+```yaml
+plugins:
+  - cache-control
+  - session-id
+
+providers:
+  openai:
+    plugins:
+      - disable: [cache-control]   # отключить глобальный cache-control для OpenAI
+
+models:
+  - match: 'claude-*'
+    provider: anthropic
+    modelId: '$MODEL'
+    plugins:
+      - disable: [session-id]      # отключить глобальный session-id для моделей Claude
+```
+
+Используйте это для opt-out из глобальных настроек для специфичных маршрутов. Плагинный эквивалент `- cache-control: false` (`{ name: false }`) отключает ровно один унаследованный плагин.
+
+## Встроенные плагины
+
+### `normalize-volatile-system`
+
+Убирает волатильные хэши Claude Code из системных промптов:
+
+- `cch=<hex>` (хеш за ход) → константа `cch=00000`
+- `cc_version=<semver>.<hex>` → `cc_version=<semver>.0`
+
+Эти хэши дрейфуют каждый ход и ломают префиксное кэширование для не‑Anthropic провайдеров (GLM, Qwen и т.д.). Нормализация стабилизирует кэшируемый префикс.
+
+**Без опций.**
+
+```yaml
+plugins:
+  - normalize-volatile-system
+```
+
+Источник: [`plugins/built-in/normalize-volatile-system.ts`](../packages/proxy-core/src/plugins/built-in/normalize-volatile-system.ts)
+
+### `cache-control`
+
+Внедряет и переписывает `cache_control` breakpoints с нормализацией TTL.
+
+**Опции:**
+
+| Опция | Тип | По умолчанию | Описание |
+| --- | --- | --- | --- |
+| `cacheControl` | `auto` \| `always` \| `skip` | `auto` | Режим внедрения |
+| `ttl` | `5m` \| `1h` \| `omit` | — | TTL кэша (опционально) |
+| `rewriteBlockTtl` | `auto` \| `skip` | `auto` | Нормализовать block-level TTL до соответствия `ttl` |
+
+**Режимы `cacheControl`:**
+
+| Режим | Поведение |
 | --- | --- |
-| `HIT` | Чтение из кэша ≥ `hitThreshold`% от входных токенов — тёплый, полезный кэш. |
-| `PARTIAL` | Часть читается из кэша, но ниже порога. |
-| `MISS` | Нет чтения из кэша на **повторном** запросе в той же сессии — кэш должен был обслужить его, но не сделал. |
-| `COLD` | Нет чтения из кэша на **первом** запросе в сессии — ожидаемая разовая стоимость прогрева. |
-| `NOUSAGE` | Объект usage не наблюдался (нелогируемый content-type, битый ответ и т.п.). |
+| `auto` | Внедрять только когда запрос уже имеет cache breakpoints (безопасный дефолт для Anthropic-нативных) |
+| `always` | Всегда внедрять cache breakpoints |
+| `skip` | Passthrough — не внедрять |
 
-### Тип запроса
+**Значения `ttl`:**
 
-Каждый запрос помечается `[main]` или `[side]`. Запрос помечается `[side]`, только если у него **нет инструментов** и его `max_tokens` не превышает `sideMaxTokens` — правило по двум сигналам, чтобы не помечать мелкие запросы без инструментов как основной ход. Всё остальное — `[main]`.
-
-**Резолв `max_tokens`:** бюджет использует `max_tokens ?? max_completion_tokens`. Если ни того, ни другого нет, запрос по умолчанию помечается `[main]` (безопасное поведение), а не `[side]`.
-
-### Конфигурация
-
-Все опции лежат под `observability:` и опциональны, с разумными значениями по умолчанию.
-
-```yaml
-observability:
-  routerMetadata: true      # отправлять x-openrouter-metadata, чтобы видеть обслуживающего провайдера
-  hitThreshold: 80          # cacheRead/inputTokens % при или выше => HIT
-  sideMaxTokens: 4096       # запрос без инструментов с max_tokens <= этого => [side]
-  sessionMaxEntries: 4096   # ёмкость трекера сессий в памяти (вытеснение FIFO)
-  sessionTtlMs: 600000      # TTL записи трекера сессий (10 минут)
-```
-
-| Опция | По умолчанию | Описание |
+| Значение | TTL | Использовать когда |
 | --- | --- | --- |
-| `routerMetadata` | `true` | Включает `x-openrouter-metadata` от прокси, чтобы ответы показывали, какой провайдер реально обслужил запрос (видно как `provider=…` в строке кэша, когда доступны метаданные маршрутизации/обслуживающего провайдера). Поставьте `false`, чтобы отключить. |
-| `hitThreshold` | `80` | Процент `cacheRead / inputTokens`, при или выше которого запрос помечается `HIT`. |
-| `sideMaxTokens` | `4096` | Запрос **без инструментов** И с `max_tokens` не выше этого бюджета помечается `[side]`. |
-| `sessionMaxEntries` | `4096` | Ограниченная ёмкость трекера сессий в памяти (вытеснение FIFO при превышении). |
-| `sessionTtlMs` | `600000` | Время жизни записи трекера сессий (10 минут). |
+| `5m` | 5 минут (дефолт Anthropic) | Частые запросы (>1 за 5 мин) |
+| `1h` | 1 час | Редкие или длинные сессии |
+| `omit` | Убрать поле `ttl` | Принудительно отключить TTL |
 
-### Обогащённые дампы
+**Режимы `rewriteBlockTtl`:**
 
-Установите `PROXITOR_DUMP_BODY=1`, чтобы писать дампы запроса/ответа (в `~/.cache/proxitor/dumps`, переопределяется через `PROXITOR_DUMP_DIR`). При включении объект `response` в каждом дампе обогащается классифицированным наблюдением:
+| Режим | Поведение |
+| --- | --- |
+| `auto` | Переписывать существующие block TTLs до `ttl` на Anthropic-нативных эндпоинтах |
+| `skip` | Оставить block TTLs нетронутыми |
 
-```json
-"response": {
-  "status": 200,
-  "label": "HIT",
-  "requestType": "main",
-  "model": "glm-4.5-air",
-  "sessionId": "8f3e...",
-  "toolsCount": 0,
-  "inputTokens": 48874,
-  "cacheRead": 48640,
-  "cacheCreate": 0,
-  "hitPct": 99.5,
-  "provider": "novita",
-  "strategy": "priority",
-  "region": null,
-  "attempt": 1,
-  "fallback": false,
-  "generationId": "gen-..."
-}
-```
+**Зачем `rewriteBlockTtl`?** Claude Code отправляет block-level `cache_control` без `ttl` (Anthropic трактует их как `5m`). Если вы установили `ttl: 1h`, запрос уходит со смешанными `1h` root / `5m` blocks → Anthropic отвергает его. `rewriteBlockTtl: auto` нормализует blocks до `1h`.
 
-`provider`, `strategy`, `region`, `attempt`, `fallback` и `generationId` заполняются, только если присутствуют метаданные маршрутизации (т.е. `routerMetadata` включён и апстрим их вернул).
-
-## normalizeVolatileSystem (стабильный префикс для не-Anthropic провайдеров)
-
-Claude Code встраивает в системный промпт волатильные хэши `cch=…` (за ход) и `cc_version=<semver>.<hash>` (за сборку), которые меняются (почти) на каждом ходу. Для **нативных для Anthropic** провайдеров это безвредно — ключ кэша его поглощает. Но для **не-Anthropic** провайдеров (qwen, glm и других, маршрутизируемых через OpenRouter), эти меняющиеся байты лежат внутри кэшируемого префикса, поэтому префиксный кэш никогда не согревается и каждый ход платит полную цену.
-
-`normalizeVolatileSystem` вырезает эти волатильные хэши из `messages[0]` (системного блока), чтобы байты префикса оставались стабильными от хода к ходу. Читаемый semver в `cc_version` сохраняется; схлопывается только дрейфящий хэш сборки.
+**Пример:**
 
 ```yaml
-normalizeVolatileSystem: true   # вырезать волатильные хэши cch/cc_version из системного промпта
+plugins:
+  - cache-control:
+      cacheControl: auto
+      ttl: 1h
+      rewriteBlockTtl: auto
 ```
 
-- **Включать, когда:** вы маршрутизируете Claude Code через не-Anthropic провайдера, а лог cache-read держится около нуля.
-- **Не влияет на:** нативное кэширование Anthropic (там хэш безвреден) — безопасно держать включённым глобально.
-- **Per-model:** незаданное значение наследует глобальное.
+Источник: [`plugins/built-in/cache-control.ts`](../packages/proxy-core/src/plugins/built-in/cache-control.ts)
+
+### `session-id`
+
+Липкая маршрутизация через заголовок `x-session-id`. Использует session id клиента (заголовки `x-claude-code-session-id` / `x-session-id`), если он отправлен; иначе выводит стабильный ID сессии из логической модели, системного промпта и первого сообщения пользователя.
+
+**Опции:**
+
+| Опция | Тип | По умолчанию | Описание |
+| --- | --- | --- | --- |
+| `mode` | `auto` \| `skip` | `auto` | Режим session ID |
+
+**Значения `mode`:**
+
+| Режим | Поведение |
+| --- | --- |
+| `auto` | Использовать session id клиента (заголовки `x-claude-code-session-id` / `x-session-id`), если отправлен; иначе вывести стабильный ID из модели + системного промпта + первого сообщения пользователя |
+| `skip` | Passthrough — не генерировать |
+
+**Пример:**
 
 ```yaml
-modelOverrides:
-  "qwen-*":
-    provider:
-      only: "qwen"          # не-Anthropic провайдер
-    normalizeVolatileSystem: true
+plugins:
+  - session-id:
+      mode: auto
 ```
 
-Переключается из меню (`proxitor config` → **💾 Caching** → Stabilize prefix) или через `proxitor config cache`.
+Источник: [`plugins/built-in/session-id.ts`](../packages/proxy-core/src/plugins/built-in/session-id.ts)
 
-## Интерактивный менеджер конфигурации
+### `openrouter-routing`
 
-### Мастер настройки
+Хинты маршрутизации провайдеров для формата `openai-chat` OpenRouter. Пишет `extensions['openai-chat']['$proxitor.provider']` с опциями маршрутизации; энкодер мапит это на тело запроса.
 
-```sh
-proxitor config wizard
+**Опции (все опционально):**
+
+| Опция | Тип | Описание |
+| --- | --- | --- |
+| `only` | string или `string[]` | Разрешить только этих провайдеров |
+| `order` | string или `string[]` | Пробовать провайдеров в этом приоритетном порядке |
+| `ignore` | string или `string[]` | Никогда не использовать этих провайдеров |
+| `allowFallbacks` | boolean | Разрешить фолбэки вне `order` (дефолт `true` когда установлен `order`) |
+| `sort` | `"price"` \| `"throughput"` \| `"latency"` \| `{by, partition?}` | Сортировать провайдеров по метрике |
+| `quantizations` | `string[]` | Фильтр по уровню квантизации (напр. `["fp8"]`) |
+| `maxPrice` | `{prompt?, completion?, request?, image?}` | Макс. цена ($/M токенов) |
+| `requireParameters` | boolean | Только провайдеры поддерживающие все параметры запроса |
+| `dataCollection` | `"allow"` \| `"deny"` | Политика сбора данных |
+| `zdr` | boolean | Принудительное Zero Data Retention |
+| `enforceDistillableText` | boolean | Принудить флаг distillable‑text |
+| `preferredMinThroughput` | number или `{p50?, p75?, p90?, p99?}` | Мягкий минимальный порог throughput |
+| `preferredMaxLatency` | number или `{p50?, p75?, p90?, p99?}` | Мягкий максимальный порог латентности |
+
+**Пример:**
+
+```yaml
+plugins:
+  - openrouter-routing:
+      only: anthropic
+      maxPrice: { prompt: 1, completion: 2 }
+      dataCollection: deny
 ```
 
-Мастер спрашивает:
+**Примечание:** Этот плагин гейтится для `openai-chat` маршрутов через зарезервированные ключи; он не влияет на `anthropic-messages` запросы.
 
-- **API-ключ OpenRouter** — сохраняется в конфиг или задаётся как переменная `OPENROUTER_API_KEY`
-- **Порт** — по умолчанию `8828` (избегает конфликтов с типичными dev-серверами на 8080)
-- **Адрес прослушивания** — все интерфейсы (`0.0.0.0`), только localhost (`127.0.0.1`) или свой адрес (IP, hostname или `unix:/path`)
-- **Базовый URL API** — по умолчанию `https://openrouter.ai/api`; меняется для self-hosted или кастомных эндпоинтов
-- **Тип аутентификации** — `bearer` (по умолчанию) или `oauth`; `oauth` — для кастомных прокси-провайдеров, передающих токен в заголовке `Authorization: OAuth ...`
-- **Куда сохранить** — каталог проекта, `~/.config/proxitor/` или `$XDG_CONFIG_HOME/proxitor/`
+Источник: [`plugins/built-in/openrouter-routing.ts`](../packages/proxy-core/src/plugins/built-in/openrouter-routing.ts)
 
-После получения ключа, базового URL и типа аутентификации мастер выполняет **пробу апстрима по возможности** (таймаут 3 с), чтобы проверить связность. Если апстрим недоступен или ключ отклонён, выводится предупреждение, но конфиг всё равно сохраняется — это только информация.
+## Переменные окружения
 
-Если конфиг уже существует, мастер показывает его расположение и спрашивает, перенастроить ли. Все поля **предзаполнены** текущими значениями — жмите Enter, чтобы оставить, или вводите новое. Существующие `modelOverrides`, `provider` и прочие поля сохраняются — обновляются только поля мастера.
+| Переменная | Назначение |
+| --- | --- |
+| `PROXITOR_DUMP_BODY=1` | Записывать дампы запроса/ответа в `~/.cache/proxitor/dumps` |
+| `PROXITOR_CONTROL_TOKEN` | Токен управляющей плоскости (когда `controlPlane.token` использует `{env: PROXITOR_CONTROL_TOKEN}`) |
+| `PROXITOR_DUMP_DIR` | Переопределить директорию дампов (дефолт `~/.cache/proxitor/dumps`) |
+| `XDG_CONFIG_HOME` | Переопределить директорию пользовательского конфига (дефолт `~/.config`) |
 
-### Меню и команды конфигурации
+**Env vars для креденшиалов** (ссылаются в `auth.credential.{env: ...}`): используйте любое имя переменной (напр. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). Proxitor читает их при старте; изменения требуют перезапуска.
 
-`proxitor config` (или `proxitor config menu`) открывает интерактивное меню, которое крутится до выхода. Оттуда можно управлять всеми настройками:
+## Полный аннотированный пример
 
-- **Показать текущий конфиг** — вывести резолвнутую конфигурацию
-- **API-ключ и подключение** — поменять ключ, порт, адрес, базовый URL, тип аутентификации
-- **Caching** — три рычага кэширования на одном экране: `cacheControl` (+TTL), `sessionId`, `normalizeVolatileSystem`
-- **Переопределения моделей** — добавлять, редактировать, удалять, смотреть, листать модели (у каждого переопределения своё подменю **💾 Caching**)
+```yaml
+# конфигурация proxitor v1 — скопируйте в ~/.config/proxitor/config.yaml
+# или передайте --config <path>.
 
-```sh
-proxitor config menu           # интерактивное меню
-proxitor config add            # добавить переопределение модели
-proxitor config edit           # редактировать существующее
-proxitor config remove         # удалить переопределение(я)
-proxitor config list           # показать текущие переопределения
-proxitor config list --json    # переопределения в JSON
-proxitor config show           # вывести резолвнутый конфиг (слитый)
-proxitor config show --json    # то же, машиночитаемо
-proxitor config browse         # изучать модели с ценами
-proxitor config wizard         # мастер настройки
-proxitor config validate       # проверить файл конфига (exit 0 ок, 1 невалиден)
-proxitor config validate --json  # структурированный JSON-результат
-proxitor doctor                # диагностика окружения + сети + порта + версии
-proxitor doctor --json         # машиночитаемый диагностический отчёт
-proxitor doctor --offline      # пропустить сетевые проверки
+version: 1
+
+# Глобальные плагины (выполняются на каждом запросе)
+plugins:
+  - normalize-volatile-system
+  - cache-control:
+      cacheControl: auto
+      ttl: 1h
+      rewriteBlockTtl: auto
+  - session-id
+
+# Конфигурации провайдеров (ключ YAML = id провайдера)
+providers:
+  openai:
+    baseUrl: https://api.openai.com
+    wireFormat: openai-chat
+    auth:
+      type: bearer
+      credential: { env: OPENAI_API_KEY }   # читается из process.env.OPENAI_API_KEY
+    # Опционально: дополнительные заголовки для этого провайдера
+    # headers:
+    #   x-custom: value
+
+  anthropic:
+    baseUrl: https://api.anthropic.com
+    wireFormat: anthropic-messages
+    auth:
+      type: x-api-key
+      credential: { env: ANTHROPIC_API_KEY }
+    headers: { anthropic-version: '2023-06-01' }
+
+  glm:
+    baseUrl: https://api.example.com
+    wireFormat: openai-chat
+    auth:
+      type: bearer
+      credential: { env: GLM_API_KEY }
+    # Плагины уровня провайдера (дополняют глобальные, могут отключать глобальные)
+    plugins:
+      - disable: [cache-control]   # отключить cache-control для GLM
+
+# Таблица маршрутизации моделей (первое совпадение выигрывает)
+models:
+  # Glob-префикс — все claude-* модели идут на GLM
+  - match: 'claude-*'
+    provider: glm
+    modelId: '$MODEL'           # передать логическое имя без изменений
+    plugins:
+      - disable: [session-id]  # отключить session-id для моделей Claude
+
+  # Catch-all — всё остальное на OpenAI
+  - match: '*'
+    provider: openai
+    modelId: '$MODEL'
+
+# Провайдер по умолчанию для запросов без модели (embeddings, /v1/models)
+defaultProvider: openai
+
+# Конфигурация сервера
+server:
+  host: 127.0.0.1
+  port: 8828
+  bodyLimit: 50mb
+  # Опционально: пробросить специфичные входящие заголовки к провайдерам
+  # forwardHeaders:
+  #   - x-custom-api-key
+
+# Управляющая плоскость (требуется для эндпоинтов /control/*)
+controlPlane:
+  token: { env: PROXITOR_CONTROL_TOKEN }
+
+# Наблюдаемость (трекинг кэша, классификация запросов)
+observability:
+  routerMetadata: true          # захватывать метаданные маршрутизации провайдера
+  hitThreshold: 80             # чтение кэша ≥ 80% → HIT
+  sideMaxTokens: 4096          # маленькие запросы → [side]
+  sessionMaxEntries: 4096      # ёмкость трекера сессий
+  sessionTtlMs: 600000         # TTL трекера сессий (10 минут)
+
+# Логирование
+logging:
+  verbose: false
 ```
 
-При добавлении или редактировании переопределения модели можно также настроить per-model `sessionId` и `cacheControl` — полезно для моделей, которым нужно поведение по кэшу/маршрутизации, отличное от глобального.
-
-В `config edit` любое поле (провайдер, session ID, cache control, cache TTL) можно сбросить к наследованию глобального/значения по умолчанию через опцию **Reset / inherit**. Глобальные команды `config cache-control` и `config session-routing` поддерживают тот же сброс — поле возвращается к значению схемы по умолчанию.
-
-### Разбор добавления переопределения
-
-```sh
-$ proxitor config add
-
-┌──────────────────────────────────┐
-│   Add Model Override             │
-╰──────────────────────────────────╯
-
-◇ Search for a model
-│ claude
-  (23 matches)
-  ● anthropic/claude-sonnet-4-6 · $3.00/$15.00 · 200k
-  ○ anthropic/claude-opus-4-8   · $15.00/$75.00 · 200k
-  ...
-
-◇ Configure provider routing
-│ ○ Use specific providers only
-  ○ Set provider priority order
-  ○ Ignore specific providers
-  ○ Skip provider routing
-```
-
-**«Use specific providers only» / «Ignore specific providers»** — множественный выбор, отмечаете нужные:
-
-```text
-◇ Select providers
-  ◼ anthropic (anthropic)     · 1.0s · 40 t/s
-  ◻ google-vertex/global      · 1.1s · 39 t/s
-  ◻ amazon-bedrock            · 1.2s · 40 t/s
-```
-
-**«Set provider priority order»** — выбираете провайдеров по одному, затем жмёте **✓ Done** внизу для завершения:
-
-```text
-◇ Select provider #1 (or cancel to finish)
-│ ● anthropic (anthropic)     · 1.0s · 40 t/s
-  ○ google-vertex/global      · 1.1s · 39 t/s
-  ○ amazon-bedrock            · 1.2s · 40 t/s
-  ○ ✓ Done
-
-◇ Select provider #2 (or cancel to finish)
-│ ● google-vertex/global      · 1.1s · 39 t/s
-  ○ amazon-bedrock            · 1.2s · 40 t/s
-  ○ ✓ Done
-
-◇ Select provider #3 (or cancel to finish)
-│ ● ✓ Done
-
-◇ Allow fallbacks to other providers? Yes
-
-◇ Save to config? Yes
-
-╭──────────────────────────────────╮
-│ ✓ Model override saved           │
-╰──────────────────────────────────╯
-```
-
-Интерфейс использует живые данные OpenRouter API — поиск моделей с type-ahead, реальная доступность провайдеров и цены для каждой модели.
-
-## Диагностика
-
-Когда что-то не работает, `proxitor doctor` прогоняет батарею проверок и печатает отчёт. Разделы:
-
-- **Окружение** — версия Node, платформа, TTY
-- **Конфиг** — путь обнаружения, валидность, число переопределений
-- **API-ключ** — источник (env или файл; сам ключ не печатается)
-- **Сеть** — достижимость апстрима (с настраиваемым таймаутом)
-- **Порт** — доступность настроенного порта
-- **Версия** — установленная версия
-
-Статусы: `✓ ok` / `⚠ warn` / `✗ fail` / `ⓘ skip`. Код выхода `0`, если нет `fail`, иначе `1` — можно дёргать из CI.
-
-```sh
-$ proxitor doctor
-
-▲ Proxitor Doctor
-│
-◇ Environment
-│  ✓ node-version — v22.4.1
-│  ✓ platform — darwin arm64
-│  ✓ tty — true
-│
-◇ Config
-│  ✓ config-found — /Users/u/proj/proxitor.config.yaml
-│  ✓ config-valid — 12 keys, 3 override(s)
-│
-◇ API key
-│  ✓ api-key — set (env: set, file: set)
-│
-◇ Network
-│  ✓ upstream — https://openrouter.ai/api — 200, 342 models
-│
-◇ Port
-│  ✓ port-8828 — 127.0.0.1:8828
-│
-◇ Version
-│  ✓ version — 0.9.0-beta.5
-
-└ Done. All checks passed.
-```
-
-Полезные флаги:
-
-```sh
-proxitor doctor --json         # структурированный JSON для CI/скриптов
-proxitor doctor --offline      # пропустить сетевые проверки (без апстрима и npm)
-proxitor doctor --timeout 5000 # свой сетевой таймаут на проверку (мс)
-```
-
-## Опции CLI
-
-```sh
-proxitor                        # запустить прокси (команда по умолчанию)
-proxitor start                  # то же самое
-proxitor up                     # алиас для start
-proxitor run                    # алиас для start
-proxitor --port 9000            # переопределить порт
-proxitor --config ./team.yaml   # явно указать конфиг
-proxitor config show            # вывести резолвнутый конфиг
-proxitor config show --json     # машиночитаемый конфиг
-proxitor config list --json     # переопределения в JSON
-proxitor config wizard          # мастер настройки
-proxitor config validate        # проверить текущий конфиг (exit 0/1)
-proxitor config validate --json # структурированный JSON-результат
-proxitor doctor                 # диагностика окружения, сети, порта, версии
-proxitor doctor --offline       # пропустить сетевые проверки
-proxitor --help                 # полная справка
-proxitor --version              # напечатать версию
-```
-
-| Флаг | По умолчанию | Описание |
-|---|---|---|
-| `-p, --port <порт>` | `8828` | Порт сервера (валидация: 1-65535) |
-| `--host <хост>` | `0.0.0.0` | Хост сервера |
-| `-c, --config <путь>` | автообнаружение | Путь к файлу конфига |
-| `--openrouter-key <ключ>` / `-k <ключ>` | `$OPENROUTER_API_KEY` | API-ключ OpenRouter |
-| `--verbose` | `false` | Подробное логирование |
-| `--no-config` | | Пропустить обнаружение файла конфига |
-| `-v, --version` | | Напечатать версию |
-| `--help` | | Напечатать справку |
-
-Подкоманды живут под `proxitor config <подкоманда>`. Полный список — `proxitor config --help`.
-
----
-
-← [Назад к README](./README.ru.md)
+← [Назад к README](../README.md)
