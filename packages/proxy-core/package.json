@@ -19,7 +19,7 @@
     "@proxitor/plugin-api": "workspace:*",
     "cmd-ts": "^0.15.0",
     "consola": "^3.4.2",
-    "hono": "^4.12.12",
+    "hono": "^4.13.5",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
