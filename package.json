@@ -1,6 +1,6 @@
 {
   "name": "proxitor",
-  "version": "0.20.0",
+  "version": "0.99.0",
   "description": "Multi-provider LLM gateway with a plugin pipeline: Anthropic Messages and OpenAI Chat in, any provider out",
   "keywords": [
     "proxy",
